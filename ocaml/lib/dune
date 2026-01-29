@@ -1,0 +1,7 @@
+(library
+ (name ocaml)
+ (public_name ocaml)
+ (libraries str unix)
+ (flags
+  (:standard -open Ocaml))
+ (modules tptp_parser lemma_extractor))

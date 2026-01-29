@@ -1,0 +1,14 @@
+[package]
+name = "egg-sc-tptp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.0", features = ["derive"] }
+egg = "0.9.5"
+tptp = { git = "https://github.com/SimonGuilloud/rust-tptp-parser", version = "0.31.1" } #"0.31.1"
+nom = { version = "7.1", default-features = false, features = ["alloc"] }
+
+[lib]
+name = "egg_sc_tptp"
+path = "src/lib.rs"

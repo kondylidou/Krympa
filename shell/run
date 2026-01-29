@@ -1,0 +1,39 @@
+#!/bin/bash
+
+BENCHMARK_DIR="../benchmarks"
+PYTHON_SCRIPT="../python/generate_input.py"
+RUST_DIR="../rust"
+# Use prebuilt binary instead of cargo
+BENCHMARK_BINARY="./benchmarking_binary"
+FRANKENSTEIN_BINARY="./frankenstein_history_abstract"
+
+mkdir -p "$BENCHMARK_DIR/output_logs"
+ORIG_DIR=$(pwd)
+
+for proofs_file in "$BENCHMARK_DIR"/Proofs*.lean; do
+    base=$(basename "$proofs_file" .lean)
+    echo "Processing $base ..."
+
+    # Generate input using python script
+    python3 "$PYTHON_SCRIPT" "$proofs_file"
+
+    input_folder="$BENCHMARK_DIR/input${base//Proofs/}"
+    if [ ! -d "$input_folder" ]; then
+        echo "Input folder $input_folder not found! Skipping $base."
+        continue
+    fi
+
+    log_file="$BENCHMARK_DIR/output_logs/${base}.log"
+    echo "Running benchmarking for $input_folder, logging to $log_file ..."
+
+    cd "$RUST_DIR" || exit 1
+
+    # Run the benchmarking binary directly, passing the frankenstein binary path
+    "$BENCHMARK_BINARY" "$input_folder" "$FRANKENSTEIN_BINARY" > "$log_file" 2>&1
+
+    cd "$ORIG_DIR" || exit 1
+
+    echo "Finished benchmarking for $base"
+done
+
+echo "All jobs completed."
