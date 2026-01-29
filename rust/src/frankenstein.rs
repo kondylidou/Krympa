@@ -162,6 +162,7 @@ pub fn shorten_proofs(summary_file: &str) {
         .collect();
 
     let provers = ["vampire", "twee", "egg"];
+    fs::create_dir_all("../tmp").expect("Failed to create ../tmp directory");
     let updated_results = prove_lemmas(&updated_files, &provers, "../tmp"); // tmp root
 
     println!("\n=== Updated History Proofs ===");
