@@ -1,0 +1,64 @@
+# === Rust ===
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# === Lean ===
+lean/.lake/
+
+# === OCaml ===
+/_build/
+*.cm*
+*.o
+*.annot
+*.cmt
+*.cmi
+*.cmo
+*.cmx
+*.exe
+*.merlin
+*.install
+
+# === Output ===
+/lemmas/
+/proofs/
+/output/
+/tmp/
+
+# === Prover Outputs ===
+*.out
+*.proof
+*.vproof
+*.tweeout
+*.cvc5out
+*.eggout
+
+# === Logs and Temps ===
+*.log
+*.tmp
+*.swp
+*.bak
+
+# === Editor Files ===
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# === System ===
+*.dSYM/
+
+# === Text Files ===
+*.txt
+
+# === PDF Files ===
+*.pdf
+
+# === TPTP Files ===
+*.p
+
+# === JSON Files ===
+*.json
+
+# === zip Files ===
+*.zip

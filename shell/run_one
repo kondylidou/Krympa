@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -e
+
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 <input-file>"
+  exit 1
+fi
+
+INPUT="$1"
+
+# Move into the Rust project directory
+cd ../rust || {
+  echo "Error: could not cd into ../rust"
+  exit 1
+}
+
+if [ ! -f Cargo.toml ]; then
+  echo "Error: ../rust is not a Cargo project (Cargo.toml not found)."
+  exit 1
+fi
+
+cargo run --bin frankenstein run_vampire "$INPUT"
+cargo run --bin frankenstein collect "$INPUT"
+cargo run --bin frankenstein shorten "$INPUT"
+cargo run --bin frankenstein minimize "$INPUT"
