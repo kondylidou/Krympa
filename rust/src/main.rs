@@ -1,6 +1,6 @@
 mod alpha_match;
 mod dag;
-mod frankenstein;
+mod core;
 mod minimize;
 mod prover_wrapper;
 mod run_vamp;
@@ -26,7 +26,7 @@ fn main() {
                 // extract suffix from input file
                 let suffix = extract_suffix(input_file);
                 let output_file = format!("../output/vampire_proof_{}.out", suffix);
-                frankenstein::collect(&input_file, &output_file, suffix);
+                core::collect(&input_file, &output_file, suffix);
             }
         }
         "shorten" => {
@@ -37,7 +37,7 @@ fn main() {
                 // extract suffix from input file
                 let suffix = extract_suffix(input_file);
                 let summary_file = format!("../output/summary_{}.json", suffix);
-                frankenstein::shorten_proofs(&summary_file)
+                core::shorten_proofs(&summary_file)
             }
         }
         "group" => {
@@ -48,7 +48,7 @@ fn main() {
                 // extract suffix from input file
                 let suffix = extract_suffix(input_file);
                 let summary_file = format!("../output/summary_{}.json", suffix);
-                frankenstein::structural_groups(&summary_file)
+                core::structural_groups(&summary_file)
             }
         }
         "minimize" => {

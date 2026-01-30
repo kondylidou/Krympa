@@ -121,17 +121,30 @@ pub fn precompute_lemmas(
     })
 }
 
-/// Append a formula as an axiom to a file
+/// Append a formula as an axiom to a file, adding quantifiers for Vampire lemmas
 pub fn append_as_axiom(file_path: &str, formula: &str, lemma_name: &str) {
-    let indented_formula = formula
-        .lines()
-        .map(|line| format!("    {}", line))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let formula = formula.trim();
 
-    let axiom_text = format!("\nfof({}, axiom,\n{}\n).\n", lemma_name, indented_formula);
+    // detect variables: assume variables are uppercase identifiers starting with X
+    let var_re = Regex::new(r"\b(X\d+)\b").unwrap();
+    let mut vars: BTreeSet<String> = BTreeSet::new();
+    for cap in var_re.captures_iter(formula) {
+        vars.insert(cap[1].to_string());
+    }
 
-    let current_content = fs::read_to_string(file_path).expect("Failed to read tmp input file");
+    // build the quantified formula
+    let quantified_formula = if !vars.is_empty() {
+        let vars_list = vars.into_iter().collect::<Vec<_>>().join(", ");
+        format!("! [{}] : ({})", vars_list, formula)
+    } else {
+        formula.to_string()
+    };
+
+    let axiom_text = format!("\nfof({}, axiom,\n{}\n).\n", lemma_name, quantified_formula);
+
+    // append to file
+    let current_content = fs::read_to_string(file_path)
+        .expect("Failed to read tmp input file");
     fs::write(file_path, format!("{}\n{}", current_content, axiom_text))
         .expect("Failed to append axiom");
 }
@@ -368,6 +381,51 @@ pub fn extract_tptp_formula_body(file_path: &str, lemma: &str) -> Option<String>
     None
 }
 
+/// Extract the body of the first fof(..., conjecture, ...) in a TPTP file
+pub fn extract_conjecture_from_file(path: &str) -> Result<String, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read file {}: {}", path, e))?;
+
+    let mut in_conjecture = false;
+    let mut formula_lines = Vec::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if !in_conjecture {
+            // Start of conjecture
+            if trimmed.starts_with("fof") && trimmed.contains(", conjecture,") {
+                in_conjecture = true;
+
+                // collect everything after the first comma following "conjecture,"
+                if let Some(idx) = trimmed.find(", conjecture,") {
+                    let rest = &trimmed[idx + ", conjecture,".len()..].trim();
+                    if !rest.is_empty() {
+                        formula_lines.push(rest.to_string());
+                    }
+                }
+            }
+        } else {
+            // inside conjecture, keep collecting lines
+            formula_lines.push(trimmed.to_string());
+
+            // stop if we find closing ")."
+            if trimmed.ends_with(").") {
+                break;
+            }
+        }
+    }
+
+    if formula_lines.is_empty() {
+        return Err("No conjecture found in file".into());
+    }
+
+    // join all lines into a single formula string, strip leading/trailing whitespace, remove ending ').'
+    let mut formula = formula_lines.join(" ");
+    formula = formula.trim().trim_end_matches(").").trim().to_string();
+
+    Ok(formula)
+}
+
 /// Promote a root lemma to conjecture in a TPTP file.
 ///
 /// - Removes any existing conjecture blocks.
@@ -422,7 +480,7 @@ pub fn promote_axiom_to_conjecture(path: &str, root_lemma: &str) -> Result<(), S
 }
 
 pub fn create_tmp_copy(input_file: &str) -> Result<String, String> {
-    let tmp_dir = Path::new("../benchmarks/tmp");
+    let tmp_dir = Path::new("../lemmas/tmp");
 
     // ensure temp directory exists
     fs::create_dir_all(tmp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;

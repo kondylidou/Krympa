@@ -241,6 +241,49 @@ pub fn superposition_steps(
     }
 }
 
+/// Parse a Vampire proof and extract the exact derivation path
+/// to prove a lemma
+pub fn extract_superposition_steps(
+    vampire_file: &str,
+    lemma_formula: &str, // pass formula directly
+) -> Option<BTreeMap<usize, SuperpositionStep>> {
+    // parse Vampire proof
+    let steps_map = match parse_vampire_proof(vampire_file) {
+        Ok(m) => m,
+        Err(err) => {
+            eprintln!(
+                "  [WARN] Cannot parse Vampire proof {}: {}",
+                vampire_file, err
+            );
+            return None;
+        }
+    };
+
+    // find the Vampire step proving the lemma
+    let lemma_step = steps_map.iter().find_map(|(step_num, step)| {
+        let wrapped = format!("({})", step.formula);
+        if formulas_match(lemma_formula, &wrapped) {
+            Some(*step_num)
+        } else {
+            None
+        }
+    })?;
+
+    // collect all transitive dependencies
+    let mut all_deps: BTreeSet<usize> = BTreeSet::new();
+    gather_all_dependencies(lemma_step, &steps_map, &mut all_deps);
+
+    let mut relevant_steps: BTreeMap<usize, SuperpositionStep> = BTreeMap::new();
+    
+    for idx in &all_deps {
+        if let Some(step) = steps_map.get(idx) {
+            relevant_steps.insert(*idx, step.clone());
+        }
+    }
+
+    Some(relevant_steps)
+}
+
 /// Append all relevant superposition steps to a temporary file
 pub fn append_superposition_steps_as_lemmas(
     tmp_file: &str,
@@ -281,35 +324,64 @@ pub fn gather_all_dependencies(
 }
 
 /// Prepend superposition steps and dependency formulas to a proof
+/// `axioms` is a list of (name, formula) tuples, used to resolve seq_idx == 0
 pub fn prepend_superposition_steps(
     superposition_steps: &BTreeMap<usize, SuperpositionStep>,
+    axioms: &[(String, String)], // (name, formula)
 ) -> String {
+    use crate::alpha_match::formulas_match;
+
+    println!("DEBUG: Axioms list:");
+    for (name, formula) in axioms {
+        println!("  {} => {}", name, formula);
+    }
+
     let mut annotated_proof = String::new();
     annotated_proof.push_str("% === Superposition Steps ===\n");
 
     for (seq_idx, step) in superposition_steps {
-        // handle the axiom
+        // Resolve lemma name
         let lemma_name = if *seq_idx == 0 {
-            "a1".to_string()
+            axioms
+                .iter()
+                .find(|(_, f)| formulas_match(&step.formula, f))
+                .map(|(n, _)| n.clone())
+                .unwrap_or_else(|| "a1".to_string())
         } else {
-            format!("single_lemma_{:04}", seq_idx)
+            format!("lemma_{:04}", seq_idx)
         };
 
-        // format dependencies
+        // Build dependencies list with formula
         let dep_list: Vec<String> = step
             .deps
             .iter()
-            .map(|(vnum, sidx)| {
-                let dep_name = if *sidx == 0 {
-                    "a1".to_string()
+            .map(|(_vnum, sidx)| {
+                if *sidx == 0 {
+                    // seq_idx 0 dependency → look in axioms
+                    if let Some((name, formula)) = axioms
+                        .iter()
+                        .find(|(_, f)| formulas_match(f, &step.formula))
+                    {
+                        if name == "a1" {
+                            "a1".to_string()
+                        } else {
+                            format!("{}: {}", name, formula)
+                        }
+                    } else {
+                        "a1".to_string()
+                    }
                 } else {
-                    format!("single_lemma_{:04}", sidx)
-                };
-                format!("{}->{}", dep_name, vnum)
+                    // seq_idx > 0 → look in superposition_steps
+                    if let Some(dep_step) = superposition_steps.get(sidx) {
+                        format!("lemma_{:04}: {}", sidx, dep_step.formula)
+                    } else {
+                        format!("lemma_{:04}: UNKNOWN_FORMULA", sidx)
+                    }
+                }
             })
             .collect();
 
-        // write the step itself
+        // Write the step itself
         annotated_proof.push_str(&format!(
             "% {}: {} | deps: {}\n",
             lemma_name,
@@ -317,6 +389,7 @@ pub fn prepend_superposition_steps(
             dep_list.join(", ")
         ));
     }
+
     annotated_proof.push_str("\n");
     annotated_proof
 }

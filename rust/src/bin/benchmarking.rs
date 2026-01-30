@@ -1,19 +1,19 @@
-use frankenstein::run;
+use core::run;
 use std::env;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <input_folder> [frankenstein_binary]", args[0]);
+        eprintln!("Usage: {} <input_folder> [krympa_binary]", args[0]);
         std::process::exit(1);
     }
 
     let input_folder = &args[1];
-    let frankenstein_bin = if args.len() >= 3 {
+    let krympa_bin = if args.len() >= 3 {
         &args[2]
     } else {
-        "./frankenstein"
+        "./krympa"
     };
 
-    run(input_folder, frankenstein_bin);
+    run(input_folder, krympa_bin);
 }
