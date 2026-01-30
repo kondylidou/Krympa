@@ -20,7 +20,7 @@ if [ ! -f Cargo.toml ]; then
   exit 1
 fi
 
-cargo run --bin frankenstein run_vampire "$INPUT"
-cargo run --bin frankenstein collect "$INPUT"
-cargo run --bin frankenstein shorten "$INPUT"
-cargo run --bin frankenstein minimize "$INPUT"
+cargo run --bin krympa run_vampire "$INPUT"
+cargo run --bin krympa collect "$INPUT"
+cargo run --bin krympa shorten "$INPUT"
+cargo run --bin krympa minimize "$INPUT"

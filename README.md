@@ -21,14 +21,14 @@ Build the required binaries using Cargo:
 
 ```bash
 cargo build --bin benchmarking
-cargo build --bin frankenstein
+cargo build --bin krympa
 ```
 
 After building, move the binaries to the expected locations:
 
 ```bash
 mv target/debug/benchmarking ./benchmarking_binary
-mv target/debug/frankenstein ./frankenstein
+mv target/debug/krympa ./krympa
 ```
 
 These paths are assumed by the benchmarking scripts.

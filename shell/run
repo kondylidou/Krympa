@@ -5,7 +5,7 @@ PYTHON_SCRIPT="../python/generate_input.py"
 RUST_DIR="../rust"
 # Use prebuilt binary instead of cargo
 BENCHMARK_BINARY="./benchmarking_binary"
-FRANKENSTEIN_BINARY="./frankenstein_history_abstract"
+KRYMPA_BINARY="./krympa_history_abstract"
 
 mkdir -p "$BENCHMARK_DIR/output_logs"
 ORIG_DIR=$(pwd)
@@ -28,8 +28,8 @@ for proofs_file in "$BENCHMARK_DIR"/Proofs*.lean; do
 
     cd "$RUST_DIR" || exit 1
 
-    # Run the benchmarking binary directly, passing the frankenstein binary path
-    "$BENCHMARK_BINARY" "$input_folder" "$FRANKENSTEIN_BINARY" > "$log_file" 2>&1
+    # Run the benchmarking binary directly, passing the krympa binary path
+    "$BENCHMARK_BINARY" "$input_folder" "$KRYMPA_BINARY" > "$log_file" 2>&1
 
     cd "$ORIG_DIR" || exit 1
 

@@ -17,8 +17,8 @@ pub struct BenchmarkResult {
 
 /// Run the benchmarking.
 /// `input_folder`: folder with input files
-/// `frankenstein_bin`: path to prebuilt frankenstein binary
-pub fn run(input_folder: &str, frankenstein_bin: &str) {
+/// `krympa_bin`: path to prebuilt krympa binary
+pub fn run(input_folder: &str, krympa_bin: &str) {
     let input_dir = Path::new(input_folder);
     if !input_dir.is_dir() {
         eprintln!(
@@ -55,7 +55,7 @@ pub fn run(input_folder: &str, frankenstein_bin: &str) {
         for cmd in &commands {
             println!("Running '{} {}' ...", cmd, input_str);
 
-            let mut child = match Command::new(frankenstein_bin)
+            let mut child = match Command::new(krympa_bin)
                 .args([cmd, input_str.as_str()])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
