@@ -93,20 +93,21 @@ pub fn parse_vampire_proof(file_path: &str) -> Result<BTreeMap<usize, Superposit
     Ok(steps)
 }
 
-/// Extract nth history lemma and matching Vampire steps.
+/// Extract nth (history) lemma and matching Vampire steps.
 ///
 /// This function takes a `dag`, a `vampire_file` (proof by Vampire),
-/// the directory containing lemmas, and a target lemma `n_history`.
+/// the directory containing lemmas, and a lemma.
 /// It returns:
 /// - a vector of dependency lemma names (from DAG)
 /// - a map of superposition steps from Vampire proof relevant to these dependencies.
 ///
 /// If no relevant Vampire steps are found, it returns `None`.
+/// This function is used to extract the initial superposition steps.
 pub fn superposition_steps(
     dag: &str,
     vampire_file: &str,
     lemmas_dir: &str,
-    n_history: &str,
+    lemma: &str,
 ) -> Option<(Vec<String>, BTreeMap<usize, SuperpositionStep>, bool)> {
     // load the DAG from a file. This DAG maps each lemma to its children.
     let dag = load_dag(&dag);
@@ -123,38 +124,38 @@ pub fn superposition_steps(
         }
     };
 
-    // store all Vampire steps that are relevant to the dependencies of `n_history`
+    // store all Vampire steps that are relevant to the dependencies of the lemma
     let mut relevant_steps: BTreeMap<usize, SuperpositionStep> = BTreeMap::new();
     let mut proved_history = false;
     // TODO we might can do this a bit more elegantly but it works now:)
     let mut force_super = false;
     // build the list of dependency lemmas from the DAG
-    let mut deps: Vec<String> = if n_history.starts_with("history_") {
+    let mut deps: Vec<String> = if lemma.starts_with("history_") {
         // for a history lemma, get its children in the DAG
-        let children = match dag.get(n_history) {
+        let children = match dag.get(lemma) {
             Some(c) => c,
             None => {
-                eprintln!("   [WARN] No children for n_history {}", n_history);
+                eprintln!("   [WARN] No children for lemma {}", lemma);
                 return None; // cannot proceed without children
             }
         };
 
-        // filter to only "single_lemma_" children, if any exist
+        // filter to only single children, if any exist
         let mut single_children: Vec<String> = children
             .iter()
-            .filter(|c| c.starts_with("single_lemma_"))
+            .filter(|c| c.starts_with("single_"))
             .cloned()
             .collect();
 
         if single_children.is_empty() {
             println!(
                 "   [WARN] history lemma {} has no single lemma children; checking history children.",
-                n_history
+                lemma
             );
 
-            // gather history children of n_history
+            // gather history children of the lemma
             let history_children: Vec<String> = dag
-                .get(n_history)
+                .get(lemma)
                 .into_iter()
                 .flat_map(|v| v.iter())
                 .filter(|c| c.starts_with("history_"))
@@ -164,16 +165,16 @@ pub fn superposition_steps(
             // filter out children that are parents in the DAG
             let non_parent_history_children: Vec<String> = history_children
                 .into_iter()
-                .filter(|child| !dag.keys().any(|k| k != n_history && dag[k].contains(child)))
+                .filter(|child| !dag.keys().any(|k| k != lemma && dag[k].contains(child)))
                 .collect();
 
             if non_parent_history_children.is_empty() {
                 // no non-parent history children -> prove history itself
                 println!(
                     "   [WARN] No non-parent history children found for {}; proving history directly.",
-                    n_history
+                    lemma
                 );
-                single_children.push(n_history.to_string());
+                single_children.push(lemma.to_string());
                 proved_history = true;
             } else {
                 // use the non-parent history children as dependencies
@@ -186,7 +187,7 @@ pub fn superposition_steps(
     } else {
         // if not a history lemma, treat it as a single lemma
         // its own name is the dependency
-        vec![n_history.to_string()]
+        vec![lemma.to_string()]
     };
 
     // flag to check if any Vampire steps match the dependencies
@@ -274,7 +275,7 @@ pub fn extract_superposition_steps(
     gather_all_dependencies(lemma_step, &steps_map, &mut all_deps);
 
     let mut relevant_steps: BTreeMap<usize, SuperpositionStep> = BTreeMap::new();
-    
+
     for idx in &all_deps {
         if let Some(step) = steps_map.get(idx) {
             relevant_steps.insert(*idx, step.clone());
@@ -295,7 +296,7 @@ pub fn append_superposition_steps_as_lemmas(
         gather_all_dependencies(*seq_idx, steps, &mut all_deps);
 
         for dep_idx in all_deps {
-            let lemma_name = format!("single_lemma_{:04}", dep_idx);
+            let lemma_name = format!("lemma_{:04}", dep_idx);
             let formula = load_lemma(lemmas_dir, &lemma_name)?;
             append_as_axiom(tmp_file, &formula, &lemma_name);
         }
@@ -305,16 +306,16 @@ pub fn append_superposition_steps_as_lemmas(
 
 /// Recursively gather all sequential-indexed dependencies
 pub fn gather_all_dependencies(
-    n_history_step: usize,
+    lemma_step: usize,
     steps_map: &BTreeMap<usize, SuperpositionStep>,
     collected: &mut BTreeSet<usize>,
 ) {
-    if collected.contains(&n_history_step) {
+    if collected.contains(&lemma_step) {
         return;
     }
-    collected.insert(n_history_step);
+    collected.insert(lemma_step);
 
-    if let Some(step) = steps_map.get(&n_history_step) {
+    if let Some(step) = steps_map.get(&lemma_step) {
         for (_vamp_num, seq_idx) in &step.deps {
             if *seq_idx > 0 {
                 gather_all_dependencies(*seq_idx, steps_map, collected);
@@ -323,41 +324,82 @@ pub fn gather_all_dependencies(
     }
 }
 
+/// Extend extra_dependencies using the renaming map from prepend_superposition_steps
+pub fn extend_with_superposition_steps(
+    extra_dependencies: &mut Vec<(String, String)>,
+    superposition_steps: &BTreeMap<usize, SuperpositionStep>,
+    renaming: &BTreeMap<usize, String>, // local seq_idx -> global lemma name
+) {
+    for (seq_idx, step) in superposition_steps {
+        if let Some(name) = renaming.get(seq_idx) {
+            extra_dependencies.push((name.clone(), step.formula.clone()));
+        } else {
+            eprintln!("[WARN] Missing renaming for seq_idx {}", seq_idx);
+        }
+    }
+}
+
+/// Find the highest lemma index already present in `extra_dependencies`
+fn last_lemma_index(deps: &[(String, String)]) -> usize {
+    deps.iter()
+        .filter_map(|(name, _)| {
+            name.strip_prefix("lemma_")
+                .and_then(|n| n.parse::<usize>().ok())
+        })
+        .max()
+        .unwrap_or(0)
+}
+
 /// Prepend superposition steps and dependency formulas to a proof
-/// `axioms` is a list of (name, formula) tuples, used to resolve seq_idx == 0
+/// `axioms` is a list of (name, formula) tuples, treated as existing dependencies/axioms
+/// `derived_lemma_formula` is optional: the lemma we are proving in this step — it keeps its original name if Some
 pub fn prepend_superposition_steps(
     superposition_steps: &BTreeMap<usize, SuperpositionStep>,
-    axioms: &[(String, String)], // (name, formula)
-) -> String {
-    use crate::alpha_match::formulas_match;
-
+    axioms: &[(String, String)], // existing deps, treated as axioms
+    derived_lemma_formula: Option<&str>, // the lemma we are deriving, don't rename if Some
+) -> (String, BTreeMap<usize, String>) {
     println!("DEBUG: Axioms list:");
     for (name, formula) in axioms {
         println!("  {} => {}", name, formula);
+    }
+
+    // compute offset to continue lemma numbering
+    let offset = last_lemma_index(axioms);
+
+    // build local -> global renaming
+    let mut renaming: BTreeMap<usize, String> = BTreeMap::new();
+    for seq_idx in superposition_steps.keys() {
+        let name = if *seq_idx == 0 {
+            // seq_idx == 0 is always the axiom
+            "a1".to_string()
+        } else if let Some(derived_lemma) = derived_lemma_formula {
+            // check if this step is the derived lemma
+            let step = superposition_steps.get(seq_idx).unwrap();
+            if step.formula == derived_lemma || formulas_match(&step.formula, derived_lemma) {
+                derived_lemma.to_string()
+            } else {
+                format!("lemma_{:04}", offset + seq_idx)
+            }
+        } else {
+            // no derived lemma given, rename all
+            format!("lemma_{:04}", offset + seq_idx)
+        };
+        renaming.insert(*seq_idx, name);
     }
 
     let mut annotated_proof = String::new();
     annotated_proof.push_str("% === Superposition Steps ===\n");
 
     for (seq_idx, step) in superposition_steps {
-        // Resolve lemma name
-        let lemma_name = if *seq_idx == 0 {
-            axioms
-                .iter()
-                .find(|(_, f)| formulas_match(&step.formula, f))
-                .map(|(n, _)| n.clone())
-                .unwrap_or_else(|| "a1".to_string())
-        } else {
-            format!("lemma_{:04}", seq_idx)
-        };
+        let lemma_name = renaming.get(seq_idx).unwrap();
 
-        // Build dependencies list with formula
+        // build dependencies list
         let dep_list: Vec<String> = step
             .deps
             .iter()
             .map(|(_vnum, sidx)| {
                 if *sidx == 0 {
-                    // seq_idx 0 dependency → look in axioms
+                    // dependency is the axiom, look in axioms
                     if let Some((name, formula)) = axioms
                         .iter()
                         .find(|(_, f)| formulas_match(f, &step.formula))
@@ -371,17 +413,20 @@ pub fn prepend_superposition_steps(
                         "a1".to_string()
                     }
                 } else {
-                    // seq_idx > 0 → look in superposition_steps
-                    if let Some(dep_step) = superposition_steps.get(sidx) {
-                        format!("lemma_{:04}: {}", sidx, dep_step.formula)
-                    } else {
-                        format!("lemma_{:04}: UNKNOWN_FORMULA", sidx)
-                    }
+                    // dependency is another superposition step
+                    let dep_name = renaming
+                        .get(sidx)
+                        .cloned()
+                        .unwrap_or_else(|| format!("lemma_{:04}", sidx));
+                    let dep_formula = superposition_steps
+                        .get(sidx)
+                        .map(|s| s.formula.as_str())
+                        .unwrap_or("UNKNOWN_FORMULA");
+                    format!("{}: {}", dep_name, dep_formula)
                 }
             })
             .collect();
 
-        // Write the step itself
         annotated_proof.push_str(&format!(
             "% {}: {} | deps: {}\n",
             lemma_name,
@@ -391,5 +436,5 @@ pub fn prepend_superposition_steps(
     }
 
     annotated_proof.push_str("\n");
-    annotated_proof
+    (annotated_proof, renaming)
 }

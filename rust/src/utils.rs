@@ -143,8 +143,7 @@ pub fn append_as_axiom(file_path: &str, formula: &str, lemma_name: &str) {
     let axiom_text = format!("\nfof({}, axiom,\n{}\n).\n", lemma_name, quantified_formula);
 
     // append to file
-    let current_content = fs::read_to_string(file_path)
-        .expect("Failed to read tmp input file");
+    let current_content = fs::read_to_string(file_path).expect("Failed to read tmp input file");
     fs::write(file_path, format!("{}\n{}", current_content, axiom_text))
         .expect("Failed to append axiom");
 }
@@ -293,28 +292,34 @@ pub fn parse_used_lemmas(
     Ok(used)
 }
 
-/// Load a specific lemma (single, abstract, history) and extract its formula body
+/// Load a specific lemma (single, abstract, history) and extract its formula body.
+/// If lemma_name starts with "lemma_", treat it as "single_lemma_" for searching.
 pub fn load_lemma(lemmas_dir: &str, lemma_name: &str) -> Result<String, String> {
-    let subdir = if lemma_name.starts_with("single_lemma_") {
-        "single"
+    // determine subdirectory and possibly rename lemma for file search
+    let (subdir, file_lemma_name) = if lemma_name.starts_with("single_lemma_") {
+        ("single", lemma_name.to_string())
     } else if lemma_name.starts_with("history_lemma_") {
-        "history"
+        ("history", lemma_name.to_string())
     } else if lemma_name.starts_with("abstract_lemma_") {
-        "abstract"
+        ("abstract", lemma_name.to_string())
+    } else if lemma_name.starts_with("lemma_") {
+        // treat as single lemma
+        ("single", lemma_name.replacen("lemma_", "single_lemma_", 1))
     } else {
         return Err(format!("[ERROR] Unknown lemma type for {}", lemma_name));
     };
 
-    // strip prover suffix if present (_twee, _vampire, _egg)
-    let lemma_name = strip_prover_suffix(lemma_name);
+    // strip prover suffix (_twee, _vampire, _egg)
+    let file_lemma_name = strip_prover_suffix(&file_lemma_name);
 
+    // construct file path
     let file_path = Path::new(lemmas_dir)
         .join(subdir)
-        .join(format!("{}.p", lemma_name));
+        .join(format!("{}.p", file_lemma_name));
     if !file_path.exists() {
         return Err(format!(
             "[ERROR] File not found for lemma {} at {:?}",
-            lemma_name, file_path
+            file_lemma_name, file_path
         ));
     }
 
@@ -322,20 +327,13 @@ pub fn load_lemma(lemmas_dir: &str, lemma_name: &str) -> Result<String, String> 
         .to_str()
         .ok_or_else(|| format!("[ERROR] Failed to convert path to string: {:?}", file_path))?;
 
-    // determine internal tptp name
-    let internal_name = if lemma_name.starts_with("single_lemma_")
-        || lemma_name.starts_with("history_lemma_")
-        || lemma_name.starts_with("abstract_lemma_")
-    {
-        lemma_name
-            .replace("single_lemma_", "conjecture_")
-            .replace("history_lemma_", "conjecture_")
-            .replace("abstract_lemma_", "conjecture_")
-    } else {
-        return Err(format!("[ERROR] Unknown lemma type for {}", lemma_name));
-    };
+    // determine internal TPTP name
+    let internal_name = file_lemma_name
+        .replace("single_lemma_", "conjecture_")
+        .replace("history_lemma_", "conjecture_")
+        .replace("abstract_lemma_", "conjecture_");
 
-    // pass internal name to extract function
+    // extract formula body
     extract_tptp_formula_body(file_path_str, &internal_name)
         .map(|body| body.trim().to_string())
         .ok_or_else(|| {
