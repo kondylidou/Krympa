@@ -26,7 +26,10 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
             if status.success() {
                 Some(String::from_utf8_lossy(&output.stdout).to_string())
             } else {
-                eprintln!("[ERROR] Prover '{}' exited with error: {:?}", exe_path, status);
+                eprintln!(
+                    "[ERROR] Prover '{}' exited with error: {:?}",
+                    exe_path, status
+                );
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 eprintln!("[ERROR] Stderr: {}", stderr);
                 None

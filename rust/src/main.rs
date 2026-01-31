@@ -1,6 +1,6 @@
 mod alpha_match;
-mod dag;
 mod core;
+mod dag;
 mod minimize;
 mod prover_wrapper;
 mod run_vamp;
