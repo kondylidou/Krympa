@@ -188,11 +188,16 @@ pub fn try_minimize(
 
                 // handle Vampire-specific prepending
                 let root_proof_steps = if prover == "vampire" {
-                    if let Some(superposition_steps) = extract_superposition_steps(path, root_lemma)
+                    if let Some((superposition_steps, idx)) =
+                        extract_superposition_steps(path, root_lemma)
                     {
                         // prepend only the relevant Vampire steps and get the renaming
-                        let (proof, renaming) =
-                            prepend_superposition_steps(&superposition_steps, &extra_dependencies, Some(&root_formula));
+                        let (proof, renaming) = prepend_superposition_steps(
+                            &superposition_steps,
+                            &extra_dependencies,
+                            Some(&root_lemma),
+                            Some(idx),
+                        );
                         extend_with_superposition_steps(
                             &mut extra_dependencies,
                             &superposition_steps,
@@ -214,7 +219,7 @@ pub fn try_minimize(
                     &lemmas_dir,
                     None,
                     None,
-                    vec![(&root_formula, root_lemma)],
+                    vec![(root_lemma, &root_formula)],
                     &mut extra_dependencies, // we don't need them cause we don't prove anything else
                     None,
                 )?
@@ -265,10 +270,13 @@ pub fn try_minimize(
                             superposition_steps(dag_file, vampire_file, &lemmas_dir, candidate);
                         // in dependencies we will get itself (the single lemma)
                         // in this case we can ignore proved_history
-                        let (dependencies, superposition_steps, _) = match maybe_superposition {
-                            Some((deps, steps, ph)) => (deps, steps, ph),
-                            None => (vec![], BTreeMap::new(), false),
-                        };
+                        let (dependencies, superposition_steps, lemma, idx, _) =
+                            match maybe_superposition {
+                                Some((deps, steps, lemma, idx, ph)) => {
+                                    (deps, steps, lemma, idx, ph)
+                                }
+                                None => (vec![], BTreeMap::new(), None, None, false),
+                            };
                         let superposition_steps_count = superposition_steps.len();
 
                         // 2. Load dependency proofs
@@ -301,17 +309,18 @@ pub fn try_minimize(
                         let (start_proof, start_proof_steps) =
                             if total_dep_steps <= superposition_steps_count && total_dep_steps != 0
                             {
-                                for dep in &dependencies {
-                                    if let Ok(formula) = load_lemma(&lemmas_dir, dep) {
-                                        extra_dependencies.push((dep.clone(), formula));
-                                    }
-                                }
+                                // we don't need to add anything to extra_dependencies
+                                // TODO maybe merge dependencies and extra_dependencies
                                 (combined_dep_proof_text.clone(), total_dep_steps)
                             } else {
                                 // here the extra_dependencies are empty, we are at the start
                                 // we also don't care about renaming because it's the initial superposition steps
-                                let (sp_proof_text, renaming) =
-                                    prepend_superposition_steps(&superposition_steps, &Vec::new(), None);
+                                let (sp_proof_text, renaming) = prepend_superposition_steps(
+                                    &superposition_steps,
+                                    &Vec::new(),
+                                    lemma.as_deref(),
+                                    idx,
+                                );
                                 extend_with_superposition_steps(
                                     &mut extra_dependencies,
                                     &superposition_steps,
@@ -334,7 +343,7 @@ pub fn try_minimize(
                             } else {
                                 Some(&dependencies)
                             },
-                            vec![(&root_formula, root_lemma)],
+                            vec![(root_lemma, &root_formula)],
                             &mut extra_dependencies, // if Vampire found the shortest proof then we have the new Vampire lemmas here
                             Some(&root_lemma),
                         )?
@@ -357,7 +366,7 @@ pub fn try_minimize(
                             } else {
                                 Some(&dependencies)
                             },
-                            vec![(&root_formula, root_lemma)],
+                            vec![(root_lemma, &root_formula)],
                             &mut extra_dependencies, // the extra dependencies transfer here as axioms
                             None,
                         )?
@@ -428,7 +437,7 @@ pub fn try_minimize(
                                 &lemmas_dir,
                                 None,
                                 None,
-                                vec![(&root_formula, root_lemma), (&abstract_formula, candidate)], // abstract lemma as dependency
+                                vec![(root_lemma, &root_formula), (candidate, &abstract_formula)], // abstract lemma as dependency
                                 &mut extra_dependencies,
                                 Some(&root_lemma),
                             )?
@@ -443,7 +452,7 @@ pub fn try_minimize(
                                 &lemmas_dir,
                                 None,
                                 None,
-                                vec![(&root_formula, root_lemma), (&abstract_formula, candidate)], // abstract lemma as dependency
+                                vec![(root_lemma, &root_formula), (candidate, &abstract_formula)], // abstract lemma as dependency
                                 &mut extra_dependencies, // here they might become None as we won't find the abstracted lemma in a Vampire proof(?)
                                 None,
                             )?
@@ -522,11 +531,11 @@ pub fn try_minimize(
                 let maybe_superposition =
                     superposition_steps(dag_file, vampire_file, &lemmas_dir, n_history_lemma);
 
-                let (dependencies, superposition_steps, proved_history) = match maybe_superposition
-                {
-                    Some((deps, steps, ph)) => (deps, steps, ph),
-                    None => (vec![], BTreeMap::new(), false),
-                };
+                let (dependencies, superposition_steps, lemma, idx, proved_history) =
+                    match maybe_superposition {
+                        Some((deps, steps, lemma, idx, ph)) => (deps, steps, lemma, idx, ph),
+                        None => (vec![], BTreeMap::new(), None, None, false),
+                    };
                 let superposition_steps_count = superposition_steps.len();
 
                 // If the history lemma is proved by superposition, the
@@ -576,15 +585,14 @@ pub fn try_minimize(
                 // start lemmas
                 let (start_proof, start_proof_steps) =
                     if total_dep_steps <= superposition_steps_count && total_dep_steps != 0 {
-                        for dep in &dependencies {
-                            if let Ok(formula) = load_lemma(&lemmas_dir, dep) {
-                                extra_dependencies.push((dep.clone(), formula));
-                            }
-                        }
                         (combined_dep_proof_text.clone(), total_dep_steps)
                     } else {
-                        let (sp_proof_text, renaming) =
-                            prepend_superposition_steps(&superposition_steps, &Vec::new(), None);
+                        let (sp_proof_text, renaming) = prepend_superposition_steps(
+                            &superposition_steps,
+                            &Vec::new(),
+                            lemma.as_deref(),
+                            idx,
+                        );
                         extend_with_superposition_steps(
                             &mut extra_dependencies,
                             &superposition_steps,
@@ -611,7 +619,7 @@ pub fn try_minimize(
                     } else {
                         Some(&dependencies)
                     },
-                    vec![(&n_formula, &n_history_lemma)],
+                    vec![(&n_history_lemma, &n_formula)],
                     &mut extra_dependencies,
                     Some(&n_history_lemma),
                 )?
@@ -644,7 +652,7 @@ pub fn try_minimize(
                     } else {
                         Some(&dependencies)
                     },
-                    vec![(&n_formula, &n_history_lemma), (&root_formula, root_lemma)],
+                    vec![(&n_history_lemma, &n_formula), (root_lemma, &root_formula)],
                     &mut extra_dependencies,
                     Some(&root_lemma),
                 )?
@@ -667,7 +675,7 @@ pub fn try_minimize(
                     } else {
                         Some(&dependencies)
                     },
-                    vec![(&n_formula, &n_history_lemma), (&root_formula, root_lemma)],
+                    vec![(&n_history_lemma, &n_formula), (root_lemma, &root_formula)],
                     &mut extra_dependencies,
                     None,
                 )?
@@ -829,88 +837,101 @@ pub fn try_minimize(
     Ok("Minimization complete".into())
 }
 
-/// Generic lemma proving function
+/// Proves a lemma using Twee and Vampire, selecting the shorter proof.
+/// - `superposition_steps`: optional superposition steps to append
+/// - `dependencies`: optional dependencies (lemma names)
+/// - `axioms`: additional axioms to append
+/// - `extra_dependencies`: existing dependencies, will be extended with new lemmas
+/// - `conjecture`: optional lemma/conjecture to prove
 pub fn prove_lemma(
     input_file: &str,
     lemmas_dir: &str,
     superposition_steps: Option<&BTreeMap<usize, SuperpositionStep>>,
-    dependency_lemmas: Option<&[String]>,
-    axioms: Vec<(&str, &str)>,
+    dependencies: Option<&[String]>,                // names
+    axioms: Vec<(&str, &str)>,                      // (name, formula)
     extra_dependencies: &mut Vec<(String, String)>, // (name, formula)
     conjecture: Option<&str>,
 ) -> Result<Option<(String, usize)>, String> {
     let tmp_path = create_tmp_copy(input_file)?;
 
-    // 1.1. Add superposition steps if provided
+    // 1. Append superposition steps if provided
     if let Some(sp_steps) = superposition_steps {
         append_superposition_steps_as_lemmas(&tmp_path, sp_steps, lemmas_dir)?;
     }
-    // 1.2. Add dependency lemmas if provided
-    else if let Some(deps) = dependency_lemmas {
-        for dep in deps {
-            // load formula for each dependency
-            let formula =
-                load_lemma(lemmas_dir, dep).map_err(|_| format!("Missing lemma {}", dep))?;
-            append_as_axiom(&tmp_path, &formula, dep);
+
+    // 2. Append dependency lemmas
+    if let Some(deps) = dependencies {
+        for dep_name in deps {
+            let dep_formula = load_lemma(lemmas_dir, dep_name)
+                .map_err(|_| format!("Missing lemma {}", dep_name))?;
+            append_as_axiom(&tmp_path, &dep_formula, dep_name);
         }
     }
-    // 1.3. Add extra dependencies if any
+
+    // 3. Append extra dependencies
     if !extra_dependencies.is_empty() {
-        for (extra_dep, formula) in &mut *extra_dependencies {
-            append_as_axiom(&tmp_path, &formula, extra_dep);
+        for (name, formula) in extra_dependencies.iter() {
+            append_as_axiom(&tmp_path, formula, name);
         }
     }
 
-    // 2. Append additional axioms
-    for (formula, name) in axioms {
-        append_as_axiom(&tmp_path, formula, name);
+    // 4. Append additional axioms
+    if !axioms.is_empty() {
+        for (name, formula) in axioms.iter() {
+            append_as_axiom(&tmp_path, formula, name);
+        }
     }
 
-    // 3. Handle conjecture
-    let (_c_name, c_formula) = match conjecture {
-        Some(s) => {
-            let s = s.to_string();
-            promote_axiom_to_conjecture(&tmp_path, &s)?;
-            // load the formula so we have both
-            let formula =
-                load_lemma(lemmas_dir, &s).map_err(|_| format!("Cannot load lemma {}", s))?;
-            (s, formula)
-        }
-        None => {
-            // extract formula only
-            let formula = extract_conjecture_from_file(input_file)?;
-            let name = "conjecture".to_string(); // give it a default name
-            (name, formula)
-        }
+    // 5. Handle conjecture
+    let (c_name, c_formula) = if let Some(s) = conjecture {
+        let s = s.to_string();
+        promote_axiom_to_conjecture(&tmp_path, &s)?;
+        let formula = load_lemma(lemmas_dir, &s).map_err(|_| format!("Cannot load lemma {}", s))?;
+        (s, formula)
+    } else {
+        let formula = extract_conjecture_from_file(input_file)?;
+        ("conjecture".to_string(), formula)
     };
 
-    // 4. Run provers
+    // 6. Run provers
     let twee_proof = run_twee(&tmp_path);
-    // run Vampire and save proof to a file
-    let vampire_proof_file = format!("{}.vampire_proof", tmp_path); // we could strip the .p TODO but this is minor because this will be deleted
+    let vampire_proof_file = format!("{}.vampire_proof", tmp_path);
     run_vampire(&tmp_path, &vampire_proof_file);
     let vampire_proof_exists = Path::new(&vampire_proof_file).exists();
 
-    // 5. Select shorter proof
+    // 7. Select shorter proof
     let result = match (twee_proof, vampire_proof_exists) {
         // Twee + Vampire available
         (Some(tp), true) => {
             let t_len = proof_length_twee(&tp);
 
-            if let Some(sp_steps) = extract_superposition_steps(&vampire_proof_file, &c_formula) {
-                // prepend superposition steps and get renaming
-                let (vp, renaming) = prepend_superposition_steps(&sp_steps, extra_dependencies, Some(&c_formula));
-                let v_len = sp_steps.len();
+            // read Vampire proof text
+            let vp_text = fs::read_to_string(&vampire_proof_file)
+                .map_err(|_| "Failed to read Vampire proof file")?;
+            //let v_len = proof_length_vampire(&vp_text);
 
+            // TODO should we compare the proof by contradiction or the direct derivation?
+            // prepend superposition steps if they exist
+            if let Some((sp_steps, idx)) =
+                extract_superposition_steps(&vampire_proof_file, &c_formula)
+            {
+                let v_len = sp_steps.len();
                 if v_len < t_len {
-                    // extend extra_dependencies using renaming to avoid numbering collisions
+                    let (vp, renaming) = prepend_superposition_steps(
+                        &sp_steps,
+                        extra_dependencies,
+                        Some(&c_name),
+                        Some(idx),
+                    );
                     extend_with_superposition_steps(extra_dependencies, &sp_steps, &renaming);
                     Some((vp, v_len))
                 } else {
+                    // we will do a fallback here to be revised TODO
+                    // if we for some reason cannot extract superposition steps we will
+                    // fall back to the Twee proof
                     Some((tp, t_len))
                 }
             } else {
-                // Vampire unusable -> Twee only
                 Some((tp, t_len))
             }
         }
@@ -918,70 +939,58 @@ pub fn prove_lemma(
         // Twee only
         (Some(tp), false) => Some((tp.clone(), proof_length_twee(&tp))),
 
-        // Vampire only (but only via superposition!)
+        // Vampire only
         (None, true) => {
-            if let Some(sp_steps) = extract_superposition_steps(&vampire_proof_file, &c_formula) {
-                // prepend superposition steps and get renaming
-                let (vp, renaming) = prepend_superposition_steps(&sp_steps, extra_dependencies, Some(&c_formula));
+            let vp_text = fs::read_to_string(&vampire_proof_file)
+                .map_err(|_| "Failed to read Vampire proof file")?;
+            let v_len = proof_length_vampire(&vp_text);
 
-                // extend extra_dependencies using the renaming map
+            if let Some((sp_steps, idx)) =
+                extract_superposition_steps(&vampire_proof_file, &c_formula)
+            {
+                let (vp, renaming) = prepend_superposition_steps(
+                    &sp_steps,
+                    extra_dependencies,
+                    Some(&c_name),
+                    Some(idx),
+                );
                 extend_with_superposition_steps(extra_dependencies, &sp_steps, &renaming);
-
-                Some((vp, sp_steps.len()))
+                Some((vp, v_len))
             } else {
-                None
+                Some((vp_text, v_len))
             }
         }
 
         // no proof
         (None, false) => None,
     };
-    // 6. Cleanup tmp
+
+    // 8. Cleanup temporary file
     let _ = fs::remove_file(&tmp_path);
 
     Ok(result)
 }
 
-// // TODO this needs fixing!
-// /// Checks if a proof uses a lemma (Twee or Vampire)
-// pub fn proof_uses_lemma(proof: &str, lemma_name: &str) -> bool {
-//     proof.lines().any(|line| {
-//         let line = line.trim();
-
-//         // Twee match
-//         if line.contains(lemma_name)
-//             || line.contains(&format!("({},", lemma_name))
-//             || line.contains(&format!(" {} ", lemma_name))
-//         {
-//             return true;
-//         }
-
-//         // Vampire match (we assume its always a match cause of how Vampire works)
-//         if line.contains("[input]") {
-//             return true;
-//         }
-
-//         true
-//     })
-// }
-
+// AS NEEDS FIXING how lemmas are saved in the proof.. derived idx etc
+// TODO this needs fixing!
 /// Checks if a proof uses a lemma (Twee or Vampire)
-///
-/// - Accepts any lemma name: `lemma_0021`, `history_lemma_0021`, `single_lemma_0021`, etc.
-/// - Extracts the number part and searches for `lemma_XXXX` in the proof.
-/// - Returns true if the lemma number is mentioned anywhere.
 pub fn proof_uses_lemma(proof: &str, lemma_name: &str) -> bool {
-    // Extract the number from the lemma name using a regex
-    // e.g., "lemma_0021", "history_lemma_0021" -> "0021"
-    let re = Regex::new(r"(\d{1,4})$").unwrap(); // match 1–4 digits at the end
-    let lemma_number = match re.captures(lemma_name) {
-        Some(cap) => cap[1].parse::<usize>().unwrap_or(0),
-        None => return false, // can't extract number, assume not used
-    };
+    proof.lines().any(|line| {
+        let line = line.trim();
 
-    // build the normalized lemma string to search for
-    let lemma_str = format!("lemma_{:04}", lemma_number);
+        // Twee match
+        if line.contains(lemma_name)
+            || line.contains(&format!("({},", lemma_name))
+            || line.contains(&format!(" {} ", lemma_name))
+        {
+            return true;
+        }
 
-    // check if any line contains this lemma
-    proof.lines().any(|line| line.contains(&lemma_str))
+        // Vampire match (we assume its always a match cause of how Vampire works)
+        if line.contains("[input]") {
+            return true;
+        }
+
+        true
+    })
 }

@@ -281,20 +281,19 @@ mod tests {
 
     // TODO should they match?
     // only if X = Y?
-    #[test]
-    fn test_one() {
-        let twee1 = "(op(X, op(op(Y, op(op(Z, X), Y)), X)) = X)";
-        let twee2 = "(op(X, op(op(Y, op(op(Z, Y), Y)), X)) = X)";
-        assert!(formulas_match(twee1, twee2));
-    }
-
+    // #[test]
+    // fn test_one() {
+    //     let twee1 = "(op(X, op(op(Y, op(op(Z, X), Y)), X)) = X)";
+    //     let twee2 = "(op(X, op(op(Y, op(op(Z, Y), Y)), X)) = X)";
+    //     assert!(formulas_match(twee1, twee2));
+    // }
     #[test]
     fn test_vampire_formulas() {
         let formula1 = "! [X0, X1, X2, X3] : (op(X3,op(op(X1,op(op(X2,X1),X1)),X3)) = op(op(X3,op(op(X1,op(op(X2,X1),X1)),X3)),op(X0,op(op(X1,op(op(X2,X1),X1)),X0))))";
         let formula2 = "(op(X48,op(op(X45,op(op(X46,X45),X45)),X48)) = op(op(X48,op(op(X45,op(op(X46,X45),X45)),X48)),op(X44,op(op(X45,op(op(X46,X45),X45)),X44))))";
         println!("[DEBUG] formula 1 {}", normalize_formula_alpha(formula1));
         println!("[DEBUG] formula 2 {}", normalize_formula_alpha(formula2));
-        let mut map: HashMap<String, Term> = HashMap::new();
+        let _map: HashMap<String, Term> = HashMap::new();
 
         assert!(formulas_match(formula1, formula2));
     }
