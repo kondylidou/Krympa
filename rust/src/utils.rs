@@ -121,29 +121,35 @@ pub fn precompute_lemmas(
     })
 }
 
-/// Append a formula as an axiom to a file, adding quantifiers for Vampire lemmas
+/// Append a formula as an axiom to a file, adding quantifiers if needed
 pub fn append_as_axiom(file_path: &str, formula: &str, lemma_name: &str) {
     let formula = formula.trim();
 
-    // detect variables: assume variables are uppercase identifiers starting with X
-    let var_re = Regex::new(r"\b(X\d+)\b").unwrap();
-    let mut vars: BTreeSet<String> = BTreeSet::new();
-    for cap in var_re.captures_iter(formula) {
-        vars.insert(cap[1].to_string());
-    }
-
-    // build the quantified formula
-    let quantified_formula = if !vars.is_empty() {
-        let vars_list = vars.into_iter().collect::<Vec<_>>().join(", ");
-        format!("! [{}] : ({})", vars_list, formula)
-    } else {
+    // If the formula is already quantified, do NOT re-quantify
+    let quantified_formula = if formula.starts_with("!") {
         formula.to_string()
+    } else {
+        // detect variables: uppercase X<number>
+        let var_re = Regex::new(r"\b(X\d+)\b").unwrap();
+        let mut vars: BTreeSet<String> = BTreeSet::new();
+
+        for cap in var_re.captures_iter(formula) {
+            vars.insert(cap[1].to_string());
+        }
+
+        if !vars.is_empty() {
+            let vars_list = vars.into_iter().collect::<Vec<_>>().join(", ");
+            let q = format!("! [{}] : ({})", vars_list, formula);
+            q
+        } else {
+            formula.to_string()
+        }
     };
 
     let axiom_text = format!("\nfof({}, axiom,\n{}\n).\n", lemma_name, quantified_formula);
 
-    // append to file
     let current_content = fs::read_to_string(file_path).expect("Failed to read tmp input file");
+
     fs::write(file_path, format!("{}\n{}", current_content, axiom_text))
         .expect("Failed to append axiom");
 }

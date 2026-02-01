@@ -2,6 +2,7 @@ mod alpha_match;
 mod core;
 mod dag;
 mod minimize;
+mod proof_turnaround;
 mod prover_wrapper;
 mod run_vamp;
 mod superpose;
