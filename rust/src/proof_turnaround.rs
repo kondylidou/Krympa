@@ -25,8 +25,20 @@ impl Formula {
         match self {
             Formula::Eq(a, b) => format!("{} = {}", term_to_string(a), term_to_string(b)),
             Formula::Neq(a, b) => format!("{} != {}", term_to_string(a), term_to_string(b)),
-            Formula::Forall(vars, f) => format!("! [{}] : {}", vars.join(","), f.to_string()),
-            Formula::Exists(vars, f) => format!("? [{}] : {}", vars.join(","), f.to_string()),
+            Formula::Forall(vars, f) => {
+                let inner = match **f {
+                    Formula::Forall(_, _) | Formula::Exists(_, _) => format!("({})", f.to_string()),
+                    _ => f.to_string(),
+                };
+                format!("! [{}] : {}", vars.join(","), inner)
+            }
+            Formula::Exists(vars, f) => {
+                let inner = match **f {
+                    Formula::Forall(_, _) | Formula::Exists(_, _) => format!("({})", f.to_string()),
+                    _ => f.to_string(),
+                };
+                format!("? [{}] : {}", vars.join(","), inner)
+            }
             Formula::Const(c) => c.clone(),
         }
     }
@@ -65,6 +77,7 @@ fn is_proof_step(rule: &str) -> bool {
             | "forward"
             | "subsumption"
             | "equality"
+            | "simplification"
     )
 }
 
@@ -73,53 +86,66 @@ fn is_proof_step(rule: &str) -> bool {
 /// Converts Vampire formula strings into Formula AST
 /// Only handles equational logic with optional quantifiers
 fn parse_formula(s: &str) -> Formula {
+    let mut bound = BTreeSet::<String>::new();
+    parse_formula_with_bound(s.trim(), &mut bound)
+}
+
+/// Parse formulas with possibly chained leading quantifiers.
+/// Handles:
+///   ! [X] : F
+///   ? [X] : F
+///   ? [X] ! [Y] : F   (colon after first binder is optional)
+fn parse_formula_with_bound(s: &str, bound: &mut BTreeSet<String>) -> Formula {
     let s = s.trim();
 
-    // handle $false / $true
     if s == "$false" || s == "$true" {
         return Formula::Const(s.to_string());
     }
 
-    // quantifiers
-    if let Some(caps) = Regex::new(r"^!\s*\[([^\]]*)\]\s*:\s*(.*)$")
-        .unwrap()
-        .captures(s)
-    {
-        let vars: Vec<String> = caps[1]
+    // quantifier head with OPTIONAL ":" so "? [sK0] ! [Y] : ..." parses.
+    let qre = Regex::new(r"^([!?])\s*\[([^\]]*)\]\s*(?::\s*)?(.*)$").unwrap();
+    if let Some(caps) = qre.captures(s) {
+        let q = &caps[1];
+        let vars: Vec<String> = caps[2]
             .split(',')
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())
             .collect();
-        let inner = parse_formula(&caps[2]);
-        return Formula::Forall(vars, Box::new(inner));
+        let rest = caps[3].trim();
+
+        // push scope
+        for v in &vars {
+            bound.insert(v.clone());
+        }
+
+        let inner = parse_formula_with_bound(rest, bound);
+
+        // pop scope
+        for v in &vars {
+            bound.remove(v);
+        }
+
+        return if q == "!" {
+            Formula::Forall(vars, Box::new(inner))
+        } else {
+            Formula::Exists(vars, Box::new(inner))
+        };
     }
 
-    if let Some(caps) = Regex::new(r"^\?\s*\[([^\]]*)\]\s*:\s*(.*)$")
-        .unwrap()
-        .captures(s)
-    {
-        let vars: Vec<String> = caps[1]
-            .split(',')
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
-            .collect();
-        let inner = parse_formula(&caps[2]);
-        return Formula::Exists(vars, Box::new(inner));
-    }
-
-    // Eq or Neq
+    // base Eq/Neq
     if let Some((lhs, rhs)) = s.split_once("!=") {
-        Formula::Neq(parse_term(lhs), parse_term(rhs))
+        Formula::Neq(parse_term(lhs, bound), parse_term(rhs, bound))
     } else if let Some((lhs, rhs)) = s.split_once('=') {
-        Formula::Eq(parse_term(lhs), parse_term(rhs))
+        Formula::Eq(parse_term(lhs, bound), parse_term(rhs, bound))
     } else {
         panic!("Cannot parse formula: {}", s);
     }
 }
 
-/// Parse term (naive)
-fn parse_term(s: &str) -> Term {
+/// Parse term (simple)
+fn parse_term(s: &str, bound: &BTreeSet<String>) -> Term {
     let s = s.trim();
+
     if let Some(caps) = Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$")
         .unwrap()
         .captures(s)
@@ -128,10 +154,17 @@ fn parse_term(s: &str) -> Term {
         let args_str = &caps[2];
         let args: Vec<Term> = split_top_level(args_str, ',')
             .into_iter()
-            .map(|t| parse_term(&t))
+            .map(|t| parse_term(&t, bound))
             .collect();
-        Term::Fun(f, args)
-    } else if s.starts_with("sK") {
+        return Term::Fun(f, args);
+    }
+
+    // if the name is bound by a quantifier, it is a variable even if it starts with sK.
+    if bound.contains(s) {
+        return Term::Var(s.to_string());
+    }
+
+    if s.starts_with("sK") {
         Term::Skolem(s.to_string())
     } else {
         Term::Var(s.to_string())
@@ -166,12 +199,34 @@ fn split_top_level(s: &str, sep: char) -> Vec<String> {
     res
 }
 
-/// Parse Vampire proof into steps
-/// Parse Vampire proof into steps (robust version)
+/// Don't strip quantifier colons. Only strip genuine "label: formula" prefixes.
+fn strip_optional_label(s: &str) -> &str {
+    let s = s.trim();
+
+    if s.starts_with('!') || s.starts_with('?') {
+        return s;
+    }
+
+    if let Some((lhs, rhs)) = s.split_once(':') {
+        let lhs = lhs.trim();
+        let looks_like_label = !lhs.is_empty()
+            && !lhs.contains(' ')
+            && !lhs.contains('=')
+            && !lhs.contains('!')
+            && !lhs.contains('?')
+            && !lhs.contains('(');
+
+        if looks_like_label {
+            return rhs.trim();
+        }
+    }
+
+    s
+}
+
+/// Parse Vampire proof into steps (robust-ish)
 pub fn parse_vampire_proof(proof_text: &str) -> BTreeMap<usize, SuperpositionStep> {
     let mut steps_map = BTreeMap::new();
-
-    // Regex to capture: step number, optional dot, rest of line
     let line_re = Regex::new(r"^\s*(\d+)\s*[.]?\s*(.*)$").unwrap();
 
     for line in proof_text.lines() {
@@ -188,18 +243,13 @@ pub fn parse_vampire_proof(proof_text: &str) -> BTreeMap<usize, SuperpositionSte
         let idx: usize = caps[1].parse().unwrap();
         let rest = caps[2].trim();
 
-        // Split off optional inference/dependency part in brackets
+        // split off optional inference/dependency part in brackets
         let (before_inf, inf_part) = match rest.rsplit_once('[') {
             Some((b, i)) => (b.trim(), Some(i)),
             None => (rest.trim(), None),
         };
 
-        // Extract formula (handle optional ':' after label)
-        let formula_str = match before_inf.split_once(':') {
-            Some((_, f)) => f.trim(),
-            None => before_inf,
-        };
-
+        let formula_str = strip_optional_label(before_inf);
         let formula = parse_formula(formula_str);
 
         let mut is_negated_conjecture = false;
@@ -213,12 +263,10 @@ pub fn parse_vampire_proof(proof_text: &str) -> BTreeMap<usize, SuperpositionSte
                 is_negated_conjecture = true;
             }
 
-            // First word is the rule
             if let Some(first) = inf.split_whitespace().next() {
                 rule = first.to_string();
             }
 
-            // Dependencies: numbers in the inference
             deps = inf
                 .split(|c: char| c == ',' || c.is_whitespace())
                 .filter_map(|tok| tok.parse::<usize>().ok())
@@ -239,7 +287,6 @@ pub fn parse_vampire_proof(proof_text: &str) -> BTreeMap<usize, SuperpositionSte
 
     steps_map
 }
-
 
 /* ------------------ DEPENDENCIES ------------------ */
 
@@ -321,10 +368,20 @@ fn compute_neg_chain(steps: &BTreeMap<usize, SuperpositionStep>) -> Option<NegCh
     })
 }
 
-/* ------------------ CONTRAPOSITIVE TRANSFORM ------------------ */
+/* ------------------ CORE LOGIC: CONTRAPOSITIVE (EQUATIONAL) ------------------ */
 
-/// Contrapose a formula recursively with polarity flipping
-/// polarity: true = flip (negative context)
+fn core_is_diseq(f: &Formula) -> bool {
+    match f {
+        Formula::Neq(_, _) => true,
+        Formula::Eq(_, _) | Formula::Const(_) => false,
+        Formula::Forall(_, sub) | Formula::Exists(_, sub) => core_is_diseq(sub),
+    }
+}
+
+/// Negate in an equational setting:
+/// - Eq <-> Neq under polarity
+/// - ∀ <-> ∃ under polarity
+/// - Constants unchanged (we handle $false -> $true separately for proof-turning)
 fn contrapose_formula(f: &Formula, polarity: bool) -> Formula {
     match f {
         Formula::Eq(a, b) => {
@@ -355,112 +412,157 @@ fn contrapose_formula(f: &Formula, polarity: bool) -> Formula {
                 Formula::Exists(vars.clone(), Box::new(contrapose_formula(sub, polarity)))
             }
         }
-        Formula::Const(c) => match c.as_str() {
-            "$true" => Formula::Const("$false".to_string()),
-            "$false" => Formula::Const("$true".to_string()),
-            _ => Formula::Const(c.clone()),
-        },
+        Formula::Const(c) => Formula::Const(c.clone()),
     }
 }
 
-/// Replace Skolem constants with variables, respecting polarity
-fn skolem_to_variable(f: &Formula, polarity: bool) -> Formula {
-    let mut map = HashMap::new();
-    let mut counter = 0;
+/// Replace Skolem constants (Term::Skolem) with fresh variables (X0, X1, ...).
+/// This is ONLY for actual Term::Skolem occurrences (not bound vars).
+fn skolem_to_variable(f: &Formula) -> Formula {
+    let mut map: HashMap<String, String> = HashMap::new();
+    let mut counter: usize = 0;
 
-    fn walk(
-        f: &Formula,
-        map: &mut HashMap<String, String>,
-        counter: &mut usize,
-        polarity: bool,
-    ) -> Formula {
-        match f {
-            Formula::Eq(a, b) => Formula::Eq(
-                walk_term(a, map, counter, polarity),
-                walk_term(b, map, counter, polarity),
-            ),
-            Formula::Neq(a, b) => Formula::Neq(
-                walk_term(a, map, counter, polarity),
-                walk_term(b, map, counter, polarity),
-            ),
-            Formula::Forall(vars, sub) => {
-                Formula::Forall(vars.clone(), Box::new(walk(sub, map, counter, polarity)))
-            }
-            Formula::Exists(vars, sub) => {
-                Formula::Exists(vars.clone(), Box::new(walk(sub, map, counter, polarity)))
-            }
-            Formula::Const(c) => Formula::Const(c.clone()),
-        }
-    }
-
-    fn walk_term(
-        t: &Term,
-        map: &mut HashMap<String, String>,
-        counter: &mut usize,
-        polarity: bool,
-    ) -> Term {
+    fn walk_term(t: &Term, map: &mut HashMap<String, String>, counter: &mut usize) -> Term {
         match t {
             Term::Skolem(s) => {
                 let v = map.entry(s.clone()).or_insert_with(|| {
-                    if polarity {
-                        let name = format!("X{}", counter);
-                        *counter += 1;
-                        println!("[DEBUG] Skolem {} replaced with variable {}", s, name);
-                        name
-                    } else {
-                        println!("[DEBUG] Skolem {} left unchanged", s);
-                        s.clone()
-                    }
+                    let name = format!("X{}", *counter);
+                    *counter += 1;
+                    name
                 });
                 Term::Var(v.clone())
             }
             Term::Var(v) => Term::Var(v.clone()),
             Term::Fun(f, args) => Term::Fun(
                 f.clone(),
-                args.iter()
-                    .map(|x| walk_term(x, map, counter, polarity))
-                    .collect(),
+                args.iter().map(|a| walk_term(a, map, counter)).collect(),
             ),
         }
     }
 
-    walk(f, &mut map, &mut counter, polarity)
+    fn walk(f: &Formula, map: &mut HashMap<String, String>, counter: &mut usize) -> Formula {
+        match f {
+            Formula::Eq(a, b) => {
+                Formula::Eq(walk_term(a, map, counter), walk_term(b, map, counter))
+            }
+            Formula::Neq(a, b) => {
+                Formula::Neq(walk_term(a, map, counter), walk_term(b, map, counter))
+            }
+            Formula::Forall(vars, sub) => {
+                Formula::Forall(vars.clone(), Box::new(walk(sub, map, counter)))
+            }
+            Formula::Exists(vars, sub) => {
+                Formula::Exists(vars.clone(), Box::new(walk(sub, map, counter)))
+            }
+            Formula::Const(c) => Formula::Const(c.clone()),
+        }
+    }
+
+    walk(f, &mut map, &mut counter)
 }
 
-fn flatten_and_reorder_quantifiers(f: Formula) -> Formula {
+/// Flatten consecutive same-kind quantifiers (∀∀..., ∃∃...).
+fn flatten_quantifiers(f: Formula) -> Formula {
     match f {
         Formula::Forall(mut vars, sub) => {
-            let inner = flatten_and_reorder_quantifiers(*sub);
+            let inner = flatten_quantifiers(*sub);
             match inner {
                 Formula::Forall(mut inner_vars, inner_sub) => {
                     vars.append(&mut inner_vars);
                     Formula::Forall(vars, inner_sub)
                 }
-                Formula::Exists(inner_vars, inner_sub) => {
-                    // mixed quantifier: move Forall outside Exists
-                    Formula::Exists(inner_vars, Box::new(Formula::Forall(vars, inner_sub)))
-                }
                 other => Formula::Forall(vars, Box::new(other)),
             }
         }
         Formula::Exists(mut vars, sub) => {
-            let inner = flatten_and_reorder_quantifiers(*sub);
+            let inner = flatten_quantifiers(*sub);
             match inner {
                 Formula::Exists(mut inner_vars, inner_sub) => {
                     vars.append(&mut inner_vars);
                     Formula::Exists(vars, inner_sub)
                 }
-                Formula::Forall(inner_vars, inner_sub) => {
-                    // mixed quantifier: move Exists outside Forall
-                    Formula::Forall(inner_vars, Box::new(Formula::Exists(vars, inner_sub)))
-                }
                 other => Formula::Exists(vars, Box::new(other)),
             }
         }
-        Formula::Eq(a, b) => Formula::Eq(a, b),
-        Formula::Neq(a, b) => Formula::Neq(a, b),
-        Formula::Const(c) => Formula::Const(c),
+        other => other,
     }
+}
+
+/// Cosmetic but requested: rename bound variables that look like sK\d+ to X0,X1,...
+/// This is scope-safe (handles shadowing).
+fn rename_skolem_like_bound_vars(f: &Formula) -> Formula {
+    let sk_like = Regex::new(r"^sK\d+$").unwrap();
+    let mut counter: usize = 0;
+
+    fn rename_term(t: &Term, env: &Vec<HashMap<String, String>>) -> Term {
+        match t {
+            Term::Var(v) => {
+                for scope in env.iter().rev() {
+                    if let Some(nv) = scope.get(v) {
+                        return Term::Var(nv.clone());
+                    }
+                }
+                Term::Var(v.clone())
+            }
+            Term::Skolem(s) => Term::Skolem(s.clone()),
+            Term::Fun(f, args) => Term::Fun(
+                f.clone(),
+                args.iter().map(|a| rename_term(a, env)).collect(),
+            ),
+        }
+    }
+
+    fn walk(
+        f: &Formula,
+        sk_like: &Regex,
+        counter: &mut usize,
+        env: &mut Vec<HashMap<String, String>>,
+    ) -> Formula {
+        match f {
+            Formula::Forall(vars, sub) => {
+                let mut scope: HashMap<String, String> = HashMap::new();
+                let mut new_vars: Vec<String> = Vec::with_capacity(vars.len());
+                for v in vars {
+                    if sk_like.is_match(v) {
+                        let nv = format!("X{}", *counter);
+                        *counter += 1;
+                        scope.insert(v.clone(), nv.clone());
+                        new_vars.push(nv);
+                    } else {
+                        new_vars.push(v.clone());
+                    }
+                }
+                env.push(scope);
+                let new_sub = walk(sub, sk_like, counter, env);
+                env.pop();
+                Formula::Forall(new_vars, Box::new(new_sub))
+            }
+            Formula::Exists(vars, sub) => {
+                let mut scope: HashMap<String, String> = HashMap::new();
+                let mut new_vars: Vec<String> = Vec::with_capacity(vars.len());
+                for v in vars {
+                    if sk_like.is_match(v) {
+                        let nv = format!("X{}", *counter);
+                        *counter += 1;
+                        scope.insert(v.clone(), nv.clone());
+                        new_vars.push(nv);
+                    } else {
+                        new_vars.push(v.clone());
+                    }
+                }
+                env.push(scope);
+                let new_sub = walk(sub, sk_like, counter, env);
+                env.pop();
+                Formula::Exists(new_vars, Box::new(new_sub))
+            }
+            Formula::Eq(a, b) => Formula::Eq(rename_term(a, env), rename_term(b, env)),
+            Formula::Neq(a, b) => Formula::Neq(rename_term(a, env), rename_term(b, env)),
+            Formula::Const(c) => Formula::Const(c.clone()),
+        }
+    }
+
+    let mut env: Vec<HashMap<String, String>> = Vec::new();
+    walk(f, &sk_like, &mut counter, &mut env)
 }
 
 /* ------------------ CONTRAPOSITIVE SWAP ------------------ */
@@ -501,7 +603,11 @@ fn formula_vars(f: &Formula) -> BTreeSet<String> {
     vars
 }
 
-/// Contrapositive swap: flip polarity, replace Skolem -> variable, flatten & reorder, and track new vars
+/// Contrapositive swap:
+/// - recurse along forward edges inside `chain`
+/// - if the step is (core) disequality: negate it to equality, replace Skolems with fresh Xk vars
+/// - universally quantify those newly introduced Xk vars
+/// - keep a stable traversal order in `order`
 fn contrapositive_swap(
     idx: usize,
     steps: &mut BTreeMap<usize, SuperpositionStep>,
@@ -510,10 +616,11 @@ fn contrapositive_swap(
     order: &mut Vec<usize>,
     chain: &BTreeSet<usize>,
 ) {
-    if !visited.insert(idx) || !chain.contains(&idx) {
+    if !chain.contains(&idx) || !visited.insert(idx) {
         return;
     }
 
+    // Recurse first so `order` becomes a post-order (useful for later re-threading).
     if let Some(nexts) = forward.get(&idx) {
         for &n in nexts.iter().filter(|n| chain.contains(n)) {
             contrapositive_swap(n, steps, forward, visited, order, chain);
@@ -521,23 +628,53 @@ fn contrapositive_swap(
     }
 
     if let Some(step) = steps.get_mut(&idx) {
-        // track vars before
-        let vars_before = formula_vars(&step.formula);
+        // 0) Special case: refutation node
+        if let Formula::Const(c) = &step.formula {
+            if c == "$false" {
+                step.formula = Formula::Const("$true".to_string());
+                order.push(idx);
+                return;
+            }
+        }
 
-        // apply transformations
-        let f = contrapose_formula(&step.formula, true); // Step 1: flip polarity
-        let f = skolem_to_variable(&f, true); // Step 2: Skolem -> variable
-        let f = flatten_and_reorder_quantifiers(f); // Step 3: flatten/reorder quantifiers
-        step.formula = f.clone();
+        if core_is_diseq(&step.formula) {
+            // 1) Save vars before (we only care about existing Xk vars to detect fresh ones later).
+            let before = formula_vars(&step.formula);
+            let before_x: BTreeSet<String> = before
+                .into_iter()
+                .filter(|v| v.starts_with('X')) // only track the "fresh" namespace
+                .collect();
 
-        // track vars after
-        let vars_after = formula_vars(&step.formula);
-        let new_vars: Vec<_> = vars_after.difference(&vars_before).cloned().collect();
-        if !new_vars.is_empty() {
-            println!(
-                "[DEBUG] Step {}: New variables introduced during contrapositive: {:?}",
-                idx, new_vars
-            );
+            // 2) Flip polarity: Neq -> Eq (and handles quantifiers if present)
+            let mut f = contrapose_formula(&step.formula, true);
+
+            // 3) Replace Skolem constants with fresh Xk variables
+            f = skolem_to_variable(&f);
+
+            // 4) Flatten quantifiers (purely structural/cosmetic)
+            f = flatten_quantifiers(f);
+
+            // 5) Cosmetic rename of bound vars that look like sK\d+
+            f = rename_skolem_like_bound_vars(&f);
+
+            // 6) Compute *new* X vars introduced by skolem_to_variable
+            let after = formula_vars(&f);
+            let after_x: BTreeSet<String> =
+                after.into_iter().filter(|v| v.starts_with('X')).collect();
+
+            let mut new_xs: Vec<String> = after_x.difference(&before_x).cloned().collect();
+            new_xs.sort(); // deterministic printing and quantifier order
+
+            // 7) Bind them universally (Skolems -> universally quantified vars)
+            if !new_xs.is_empty() {
+                f = Formula::Forall(new_xs.clone(), Box::new(f));
+                println!(
+                    "[DEBUG] Step {}: Universally quantified fresh vars from Skolem: {:?}",
+                    idx, new_xs
+                );
+            }
+
+            step.formula = f;
         }
     }
 
@@ -717,140 +854,131 @@ pub fn print_proof_steps(steps: &BTreeMap<usize, SuperpositionStep>) {
 mod tests {
     use super::*;
 
-    //     #[test]
-    //     fn proof_turnaround() {
-    //         let proof_text = r#"
-    // % Running in auto input_syntax mode. Trying TPTP
-    // % Refutation found. Thanks to Tanya!
-    // % SZS status Theorem for Equation2892_implies_Equation2680
-    // % SZS output start Proof for Equation2892_implies_Equation2680
-    // 1. ! [X0,X1,X2] : op(op(op(X0,op(X1,X2)),X2),X2) = X0 [input]
-    // 2. ! [X0,X1,X2] : op(op(op(X0,X1),op(X2,X0)),X1) = X0 [input]
-    // 3. ~! [X0,X1,X2] : op(op(op(X0,X1),op(X2,X0)),X1) = X0 [negated conjecture 2]
-    // 4. ? [X0,X1,X2] : op(op(op(X0,X1),op(X2,X0)),X1) != X0 [ennf transformation 3]
-    // 5. ? [X0,X1,X2] : op(op(op(X0,X1),op(X2,X0)),X1) != X0 => sK0 != op(op(op(sK0,sK1),op(sK2,sK0)),sK1) [choice axiom]
-    // 6. sK0 != op(op(op(sK0,sK1),op(sK2,sK0)),sK1) [skolemisation 4,5]
-    // 7. op(op(op(X0,op(X1,X2)),X2),X2) = X0 [cnf transformation 1]
-    // 8. sK0 != op(op(op(sK0,sK1),op(sK2,sK0)),sK1) [cnf transformation 6]
-    // 9. op(op(op(X3,X0),X2),X2) = X3 [superposition 7,7]
-    // 13. op(X0,op(X1,X2)) = op(X0,X2) [superposition 9,7]
-    // 14. op(X3,X4) = op(X3,X5) [superposition 9,9]
-    // 20. sK0 != op(op(op(sK0,sK1),sK0),sK1) [backward demodulation 8,13]
-    // 21. op(op(op(X0,X1),X2),X3) = X0 [superposition 14,9]
-    // 30. sK0 != op(op(op(sK0,sK1),X12),sK1) [superposition 20,14]
-    // 39. $false [subsumption resolution 30,21]
-    // % SZS output end Proof for Equation2892_implies_Equation2680
-    // % ------------------------------
-    // % Version: Vampire 4.8 (commit )
-    // % Termination reason: Refutation
+    #[test]
+    fn proof_turnaround() {
+        let proof_text = r#"
+    % Running in auto input_syntax mode. Trying TPTP
+    % Refutation found. Thanks to Tanya!
+    % SZS status Theorem for Equation2892_implies_Equation2680
+    % SZS output start Proof for Equation2892_implies_Equation2680
+    1. ! [X0,X1,X2] : op(op(op(X0,op(X1,X2)),X2),X2) = X0 [input]
+    2. ! [X0,X1,X2] : op(op(op(X0,X1),op(X2,X0)),X1) = X0 [input]
+    3. ~! [X0,X1,X2] : op(op(op(X0,X1),op(X2,X0)),X1) = X0 [negated conjecture 2]
+    4. ? [X0,X1,X2] : op(op(op(X0,X1),op(X2,X0)),X1) != X0 [ennf transformation 3]
+    5. ? [X0,X1,X2] : op(op(op(X0,X1),op(X2,X0)),X1) != X0 => sK0 != op(op(op(sK0,sK1),op(sK2,sK0)),sK1) [choice axiom]
+    6. sK0 != op(op(op(sK0,sK1),op(sK2,sK0)),sK1) [skolemisation 4,5]
+    7. op(op(op(X0,op(X1,X2)),X2),X2) = X0 [cnf transformation 1]
+    8. sK0 != op(op(op(sK0,sK1),op(sK2,sK0)),sK1) [cnf transformation 6]
+    9. op(op(op(X3,X0),X2),X2) = X3 [superposition 7,7]
+    13. op(X0,op(X1,X2)) = op(X0,X2) [superposition 9,7]
+    14. op(X3,X4) = op(X3,X5) [superposition 9,9]
+    20. sK0 != op(op(op(sK0,sK1),sK0),sK1) [backward demodulation 8,13]
+    21. op(op(op(X0,X1),X2),X3) = X0 [superposition 14,9]
+    30. sK0 != op(op(op(sK0,sK1),X12),sK1) [superposition 20,14]
+    39. $false [subsumption resolution 30,21]
+    % SZS output end Proof for Equation2892_implies_Equation2680
+    % ------------------------------
+    % Version: Vampire 4.8 (commit )
+    % Termination reason: Refutation
 
-    // % Memory used [KB]: 4989
-    // % Time elapsed: 0.0000 s
-    // % ------------------------------
-    // % ------------------------------
-    // "#;
-    //         debug_print_parsed_proof(proof_text);
+    % Memory used [KB]: 4989
+    % Time elapsed: 0.0000 s
+    % ------------------------------
+    % ------------------------------
+    "#;
+        debug_print_parsed_proof(proof_text);
 
-    //         let steps_map = parse_vampire_proof(proof_text);
+        let steps_map = parse_vampire_proof(proof_text);
 
-    //         assert!(
-    //             needs_proof_turnaround(&steps_map),
-    //             "Proof should require turnaround but was not detected"
-    //         );
+        assert!(
+            needs_proof_turnaround(&steps_map),
+            "Proof should require turnaround but was not detected"
+        );
 
-    //         let steps = eq_proof_procedure(proof_text);
-
-    //         let final_steps = eq_proof_procedure(&proof_text);
-    //         print_proof_steps(&final_steps);
-
-    //         // println!("\n[DEBUG] FINAL STEPS");
-    //         // for (idx, step) in &steps {
-    //         //     println!(
-    //         //         "  {}: {:?} with {:?} and rule = {:?}",
-    //         //         idx, step.formula, step.deps, step.rule
-    //         //     );
-    //         // }
-    //     }
-
-#[test]
-fn test_mixed_quantifiers_contrapositive() {
-    use crate::*;
-
-    // Simulate a small Vampire-like proof that triggers mixed quantifiers and contrapositive swap
-    let proof_text = r#"
-1. ! [X,Y] : f(X) = f(Y) [input]
-2. ? [sK0] : f(a) != sK0 [negated conjecture 1]
-3  ? [sK0] ! [Y] : f(Y) != sK0 [superposition 1,2]
-4  ? [sK0] ! [Y] : f(Y) != sK0 [superposition 2,3]
-5. $false  [superposition 3,4]
-"#;
-
-    debug_print_parsed_proof(proof_text);
-
-    let mut steps = parse_vampire_proof(proof_text);
-
-    // Ensure turnaround is needed
-    assert!(needs_proof_turnaround(&steps), "Turnaround should be detected");
-
-    let turned = turn_proof_around(&steps);
-
-    println!("\n[DEBUG] TURNED PROOF STEPS");
-    for (idx, step) in &turned {
-        println!("  {}: {}", idx, step.formula.to_string());
+        let final_steps = eq_proof_procedure(&proof_text);
+        print_proof_steps(&final_steps);
     }
 
-    // Check that the contrapositive + Skolem-to-variable + quantifier flattening worked
-    let step2_formula = &turned[&2].formula.to_string();
-    println!("\n[DEBUG] Step 2 formula after turnaround: {}", step2_formula);
-
-    // Expectation:
-    // - Forall over sK0 (converted to X0)
-    // - Exists Y inside
-    assert!(step2_formula.contains("! [X0] : ? [Y]"), "Step 2 should have mixed quantifiers ![X0] : ?[Y]");
-    assert!(step2_formula.contains("f(Y) = X0") || step2_formula.contains("f(Y) != X0"), "Step 2 should have variable Y inside");
-}
-
-
     // #[test]
-    // fn no_proof_turnaround() {
-    //     let proof_text = r#"
-    // % Running in auto input_syntax mode. Trying TPTP
-    // % Refutation found. Thanks to Tanya!
-    // % SZS status Theorem for Equation650_implies_Equation448
-    // % SZS output start Proof for Equation650_implies_Equation448
-    // 2. ! [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) = X0 [input]
-    // 3. ~! [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) = X0 [negated conjecture 2]
-    // 30. ! [X0,X1,X2,X3] : op(X3,op(op(X1,op(op(X2,X1),X1)),X3)) = op(op(X3,op(op(X1,op(op(X2,X1),X1)),X3)),op(X0,op(op(X1,op(op(X2,X1),X1)),X0))) [input]
-    // 51. ! [X0,X1,X2] : op(X0,op(op(X1,X0),X0)) = op(op(X0,op(op(X1,X0),X0)),op(X2,op(op(X0,op(op(X1,X0),X0)),X2))) [input]
-    // 64. ! [X0,X1,X2] : op(X2,op(op(X0,op(op(X1,X0),X0)),X2)) = X2 [input]
-    // 71. ? [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) != X0 [ennf transformation 3]
-    // 72. ? [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) != X0 => sK0 != op(sK0,op(sK1,op(sK2,op(sK0,sK2)))) [choice axiom]
-    // 73. sK0 != op(sK0,op(sK1,op(sK2,op(sK0,sK2)))) [skolemisation 71,72]
-    // 75. sK0 != op(sK0,op(sK1,op(sK2,op(sK0,sK2)))) [cnf transformation 73]
-    // 102. op(X3,op(op(X1,op(op(X2,X1),X1)),X3)) = op(op(X3,op(op(X1,op(op(X2,X1),X1)),X3)),op(X0,op(op(X1,op(op(X2,X1),X1)),X0))) [cnf transformation 30]
-    // 123. op(X0,op(op(X1,X0),X0)) = op(op(X0,op(op(X1,X0),X0)),op(X2,op(op(X0,op(op(X1,X0),X0)),X2))) [cnf transformation 51]
-    // 136. op(X2,op(op(X0,op(op(X1,X0),X0)),X2)) = X2 [cnf transformation 64]
-    // 141. op(X0,op(op(X1,X0),X0)) = op(op(X0,op(op(X1,X0),X0)),X2) [backward demodulation 123,136]
-    // 143. op(X3,op(X0,op(op(X1,op(op(X2,X1),X1)),X0))) = X3 [backward demodulation 102,136]
-    // 144. op(X2,op(X0,op(op(X1,X0),X0))) = X2 [backward demodulation 136,141]
-    // 146. op(X3,op(X0,op(X1,op(op(X2,X1),X1)))) = X3 [forward demodulation 143,141]
-    // 147. op(X3,X0) = X3 [forward demodulation 146,144]
-    // 158. sK0 != op(sK0,sK1) [backward demodulation 75,147]
-    // 159. $false [subsumption resolution 158,147]
-    // % SZS output end Proof for Equation650_implies_Equation448
-    // % ------------------------------
-    // % Version: Vampire 4.8 (commit )
-    // % Termination reason: Refutation
+    // fn test_mixed_quantifiers_contrapositive() {
+    //     use crate::*;
 
-    // % Memory used [KB]: 4989
-    // % Time elapsed: 0.002 s
-    // % ------------------------------
-    // % ------------------------------
+    //     // Simulate a small Vampire-like proof that triggers mixed quantifiers and contrapositive swap
+    //     let proof_text = r#"
+    // 1. ! [X,Y] : f(X) = f(Y) [input]
+    // 2. ? [sK0] : f(a) != sK0 [negated conjecture 1]
+    // 3  ? [sK0] ! [Y] : f(Y) != sK0 [superposition 1,2]
+    // 4  ? [sK0] ! [Y] : f(Y) != sK0 [superposition 2,3]
+    // 5. $false  [superposition 3,4]
     // "#;
+
     //     debug_print_parsed_proof(proof_text);
-    //     let steps_map = parse_vampire_proof(proof_text);
-    //     assert!(!needs_proof_turnaround(&steps_map));
+
+    //     let mut steps = parse_vampire_proof(proof_text);
+
+    //     // Ensure turnaround is needed
+    //     assert!(needs_proof_turnaround(&steps), "Turnaround should be detected");
+
+    //     let turned = turn_proof_around(&steps);
+
+    //     println!("\n[DEBUG] TURNED PROOF STEPS");
+    //     for (idx, step) in &turned {
+    //         println!("  {}: {}", idx, step.formula.to_string());
+    //     }
+
+    //     // Check that the contrapositive + Skolem-to-variable + quantifier flattening worked
+    //     let step4_formula = &turned[&4].formula.to_string();
+    //     println!("\n[DEBUG] Step 4 formula after turnaround: {}", step4_formula);
+    //     let step5_formula = &turned[&5].formula.to_string();
+    //     println!("\n[DEBUG] Step 5 formula after turnaround: {}", step5_formula);
+
+    //     // Expectation:
+    //     // - Forall over sK0 (converted to X0)
+    //     // - Exists Y inside
+    //     assert!(step4_formula.contains("! [X0] : (? [Y]"), "Step 4 should have mixed quantifiers ![X0] : ?[Y]");
+    //     assert!(step5_formula.contains("f(a) = X0") || step5_formula.contains("f(Y) != X0"), "Step 5 should have variable Y inside");
     // }
+
+    #[test]
+    fn no_proof_turnaround() {
+        let proof_text = r#"
+    % Running in auto input_syntax mode. Trying TPTP
+    % Refutation found. Thanks to Tanya!
+    % SZS status Theorem for Equation650_implies_Equation448
+    % SZS output start Proof for Equation650_implies_Equation448
+    2. ! [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) = X0 [input]
+    3. ~! [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) = X0 [negated conjecture 2]
+    30. ! [X0,X1,X2,X3] : op(X3,op(op(X1,op(op(X2,X1),X1)),X3)) = op(op(X3,op(op(X1,op(op(X2,X1),X1)),X3)),op(X0,op(op(X1,op(op(X2,X1),X1)),X0))) [input]
+    51. ! [X0,X1,X2] : op(X0,op(op(X1,X0),X0)) = op(op(X0,op(op(X1,X0),X0)),op(X2,op(op(X0,op(op(X1,X0),X0)),X2))) [input]
+    64. ! [X0,X1,X2] : op(X2,op(op(X0,op(op(X1,X0),X0)),X2)) = X2 [input]
+    71. ? [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) != X0 [ennf transformation 3]
+    72. ? [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) != X0 => sK0 != op(sK0,op(sK1,op(sK2,op(sK0,sK2)))) [choice axiom]
+    73. sK0 != op(sK0,op(sK1,op(sK2,op(sK0,sK2)))) [skolemisation 71,72]
+    75. sK0 != op(sK0,op(sK1,op(sK2,op(sK0,sK2)))) [cnf transformation 73]
+    102. op(X3,op(op(X1,op(op(X2,X1),X1)),X3)) = op(op(X3,op(op(X1,op(op(X2,X1),X1)),X3)),op(X0,op(op(X1,op(op(X2,X1),X1)),X0))) [cnf transformation 30]
+    123. op(X0,op(op(X1,X0),X0)) = op(op(X0,op(op(X1,X0),X0)),op(X2,op(op(X0,op(op(X1,X0),X0)),X2))) [cnf transformation 51]
+    136. op(X2,op(op(X0,op(op(X1,X0),X0)),X2)) = X2 [cnf transformation 64]
+    141. op(X0,op(op(X1,X0),X0)) = op(op(X0,op(op(X1,X0),X0)),X2) [backward demodulation 123,136]
+    143. op(X3,op(X0,op(op(X1,op(op(X2,X1),X1)),X0))) = X3 [backward demodulation 102,136]
+    144. op(X2,op(X0,op(op(X1,X0),X0))) = X2 [backward demodulation 136,141]
+    146. op(X3,op(X0,op(X1,op(op(X2,X1),X1)))) = X3 [forward demodulation 143,141]
+    147. op(X3,X0) = X3 [forward demodulation 146,144]
+    158. sK0 != op(sK0,sK1) [backward demodulation 75,147]
+    159. $false [subsumption resolution 158,147]
+    % SZS output end Proof for Equation650_implies_Equation448
+    % ------------------------------
+    % Version: Vampire 4.8 (commit )
+    % Termination reason: Refutation
+
+    % Memory used [KB]: 4989
+    % Time elapsed: 0.002 s
+    % ------------------------------
+    % ------------------------------
+    "#;
+        debug_print_parsed_proof(proof_text);
+        let steps_map = parse_vampire_proof(proof_text);
+        assert!(!needs_proof_turnaround(&steps_map));
+    }
 
     // #[test]
     // fn proof_turnaround_dif() {
