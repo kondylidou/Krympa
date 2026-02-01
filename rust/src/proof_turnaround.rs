@@ -390,7 +390,7 @@ fn is_reflexive_neq(f: &Formula) -> bool {
 /// - (optionally) reflexive disequality: t != t  (usually only appears briefly)
 /// - the turned-around equality-resolution node: $true [equality ...]
 fn is_trivial_step(step: &SuperpositionStep) -> bool {
-    if is_reflexive_eq(&step.formula) {
+    if is_reflexive_eq(&step.formula) || is_reflexive_neq(&step.formula) {
         return true;
     }
 
@@ -800,14 +800,15 @@ pub fn turn_proof_around(
 
 /* ------------------ TOP-LEVEL PROCEDURE ------------------ */
 
-pub fn eq_proof_procedure(proof_text: &str) -> BTreeMap<usize, SuperpositionStep> {
-    let steps = parse_vampire_proof(proof_text);
-    if needs_proof_turnaround(&steps) {
+pub fn eq_proof_procedure(
+    steps: &BTreeMap<usize, SuperpositionStep>,
+) -> BTreeMap<usize, SuperpositionStep> {
+    if needs_proof_turnaround(steps) {
         println!("\n[DEBUG] Turnaround required");
-        turn_proof_around(&steps)
+        turn_proof_around(steps)
     } else {
         println!("\n[DEBUG] No turnaround needed");
-        steps
+        steps.clone()
     }
 }
 
@@ -939,19 +940,20 @@ mod tests {
     5. $false [equality resolution 4]
     "#;
 
-        let steps = eq_proof_procedure(proof_text);
+        let steps_map = parse_vampire_proof(&proof_text);
+        let final_steps = eq_proof_procedure(&steps_map);
 
         // we expect the “useful” turned proof to have 3 nontrivial steps:
         // 1) axiom
         // 2) g(f(b)) = f(f(b))  (contraposed from step 3, using implicit f(f(b))=f(f(b)))
         // 3) g(g(b)) = f(f(b))  (contraposed from step 2)
 
-        print_proof_steps(&steps);
-        assert_eq!(count_nontrivial_steps(&steps), 4);
+        print_proof_steps(&final_steps);
+        assert_eq!(count_nontrivial_steps(&final_steps), 4);
 
         // check that the key equalities appear somewhere in the result
         // (qe don't rely on exact indices because the turnaround rethreads indices)
-        let strs: Vec<String> = steps.values().map(|s| s.formula.to_string()).collect();
+        let strs: Vec<String> = final_steps.values().map(|s| s.formula.to_string()).collect();
 
         assert!(strs.iter().any(|s| s.contains("g(X) = f(X)")));
         assert!(strs.iter().any(|s| s.contains("g(f(b)) = f(f(b))")));
@@ -1002,13 +1004,12 @@ mod tests {
             "Proof should require turnaround but was not detected"
         );
 
-        let final_steps = eq_proof_procedure(&proof_text);
+        let final_steps = eq_proof_procedure(&steps_map);
         print_proof_steps(&final_steps);
     }
 
     #[test]
     fn test_mixed_quantifiers_contrapositive() {
-        use crate::*;
 
         // Simulate a small Vampire-like proof that triggers mixed quantifiers and contrapositive swap
         let proof_text = r#"
@@ -1021,7 +1022,7 @@ mod tests {
 
         debug_print_parsed_proof(proof_text);
 
-        let mut steps = parse_vampire_proof(proof_text);
+        let steps = parse_vampire_proof(proof_text);
 
         // Ensure turnaround is needed
         assert!(
@@ -1150,9 +1151,7 @@ mod tests {
             "Proof should require turnaround but was not detected"
         );
 
-        let steps = eq_proof_procedure(proof_text);
-
-        let final_steps = eq_proof_procedure(&proof_text);
+        let final_steps = eq_proof_procedure(&steps_map);
         print_proof_steps(&final_steps);
     }
 }
