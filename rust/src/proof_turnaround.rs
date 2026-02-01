@@ -85,7 +85,7 @@ fn is_proof_step(rule: &str) -> bool {
 
 /// Converts Vampire formula strings into Formula AST
 /// Only handles equational logic with optional quantifiers
-fn parse_formula(s: &str) -> Formula {
+pub fn parse_formula(s: &str) -> Formula {
     let mut bound = BTreeSet::<String>::new();
     parse_formula_with_bound(s.trim(), &mut bound)
 }
@@ -800,16 +800,18 @@ pub fn turn_proof_around(
 
 /* ------------------ TOP-LEVEL PROCEDURE ------------------ */
 
-pub fn eq_proof_procedure(
-    steps: &BTreeMap<usize, SuperpositionStep>,
-) -> BTreeMap<usize, SuperpositionStep> {
-    if needs_proof_turnaround(steps) {
+pub fn eq_proof_procedure(proof_text: &str) -> String {
+    let parsed = parse_vampire_proof(proof_text);
+
+    let final_steps = if needs_proof_turnaround(&parsed) {
         println!("\n[DEBUG] Turnaround required");
-        turn_proof_around(steps)
+        turn_proof_around(&parsed)
     } else {
         println!("\n[DEBUG] No turnaround needed");
-        steps.clone()
-    }
+        parsed
+    };
+
+    format_proof(&final_steps)
 }
 
 /* ------------------ CHECK TURNAROUND ------------------ */
@@ -855,36 +857,43 @@ pub fn debug_print_parsed_proof(proof_text: &str) {
 }
 
 /// Format a proof (BTreeMap<usize, SuperpositionStep>) as Vampire-style text
-pub fn _format_proof(steps: &BTreeMap<usize, SuperpositionStep>) -> String {
+/// Format a proof (BTreeMap<usize, SuperpositionStep>) as Vampire-style text
+/// Desired bracket style: [rule dep1,dep2] (Vampire-ish)
+pub fn format_proof(steps: &BTreeMap<usize, SuperpositionStep>) -> String {
     let mut lines = Vec::new();
 
     for (&idx, step) in steps {
         let formula_str = step.formula.to_string();
-        let deps_str = if step.deps.is_empty() {
-            "".to_string()
-        } else {
-            step.deps
-                .iter()
-                .map(|(_, d)| d.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
+
+        // deps like "1,2" (no spaces)
+        let deps_str = step
+            .deps
+            .iter()
+            .map(|(_, d)| d.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        // Decide what goes in [...]
+        let mut parts: Vec<String> = Vec::new();
+
+        // Put rule first (if known), then deps
+        let rule = step.rule.trim();
+        if !rule.is_empty() && rule != "unknown" {
+            if deps_str.is_empty() {
+                parts.push(rule.to_string());
+            } else {
+                parts.push(format!("{} {}", rule, deps_str));
+            }
+        } else if !deps_str.is_empty() {
+            // no rule, but deps exist
+            parts.push(deps_str.clone());
+        }
 
         let mut line = format!("{}. {}", idx, formula_str);
-        if !deps_str.is_empty() || !step.rule.is_empty() {
+
+        if !parts.is_empty() {
             line.push_str(" [");
-            if !deps_str.is_empty() {
-                line.push_str(&deps_str);
-            }
-            if !step.rule.is_empty() {
-                if !deps_str.is_empty() {
-                    line.push_str(", ");
-                }
-                line.push_str(&step.rule);
-            }
-            if step.is_negated_conjecture {
-                line.push_str(", negated conjecture");
-            }
+            line.push_str(&parts.join(", "));
             line.push(']');
         }
 
@@ -892,38 +901,6 @@ pub fn _format_proof(steps: &BTreeMap<usize, SuperpositionStep>) -> String {
     }
 
     lines.join("\n")
-}
-
-/// Pretty-print the proof in the desired format
-pub fn print_proof_steps(steps: &BTreeMap<usize, SuperpositionStep>) {
-    for (idx, step) in steps {
-        // Formula as string
-        let formula_str = step.formula.to_string();
-
-        // Dependencies as [(a,b), ...]
-        let deps_str = if step.deps.is_empty() {
-            "[]".to_string()
-        } else {
-            let deps_vec: Vec<String> = step
-                .deps
-                .iter()
-                .map(|(a, b)| format!("({}, {})", a, b))
-                .collect();
-            format!("[{}]", deps_vec.join(", "))
-        };
-
-        // is_neg as true/false
-        let is_neg_str = if step.is_negated_conjecture {
-            "true"
-        } else {
-            "false"
-        };
-
-        println!(
-            "{}. formula = \"{}\", deps = {}, is_neg = {}, rule = \"{}\"",
-            idx, formula_str, deps_str, is_neg_str, step.rule
-        );
-    }
 }
 
 #[cfg(test)]
@@ -940,20 +917,20 @@ mod tests {
     5. $false [equality resolution 4]
     "#;
 
-        let steps_map = parse_vampire_proof(&proof_text);
-        let final_steps = eq_proof_procedure(&steps_map);
+        let parsed = parse_vampire_proof(proof_text);
 
         // we expect the “useful” turned proof to have 3 nontrivial steps:
         // 1) axiom
         // 2) g(f(b)) = f(f(b))  (contraposed from step 3, using implicit f(f(b))=f(f(b)))
         // 3) g(g(b)) = f(f(b))  (contraposed from step 2)
 
-        print_proof_steps(&final_steps);
-        assert_eq!(count_nontrivial_steps(&final_steps), 4);
+        assert!(needs_proof_turnaround(&parsed));
+        let steps = turn_proof_around(&parsed);
+        assert_eq!(count_nontrivial_steps(&steps), 4);
 
         // check that the key equalities appear somewhere in the result
         // (qe don't rely on exact indices because the turnaround rethreads indices)
-        let strs: Vec<String> = final_steps.values().map(|s| s.formula.to_string()).collect();
+        let strs: Vec<String> = steps.values().map(|s| s.formula.to_string()).collect();
 
         assert!(strs.iter().any(|s| s.contains("g(X) = f(X)")));
         assert!(strs.iter().any(|s| s.contains("g(f(b)) = f(f(b))")));
@@ -1004,13 +981,13 @@ mod tests {
             "Proof should require turnaround but was not detected"
         );
 
-        let final_steps = eq_proof_procedure(&steps_map);
-        print_proof_steps(&final_steps);
+        let final_proof = eq_proof_procedure(&proof_text);
+        println!("\n[DEBUG] Final proof");
+        println!("{}", final_proof);
     }
 
     #[test]
     fn test_mixed_quantifiers_contrapositive() {
-
         // Simulate a small Vampire-like proof that triggers mixed quantifiers and contrapositive swap
         let proof_text = r#"
     1. ! [X,Y] : f(X) = f(Y) [input]
@@ -1032,7 +1009,7 @@ mod tests {
 
         let turned = turn_proof_around(&steps);
 
-        println!("\n[DEBUG] TURNED PROOF STEPS");
+        println!("\n[DEBUG] Turned proof steps");
         for (idx, step) in &turned {
             println!("  {}: {}", idx, step.formula.to_string());
         }
@@ -1151,7 +1128,8 @@ mod tests {
             "Proof should require turnaround but was not detected"
         );
 
-        let final_steps = eq_proof_procedure(&steps_map);
-        print_proof_steps(&final_steps);
+        let final_proof = eq_proof_procedure(&proof_text);
+        println!("\n[DEBUG] Final proof");
+        println!("{}", final_proof);
     }
 }
