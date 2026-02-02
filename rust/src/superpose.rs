@@ -112,8 +112,7 @@ pub fn superposition_steps(
 ) -> Option<(
     Vec<String>,
     BTreeMap<usize, SuperpositionStep>,
-    Option<String>,
-    Option<usize>,
+    Vec<(String, usize)>, // <-- all derived matches
     bool,
 )> {
     // load the DAG from a file. This DAG maps each lemma to its children.
@@ -136,9 +135,9 @@ pub fn superposition_steps(
     let mut proved_history = false;
     // TODO we might can do this a bit more elegantly but it works now:)
     let mut force_super = false;
-    let mut derived_name: Option<String> = None;
-    let mut derived_seq_idx: Option<usize> = None;
-    // build the list of dependency lemmas from the DAG
+    let mut derived: Vec<(String, usize)> = Vec::new();
+    let mut derived_seen: BTreeSet<usize> = BTreeSet::new(); // avoid duplicates by step_num
+                                                             // build the list of dependency lemmas from the DAG
     let mut deps: Vec<String> = if lemma.starts_with("history_") {
         // for a history lemma, get its children in the DAG
         let children = match dag.get(lemma) {
@@ -221,10 +220,9 @@ pub fn superposition_steps(
             if formulas_match(&dep_formula, &wrapped) {
                 matched_any = true;
 
-                // first match is the derived step
-                if derived_seq_idx.is_none() {
-                    derived_seq_idx = Some(*step_num);
-                    derived_name = Some(dep.clone());
+                // every match is a derived step (dedup by step_num)
+                if derived_seen.insert(*step_num) {
+                    derived.push((dep.clone(), *step_num));
                 }
 
                 // recursively gather all dependencies of this Vampire step
@@ -251,13 +249,7 @@ pub fn superposition_steps(
             // we have no other dependencies
             deps = Vec::new();
         }
-        Some((
-            deps,
-            relevant_steps,
-            derived_name,
-            derived_seq_idx,
-            proved_history,
-        ))
+        Some((deps, relevant_steps, derived, proved_history))
     } else {
         None // no matching Vampire steps found
     }
@@ -368,7 +360,7 @@ pub fn extend_with_superposition_steps(
 
 /// Find the highest lemma index already present in `extra_dependencies`
 /// and any kind of lemma name (lemma_, history_lemma_, single_lemma_, abstract_lemma_)
-fn last_lemma_index(deps: &[(String, String)]) -> usize {
+fn last_lemma_index(deps: &Vec<(String, String)>) -> usize {
     let re = Regex::new(r"(?:.*_)?lemma_(\d+)$").unwrap();
     deps.iter()
         .filter_map(|(name, _)| {
@@ -386,12 +378,16 @@ fn last_lemma_index(deps: &[(String, String)]) -> usize {
 /// `derived_seq_idx` is optional: the seq_idx of the step corresponding to the derived lemma
 pub fn prepend_superposition_steps(
     superposition_steps: &BTreeMap<usize, SuperpositionStep>,
-    axioms: &[(String, String)], // existing deps, treated as axioms (name, formula)
-    derived_lemma_name: Option<&str>, // e.g., "lemma_0031"
-    derived_seq_idx: Option<usize>, // seq_idx of the derived lemma
+    axioms: &Vec<(String, String)>, // existing deps, treated as axioms (name, formula)
+    derived_lemmas: Vec<(String, usize)>,
 ) -> (String, BTreeMap<usize, String>) {
     // compute offset to continue lemma numbering
     let mut next_lemma_idx = last_lemma_index(axioms) + 1;
+
+    let derived_map: BTreeMap<usize, String> = derived_lemmas
+        .iter()
+        .map(|(name, idx)| (*idx, name.clone()))
+        .collect();
 
     // build local -> global renaming
     let mut renaming: BTreeMap<usize, String> = BTreeMap::new();
@@ -399,11 +395,9 @@ pub fn prepend_superposition_steps(
         let name = if *seq_idx == 0 {
             // seq_idx == 0 is always the axiom
             "a1".to_string()
-        } else if Some(*seq_idx) == derived_seq_idx {
-            // only the derived lemma gets the special name
-            derived_lemma_name
-                .unwrap_or(&format!("lemma_{:04}", next_lemma_idx))
-                .to_string()
+        } else if let Some(derived_name) = derived_map.get(seq_idx) {
+            // derived lemmas get special names
+            derived_name.to_string()
         } else {
             // assign next unique lemma number
             let n = next_lemma_idx;

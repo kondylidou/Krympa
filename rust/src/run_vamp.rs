@@ -1,7 +1,7 @@
+use crate::proof_turnaround::eq_proof_procedure;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use crate::proof_turnaround::eq_proof_procedure;
 
 /// Run Vampire on a given input file and save its proof.
 pub fn run_vampire_only(input: &str, output: &str) {
@@ -42,8 +42,7 @@ pub fn run_vampire(input_file: &str, output_file: &str) {
     let transformed_output = eq_proof_procedure(&vampire_output);
 
     // Write transformed proof
-    fs::write(output_file, transformed_output)
-        .expect("Failed to write transformed Vampire output");
+    fs::write(output_file, transformed_output).expect("Failed to write transformed Vampire output");
 
     println!("Vampire proof written to {}", output_file);
 }

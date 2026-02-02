@@ -85,7 +85,6 @@ fn is_proof_step(rule: &str) -> bool {
         || rule == "inequality"
 }
 
-
 /* ------------------ PARSING ------------------ */
 
 /// Converts Vampire formula strings into Formula AST
@@ -816,7 +815,7 @@ pub fn turn_proof_around(
         &chain.chain_set,
     );
 
-    // println!("\n[DEBUG] Turn order {:?}", order);
+    println!("\n[DEBUG] Turn order {:?}", order);
 
     let mut result = steps.clone();
     for (old, new) in order.iter().zip(order.iter().rev()) {
@@ -845,10 +844,10 @@ pub fn eq_proof_procedure(proof_text: &str) -> String {
 
     let formatted = format_proof(&final_steps);
 
-    // _debug_print_parsed_proof(&parsed);
-    // println!("\n[DEBUG] Contrapositive Vampire proof");
-    // println!("{}", formatted);
-    // println!("-------------------------------");
+    _debug_print_parsed_proof(&parsed);
+    println!("\n[DEBUG] Contrapositive Vampire proof");
+    println!("{}", formatted);
+    println!("-------------------------------");
 
     formatted
 }
@@ -1101,7 +1100,6 @@ mod tests {
             "! [X0,X1,X2] : X0 = op(X0,op(X1,op(X2,op(X0,X2))))",
             "Unexpected last formula"
         );
-
     }
 
     #[test]
@@ -1143,7 +1141,6 @@ mod tests {
     % ------------------------------
     % ------------------------------
     "#;
-        
 
         let steps_map = parse_vampire_proof(proof_text);
         _debug_print_parsed_proof(&steps_map);

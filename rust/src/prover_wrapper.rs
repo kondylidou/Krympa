@@ -19,7 +19,7 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
         }
     };
 
-    let timeout = Duration::from_secs(10);
+    let timeout = Duration::from_secs(20);
     match child.wait_timeout(timeout).unwrap() {
         Some(status) => {
             let output = child.wait_with_output().unwrap();
@@ -90,12 +90,7 @@ pub fn proof_length_vampire(proof: &str) -> usize {
     let mut count = 0;
 
     // core inference indicators
-    let proof_keywords = [
-        "demodulation",
-        "superposition",
-        "resolution",
-        "trivial inequality removal",
-    ];
+    let proof_keywords = ["demodulation", "superposition", "resolution"];
 
     for line in proof.lines() {
         let l = line.trim_start();

@@ -51,7 +51,7 @@ pub fn try_minimize(
     // precompute lemmas
     let precomputed = precompute_lemmas(&proofs_dir, &lemmas_dir, &twee_proofs_dir)?;
 
-    let mut offset = 1;
+    let mut offset = 4;
     let mut accepted = 0;
     let max_candidates = 4;
 
@@ -145,8 +145,9 @@ pub fn try_minimize(
                 let root_deps = dag.get(root_lemma).cloned().unwrap_or_default();
                 let has_history_dependency = root_deps.iter().any(|d| d.starts_with("history_"));
 
-                // TODO this is a bug in the DAG. so when the duplicate is in itself. When
-                // we have cyclic dependencies. this is a patch. fix later!
+                // if this arises this is a bug in the DAG. so when the
+                // duplicate is in itself. When we have cyclic dependencies.
+                // this is a patch
                 if candidates.is_empty() && has_history_dependency {
                     println!(
                         "   [BUG] Root {} depends on history {:?} — refusing root-only proof",
@@ -195,8 +196,7 @@ pub fn try_minimize(
                         let (proof, renaming) = prepend_superposition_steps(
                             &superposition_steps,
                             &extra_dependencies,
-                            Some(&root_lemma),
-                            Some(idx),
+                            vec![(root_lemma.to_string(), idx)],
                         );
                         extend_with_superposition_steps(
                             &mut extra_dependencies,
@@ -270,12 +270,15 @@ pub fn try_minimize(
                             superposition_steps(dag_file, vampire_file, &lemmas_dir, candidate);
                         // in dependencies we will get itself (the single lemma)
                         // in this case we can ignore proved_history
-                        let (dependencies, superposition_steps, lemma, idx, _) =
+                        let (dependencies, superposition_steps, derived, _) =
                             match maybe_superposition {
-                                Some((deps, steps, lemma, idx, ph)) => {
-                                    (deps, steps, lemma, idx, ph)
-                                }
-                                None => (vec![], BTreeMap::new(), None, None, false),
+                                Some((deps, steps, derived, ph)) => (deps, steps, derived, ph),
+                                None => (
+                                    Vec::new(),
+                                    BTreeMap::new(),
+                                    Vec::<(String, usize)>::new(),
+                                    false,
+                                ),
                             };
                         let superposition_steps_count = superposition_steps.len();
 
@@ -318,8 +321,7 @@ pub fn try_minimize(
                                 let (sp_proof_text, renaming) = prepend_superposition_steps(
                                     &superposition_steps,
                                     &Vec::new(),
-                                    lemma.as_deref(),
-                                    idx,
+                                    derived,
                                 );
                                 extend_with_superposition_steps(
                                     &mut extra_dependencies,
@@ -531,10 +533,15 @@ pub fn try_minimize(
                 let maybe_superposition =
                     superposition_steps(dag_file, vampire_file, &lemmas_dir, n_history_lemma);
 
-                let (dependencies, superposition_steps, lemma, idx, proved_history) =
+                let (dependencies, superposition_steps, derived, proved_history) =
                     match maybe_superposition {
-                        Some((deps, steps, lemma, idx, ph)) => (deps, steps, lemma, idx, ph),
-                        None => (vec![], BTreeMap::new(), None, None, false),
+                        Some((deps, steps, derived, ph)) => (deps, steps, derived, ph),
+                        None => (
+                            Vec::new(),
+                            BTreeMap::new(),
+                            Vec::<(String, usize)>::new(),
+                            false,
+                        ),
                     };
                 let superposition_steps_count = superposition_steps.len();
 
@@ -599,12 +606,8 @@ pub fn try_minimize(
                     if total_dep_steps <= superposition_steps_count && total_dep_steps != 0 {
                         (combined_dep_proof_text.clone(), total_dep_steps)
                     } else {
-                        let (sp_proof_text, renaming) = prepend_superposition_steps(
-                            &superposition_steps,
-                            &Vec::new(),
-                            lemma.as_deref(),
-                            idx,
-                        );
+                        let (sp_proof_text, renaming) =
+                            prepend_superposition_steps(&superposition_steps, &Vec::new(), derived);
                         extend_with_superposition_steps(
                             &mut extra_dependencies,
                             &superposition_steps,
@@ -913,18 +916,16 @@ pub fn prove_lemma(
                 .map_err(|_| "Failed to read Vampire proof file")?;
             //let v_len = proof_length_vampire(&vp_text);
 
-            // TODO should we compare the proof by contradiction or the direct derivation?
             // prepend superposition steps if they exist
             if let Some((sp_steps, idx)) =
                 extract_superposition_steps(&vampire_proof_file, &c_formula)
-            {
+            {println!("SUPERPOSE STEPS {:?}", sp_steps);
                 let v_len = sp_steps.len();
                 if v_len < t_len {
                     let (vp, renaming) = prepend_superposition_steps(
                         &sp_steps,
                         extra_dependencies,
-                        Some(&c_name),
-                        Some(idx),
+                        vec![(c_name, idx)],
                     );
                     extend_with_superposition_steps(extra_dependencies, &sp_steps, &renaming);
                     Some((vp, v_len))
@@ -951,12 +952,8 @@ pub fn prove_lemma(
             if let Some((sp_steps, idx)) =
                 extract_superposition_steps(&vampire_proof_file, &c_formula)
             {
-                let (vp, renaming) = prepend_superposition_steps(
-                    &sp_steps,
-                    extra_dependencies,
-                    Some(&c_name),
-                    Some(idx),
-                );
+                let (vp, renaming) =
+                    prepend_superposition_steps(&sp_steps, extra_dependencies, vec![(c_name, idx)]);
                 extend_with_superposition_steps(extra_dependencies, &sp_steps, &renaming);
                 Some((vp, v_len))
             } else {
