@@ -51,7 +51,7 @@ pub fn try_minimize(
     // precompute lemmas
     let precomputed = precompute_lemmas(&proofs_dir, &lemmas_dir, &twee_proofs_dir)?;
 
-    let mut offset = 4;
+    let mut offset = 1;
     let mut accepted = 0;
     let max_candidates = 4;
 
@@ -579,6 +579,18 @@ pub fn try_minimize(
                     superposition_steps_count > 0 && superposition_steps_count <= total_dep_steps
                 };
 
+                // we need to compare the history proof we found with the existing start proof
+                // in case this history lemma was already derived by superposition
+                let use_proved_history = if use_superposition && proved_history {
+                    // history lemma was already proved
+                    false
+                } else {
+                    // either lemma was not proved or we are not using superposition
+                    // and we are proving by dependencies
+                    true
+                };
+                //let use_proved_history = !use_superposition || !proved_history;
+
                 // 4. Build extra_dependencies before prepending
                 let mut extra_dependencies: Vec<(String, String)> = Vec::new();
 
@@ -627,16 +639,6 @@ pub fn try_minimize(
                     // no proof -> skip this candidate
                     continue;
                 };
-                // we need to compare the history proof we found with the existing start proof
-                // in case this history lemma was already derived by superposition.
-                let mut use_proved_history = false;
-                if proved_history {
-                    if n_history_proof_steps <= superposition_steps_count {
-                        use_proved_history = false;
-                    } else {
-                        use_proved_history = true;
-                    };
-                }
 
                 // 7. Compute root_proof
                 let Some((root_proof, root_proof_steps)) = prove_lemma(
@@ -687,12 +689,12 @@ pub fn try_minimize(
                 // 9. Check whether root lemma is actually used
                 let root_used = proof_uses_lemma(&sub_proof, &root_lemma);
                 let history_used;
-                if !use_proved_history && root_used {
+                if use_proved_history && root_used {
                     // 9.1. Check whether history lemma is used in the root proof
                     // or in the sub proof
                     history_used = proof_uses_lemma(&root_proof, &n_history_lemma)
                         || proof_uses_lemma(&sub_proof, &n_history_lemma);
-                } else if !use_proved_history && !root_used {
+                } else if use_proved_history && !root_used {
                     // 9.2. Check whether history lemma is used in the sub proof
                     history_used = proof_uses_lemma(&sub_proof, &n_history_lemma);
                 } else {
@@ -853,10 +855,11 @@ pub fn prove_lemma(
     conjecture: Option<&str>,
 ) -> Result<Option<(String, usize)>, String> {
     let tmp_path = create_tmp_copy(input_file)?;
+    let proofs_dir = "../proofs".to_string();
 
     // 1. Append superposition steps if provided
     if let Some(sp_steps) = superposition_steps {
-        append_superposition_steps_as_lemmas(&tmp_path, sp_steps, lemmas_dir)?;
+        append_superposition_steps_as_lemmas(&tmp_path, sp_steps, lemmas_dir, &proofs_dir)?;
     }
 
     // 2. Append dependency lemmas
@@ -906,7 +909,7 @@ pub fn prove_lemma(
             let t_len = proof_length_twee(&tp);
 
             // read Vampire proof text
-            let vp_text = fs::read_to_string(&vampire_proof_file)
+            let _vp_text = fs::read_to_string(&vampire_proof_file)
                 .map_err(|_| "Failed to read Vampire proof file")?;
             //let v_len = proof_length_vampire(&vp_text);
 
@@ -971,26 +974,69 @@ pub fn prove_lemma(
     Ok(result)
 }
 
-// AS NEEDS FIXING how lemmas are saved in the proof.. derived idx etc
-// TODO this needs fixing!
-/// Checks if a proof uses a lemma (Twee or Vampire)
-pub fn proof_uses_lemma(proof: &str, lemma_name: &str) -> bool {
-    proof.lines().any(|line| {
-        let line = line.trim();
+/// Returns true iff the proof text already contains the lemma with the same number
+/// in any of your variants (lemma_, history_lemma_, single_lemma_, ...),
+/// in a way that indicates it is already *available* (axiom or recorded history).
+///
+/// Examples detected:
+///   Axiom 1 (lemma_0025): ...
+///   % history_lemma_0025: ... | deps: ...
+///   Axiom 7 (single_lemma_0025): ...
+pub fn proof_uses_lemma(proof: &str, lemma_any_variant: &str) -> bool {
+    // extract trailing digits (the lemma number) from any variant.
+    // accepts: lemma_0025, history_lemma_0025, single_lemma_0025, abstract_lemma_0025
+    let num_re = Regex::new(r"(\d+)\s*$").unwrap();
+    let Some(cap) = num_re.captures(lemma_any_variant.trim()) else {
+        return false;
+    };
+    let num = cap.get(1).unwrap().as_str();
 
-        // Twee match
-        if line.contains(lemma_name)
-            || line.contains(&format!("({},", lemma_name))
-            || line.contains(&format!(" {} ", lemma_name))
-        {
-            return true;
-        }
+    // build the four canonical names for this lemma number
+    let names = [
+        format!("lemma_{}", num),
+        format!("history_lemma_{}", num),
+        format!("single_lemma_{}", num),
+        format!("abstract_lemma_{}", num),
+    ];
 
-        // Vampire match (we assume its always a match cause of how Vampire works)
-        if line.contains("[input]") {
-            return true;
-        }
+    // 1) Present as an axiom: "Axiom 1 (lemma_0025): ..."
+    // we accept any of the 4 names in the parens
+    let axiom_re = Regex::new(&format!(
+        r"(?m)^\s*Axiom\s+\d+\s+\(\s*(?:{})\s*\)\s*:",
+        names
+            .iter()
+            .map(|n| regex::escape(n))
+            .collect::<Vec<_>>()
+            .join("|")
+    ))
+    .unwrap();
 
-        true
-    })
+    // 2) Present as a recorded lemma line (any variant):
+    // "% lemma_0025: ..."
+    // "% history_lemma_0025: ..."
+    // "% single_lemma_0025: ..."
+    // "% abstract_lemma_0025: ..."
+    let recorded_header_re = Regex::new(&format!(
+        r"(?m)^\s*%\s*(?:{})\s*:",
+        names
+            .iter()
+            .map(|n| regex::escape(n))
+            .collect::<Vec<_>>()
+            .join("|")
+    ))
+    .unwrap();
+
+    // 3) (Optional) Mentioned in deps:
+    // "| deps: lemma_0007: ..., abstract_lemma_0003: ..."
+    let deps_re = Regex::new(&format!(
+        r"\b(?:{})\s*:",
+        names
+            .iter()
+            .map(|n| regex::escape(n))
+            .collect::<Vec<_>>()
+            .join("|")
+    ))
+    .unwrap();
+
+    axiom_re.is_match(proof) || recorded_header_re.is_match(proof) || deps_re.is_match(proof)
 }

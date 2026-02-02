@@ -310,6 +310,7 @@ pub fn append_superposition_steps_as_lemmas(
     tmp_file: &str,
     steps: &BTreeMap<usize, SuperpositionStep>,
     lemmas_dir: &str,
+    proofs_dir: &str,
 ) -> Result<(), String> {
     for (seq_idx, _step) in steps {
         let mut all_deps = BTreeSet::new();
@@ -317,8 +318,14 @@ pub fn append_superposition_steps_as_lemmas(
 
         for dep_idx in all_deps {
             let lemma_name = format!("lemma_{:04}", dep_idx);
-            let formula = load_lemma(lemmas_dir, &lemma_name)?;
-            append_as_axiom(tmp_file, &formula, &lemma_name);
+            if let Some(actual) = select_actual_lemma(proofs_dir, &lemma_name) {
+                let name = strip_prover_suffix(&actual);
+                let formula = load_lemma(lemmas_dir, &name)?;
+                append_as_axiom(tmp_file, &formula, &name);
+            } else {
+                let formula = load_lemma(lemmas_dir, &lemma_name)?;
+                append_as_axiom(tmp_file, &formula, &lemma_name);
+            }
         }
     }
     Ok(())

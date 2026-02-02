@@ -539,7 +539,7 @@ pub fn load_all_dependency_proofs(
 }
 
 /// Strips the prover suffix (_twee, _vampire, _egg) from a lemma name if present
-fn strip_prover_suffix(lemma_name: &str) -> String {
+pub fn strip_prover_suffix(lemma_name: &str) -> String {
     let suffixes = ["_twee", "_vampire", "_egg"];
     for suf in &suffixes {
         if lemma_name.ends_with(suf) {

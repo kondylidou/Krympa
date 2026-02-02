@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use crate::proof_turnaround::eq_proof_procedure;
 
 /// Run Vampire on a given input file and save its proof.
 pub fn run_vampire_only(input: &str, output: &str) {
@@ -33,6 +34,16 @@ pub fn run_vampire(input_file: &str, output_file: &str) {
         .output()
         .expect("Failed to run Vampire");
 
-    fs::write(output_file, &output.stdout).expect("Failed to write Vampire output");
+    // convert Vampire stdout to string
+    let vampire_output =
+        String::from_utf8(output.stdout).expect("Vampire output was not valid UTF-8");
+
+    // turn the proof around + reformat
+    let transformed_output = eq_proof_procedure(&vampire_output);
+
+    // Write transformed proof
+    fs::write(output_file, transformed_output)
+        .expect("Failed to write transformed Vampire output");
+
     println!("Vampire proof written to {}", output_file);
 }

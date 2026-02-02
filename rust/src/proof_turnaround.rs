@@ -62,24 +62,29 @@ pub struct SuperpositionStep {
     pub formula: Formula,
     pub deps: Vec<(usize, usize)>,
     pub is_negated_conjecture: bool,
-    pub rule: String,
+    pub rule: String, // full rule name
 }
 
 /// Check if a rule is a real proof step
 fn is_proof_step(rule: &str) -> bool {
-    matches!(
-        rule,
-        "demodulation"
-            | "superposition"
-            | "resolution"
-            | "inequality"
-            | "backward"
-            | "forward"
-            | "subsumption"
-            | "equality"
-            | "simplification"
-    )
+    rule.starts_with("superposition")
+        || rule.starts_with("resolution")
+        || rule.starts_with("factoring")
+        || rule.starts_with("equality factoring")
+        || rule.starts_with("equality resolution")
+        || rule.starts_with("inequality resolution")
+        || rule.starts_with("rewriting")
+        || rule.starts_with("demodulation")
+        || rule.starts_with("forward demodulation")
+        || rule.starts_with("backward demodulation")
+        || rule.starts_with("simplification")
+        || rule.starts_with("subsumption")
+        || rule.starts_with("distinctness")
+        || rule.starts_with("trivial inequality removal")
+        || rule == "equality"
+        || rule == "inequality"
 }
+
 
 /* ------------------ PARSING ------------------ */
 
@@ -224,6 +229,60 @@ fn strip_optional_label(s: &str) -> &str {
     s
 }
 
+/// Parse the bracket part, e.g.
+///   "backward demodulation 8,13"
+///   "subsumption resolution 30,21"
+///   "negated conjecture 2"
+/// Returns: (rule_full, deps, is_negated_conjecture)
+fn parse_inf_bracket(inf: &str) -> (String, Vec<usize>, bool) {
+    let inf = inf.trim().trim_end_matches(']').trim();
+
+    let is_neg = inf.contains("negated conjecture");
+
+    // deps: collect all integers anywhere
+    let deps: Vec<usize> = inf
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter_map(|tok| tok.parse::<usize>().ok())
+        .collect();
+
+    // rule_full: take all non-numeric words, excluding "negated conjecture"
+    let mut words: Vec<String> = Vec::new();
+    let toks: Vec<&str> = inf.split_whitespace().collect();
+
+    let mut i = 0;
+    while i < toks.len() {
+        let tok = toks[i].trim_end_matches(',');
+
+        // skip numeric tokens
+        if tok.chars().all(|c| c.is_ascii_digit()) {
+            i += 1;
+            continue;
+        }
+
+        // skip "negated conjecture" tokens, but remember they were there
+        if tok == "negated" && i + 1 < toks.len() && toks[i + 1] == "conjecture" {
+            i += 2;
+            continue;
+        }
+
+        // keep other words
+        if tok.chars().any(|c| c.is_alphabetic()) {
+            words.push(tok.to_string());
+        }
+        i += 1;
+    }
+
+    let rule_full = if !words.is_empty() {
+        words.join(" ")
+    } else if is_neg {
+        "negated conjecture".to_string()
+    } else {
+        "unknown".to_string()
+    };
+
+    (rule_full, deps, is_neg)
+}
+
 /// Parse Vampire proof into steps (robust-ish)
 pub fn parse_vampire_proof(proof_text: &str) -> BTreeMap<usize, SuperpositionStep> {
     let mut steps_map = BTreeMap::new();
@@ -259,19 +318,12 @@ pub fn parse_vampire_proof(proof_text: &str) -> BTreeMap<usize, SuperpositionSte
         if let Some(inf) = inf_part {
             let inf = inf.trim_end_matches(']').trim();
 
-            if inf.contains("negated conjecture") {
-                is_negated_conjecture = true;
-            }
+            let (rule_full, deps_nums, is_neg) = parse_inf_bracket(inf);
 
-            if let Some(first) = inf.split_whitespace().next() {
-                rule = first.to_string();
-            }
+            is_negated_conjecture = is_neg;
+            rule = rule_full;
 
-            deps = inf
-                .split(|c: char| c == ',' || c.is_whitespace())
-                .filter_map(|tok| tok.parse::<usize>().ok())
-                .map(|d| (0, d))
-                .collect();
+            deps = deps_nums.into_iter().map(|d| (0, d)).collect();
         }
 
         steps_map.insert(
@@ -321,7 +373,6 @@ fn gather_forward_chain(
 
 struct NegChain {
     start: Option<usize>,
-    chain_vec: Vec<usize>,
     chain_set: BTreeSet<usize>,
     forward: BTreeMap<usize, Vec<usize>>,
 }
@@ -346,15 +397,9 @@ fn compute_neg_chain(steps: &BTreeMap<usize, SuperpositionStep>) -> Option<NegCh
 
     let chain_vec: Vec<usize> = chain.iter().cloned().collect();
 
-    println!("\n[DEBUG] Negated conjecture chain");
-    for &i in &chain_vec {
-        println!("  {}: {:?} {:?}", i, steps[&i].formula, steps[&i].rule);
-    }
-
     let mut start = None;
     for (pos, &i) in chain_vec.iter().enumerate() {
         if is_proof_step(&steps[&i].rule) {
-            println!("\n[DEBUG] First proof step in chain: {}", i);
             start = pos.checked_sub(1).map(|p| chain_vec[p]);
             break;
         }
@@ -363,7 +408,6 @@ fn compute_neg_chain(steps: &BTreeMap<usize, SuperpositionStep>) -> Option<NegCh
     Some(NegChain {
         start,
         chain_set: chain,
-        chain_vec,
         forward,
     })
 }
@@ -433,7 +477,7 @@ fn remove_trivial_steps(steps: &mut BTreeMap<usize, SuperpositionStep>) {
 }
 
 /// A true step count
-pub fn count_nontrivial_steps(steps: &BTreeMap<usize, SuperpositionStep>) -> usize {
+pub fn _count_nontrivial_steps(steps: &BTreeMap<usize, SuperpositionStep>) -> usize {
     steps.values().filter(|s| !is_trivial_step(s)).count()
 }
 
@@ -737,10 +781,6 @@ fn contrapositive_swap(
             // 7) Bind them universally (Skolems -> universally quantified vars)
             if !new_xs.is_empty() {
                 f = Formula::Forall(new_xs.clone(), Box::new(f));
-                println!(
-                    "[DEBUG] Step {}: Universally quantified fresh vars from Skolem: {:?}",
-                    idx, new_xs
-                );
             }
 
             step.formula = f;
@@ -760,11 +800,8 @@ pub fn turn_proof_around(
     };
 
     let Some(start) = chain.start else {
-        println!("[DEBUG] No turnaround needed");
         return steps.clone();
     };
-
-    println!("[DEBUG] Turnaround starts at {}", start);
 
     let mut new_steps = steps.clone();
     let mut visited = BTreeSet::new();
@@ -779,7 +816,7 @@ pub fn turn_proof_around(
         &chain.chain_set,
     );
 
-    println!("\n[DEBUG] Turn order {:?}", order);
+    // println!("\n[DEBUG] Turn order {:?}", order);
 
     let mut result = steps.clone();
     for (old, new) in order.iter().zip(order.iter().rev()) {
@@ -803,47 +840,24 @@ pub fn turn_proof_around(
 pub fn eq_proof_procedure(proof_text: &str) -> String {
     let parsed = parse_vampire_proof(proof_text);
 
-    let final_steps = if needs_proof_turnaround(&parsed) {
-        println!("\n[DEBUG] Turnaround required");
-        turn_proof_around(&parsed)
-    } else {
-        println!("\n[DEBUG] No turnaround needed");
-        parsed
-    };
+    // Always turn the proof
+    let final_steps = turn_proof_around(&parsed);
 
-    format_proof(&final_steps)
-}
+    let formatted = format_proof(&final_steps);
 
-/* ------------------ CHECK TURNAROUND ------------------ */
+    // _debug_print_parsed_proof(&parsed);
+    // println!("\n[DEBUG] Contrapositive Vampire proof");
+    // println!("{}", formatted);
+    // println!("-------------------------------");
 
-pub fn needs_proof_turnaround(steps: &BTreeMap<usize, SuperpositionStep>) -> bool {
-    let Some(chain) = compute_neg_chain(steps) else {
-        return false;
-    };
-
-    let vec = &chain.chain_vec;
-
-    for (pos, &i) in vec.iter().enumerate() {
-        if is_proof_step(&steps[&i].rule) {
-            if pos + 1 >= vec.len() {
-                return false;
-            }
-            let next = vec[pos + 1];
-            println!("[DEBUG] Next step: {}", next);
-            return steps[&next].formula.to_string() != "$false";
-        }
-    }
-
-    false
+    formatted
 }
 
 /* ------------------ DEBUG ------------------ */
 
-pub fn debug_print_parsed_proof(proof_text: &str) {
-    let steps = parse_vampire_proof(proof_text);
-
+pub fn _debug_print_parsed_proof(steps: &BTreeMap<usize, SuperpositionStep>) {
     println!("\n[DEBUG] Parsed Vampire proof");
-    for (idx, step) in &steps {
+    for (idx, step) in steps {
         println!(
             "{:>4}. formula = {:?}, deps = {:?}, is_neg = {:?}, rule = {:?}",
             idx,
@@ -853,7 +867,7 @@ pub fn debug_print_parsed_proof(proof_text: &str) {
             step.rule
         );
     }
-    println!("-------------------------------\n");
+    println!("-------------------------------");
 }
 
 /// Format a proof (BTreeMap<usize, SuperpositionStep>) as Vampire-style text
@@ -924,9 +938,8 @@ mod tests {
         // 2) g(f(b)) = f(f(b))  (contraposed from step 3, using implicit f(f(b))=f(f(b)))
         // 3) g(g(b)) = f(f(b))  (contraposed from step 2)
 
-        assert!(needs_proof_turnaround(&parsed));
         let steps = turn_proof_around(&parsed);
-        assert_eq!(count_nontrivial_steps(&steps), 4);
+        assert_eq!(_count_nontrivial_steps(&steps), 4);
 
         // check that the key equalities appear somewhere in the result
         // (qe don't rely on exact indices because the turnaround rethreads indices)
@@ -972,17 +985,11 @@ mod tests {
     % ------------------------------
     % ------------------------------
     "#;
-        debug_print_parsed_proof(proof_text);
 
         let steps_map = parse_vampire_proof(proof_text);
-
-        assert!(
-            needs_proof_turnaround(&steps_map),
-            "Proof should require turnaround but was not detected"
-        );
-
+        _debug_print_parsed_proof(&steps_map);
         let final_proof = eq_proof_procedure(&proof_text);
-        println!("\n[DEBUG] Final proof");
+        println!("\n[TEST] Final proof");
         println!("{}", final_proof);
     }
 
@@ -997,19 +1004,10 @@ mod tests {
     5. $false  [superposition 3,4]
     "#;
 
-        debug_print_parsed_proof(proof_text);
-
         let steps = parse_vampire_proof(proof_text);
-
-        // Ensure turnaround is needed
-        assert!(
-            needs_proof_turnaround(&steps),
-            "Turnaround should be detected"
-        );
-
+        _debug_print_parsed_proof(&steps);
         let turned = turn_proof_around(&steps);
-
-        println!("\n[DEBUG] Turned proof steps");
+        println!("\n[TEST] Turned proof steps");
         for (idx, step) in &turned {
             println!("  {}: {}", idx, step.formula.to_string());
         }
@@ -1017,12 +1015,12 @@ mod tests {
         // Check that the contrapositive + Skolem-to-variable + quantifier flattening worked
         let step4_formula = &turned[&4].formula.to_string();
         println!(
-            "\n[DEBUG] Step 4 formula after turnaround: {}",
+            "\n[TEST] Step 4 formula after turnaround: {}",
             step4_formula
         );
         let step5_formula = &turned[&5].formula.to_string();
         println!(
-            "\n[DEBUG] Step 5 formula after turnaround: {}",
+            "\n[TEST] Step 5 formula after turnaround: {}",
             step5_formula
         );
 
@@ -1075,9 +1073,35 @@ mod tests {
     % ------------------------------
     % ------------------------------
     "#;
-        debug_print_parsed_proof(proof_text);
-        let steps_map = parse_vampire_proof(proof_text);
-        assert!(!needs_proof_turnaround(&steps_map));
+
+        let parsed = parse_vampire_proof(proof_text);
+        let turned = turn_proof_around(&parsed);
+
+        // Collect steps in index order
+        let mut steps: Vec<(&usize, &SuperpositionStep)> = turned.iter().collect();
+        steps.sort_by_key(|(i, _)| *i);
+
+        // Get last two steps
+        let (idx2, step2) = steps[steps.len() - 2];
+        let (idx1, step1) = steps[steps.len() - 1];
+
+        // Assertions on indices (optional but nice)
+        assert_eq!(*idx2, 158);
+        assert_eq!(*idx1, 159);
+
+        // Assertions on formulas (exact)
+        assert_eq!(
+            step2.formula.to_string(),
+            "! [X0,X1] : X0 = op(X0,X1)",
+            "Unexpected second-to-last formula"
+        );
+
+        assert_eq!(
+            step1.formula.to_string(),
+            "! [X0,X1,X2] : X0 = op(X0,op(X1,op(X2,op(X0,X2))))",
+            "Unexpected last formula"
+        );
+
     }
 
     #[test]
@@ -1119,17 +1143,12 @@ mod tests {
     % ------------------------------
     % ------------------------------
     "#;
-        debug_print_parsed_proof(proof_text);
+        
 
         let steps_map = parse_vampire_proof(proof_text);
-
-        assert!(
-            needs_proof_turnaround(&steps_map),
-            "Proof should require turnaround but was not detected"
-        );
-
+        _debug_print_parsed_proof(&steps_map);
         let final_proof = eq_proof_procedure(&proof_text);
-        println!("\n[DEBUG] Final proof");
+        println!("\n[TEST] Final proof");
         println!("{}", final_proof);
     }
 }
