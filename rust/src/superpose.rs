@@ -112,7 +112,7 @@ pub fn superposition_steps(
 ) -> Option<(
     Vec<String>,
     BTreeMap<usize, SuperpositionStep>,
-    Vec<(String, usize)>, // <-- all derived matches
+    Option<(String, usize)>, // one derived match
     bool,
 )> {
     // load the DAG from a file. This DAG maps each lemma to its children.
@@ -135,9 +135,10 @@ pub fn superposition_steps(
     let mut proved_history = false;
     // TODO we might can do this a bit more elegantly but it works now:)
     let mut force_super = false;
-    let mut derived: Vec<(String, usize)> = Vec::new();
-    let mut derived_seen: BTreeSet<usize> = BTreeSet::new(); // avoid duplicates by step_num
-                                                             // build the list of dependency lemmas from the DAG
+    // derived lemma (name, idx)
+    let mut derived: Option<(String, usize)> = None;
+
+    // build the list of dependency lemmas from the DAG
     let mut deps: Vec<String> = if lemma.starts_with("history_") {
         // for a history lemma, get its children in the DAG
         let children = match dag.get(lemma) {
@@ -220,9 +221,9 @@ pub fn superposition_steps(
             if formulas_match(&dep_formula, &wrapped) {
                 matched_any = true;
 
-                // every match is a derived step (dedup by step_num)
-                if derived_seen.insert(*step_num) {
-                    derived.push((dep.clone(), *step_num));
+                // store only one derived lemma (the first match)
+                if derived.is_none() {
+                    derived = Some((dep.clone(), *step_num));
                 }
 
                 // recursively gather all dependencies of this Vampire step
@@ -343,7 +344,7 @@ pub fn gather_all_dependencies(
     }
 }
 
-/// Extend extra_dependencies using the renaming map from prepend_superposition_steps
+/// Extend extra_dependencies using the renaming map from prepending superposition steps
 pub fn extend_with_superposition_steps(
     extra_dependencies: &mut Vec<(String, String)>, // (name, formula)
     superposition_steps: &BTreeMap<usize, SuperpositionStep>,
@@ -358,20 +359,32 @@ pub fn extend_with_superposition_steps(
     }
 }
 
-/// Find the highest lemma index already present in `extra_dependencies`
-/// and any kind of lemma name (lemma_, history_lemma_, single_lemma_, abstract_lemma_)
-fn last_lemma_index(deps: &Vec<(String, String)>) -> usize {
-    let re = Regex::new(r"(?:.*_)?lemma_(\d+)$").unwrap();
-    deps.iter()
-        .filter_map(|(name, _)| {
-            re.captures(name)
-                .and_then(|cap| cap.get(1))
-                .and_then(|m| m.as_str().parse::<usize>().ok())
-        })
-        .max()
-        .unwrap_or(0)
-}
+/// Find the lemma indices already present in dependencies
+fn used_lemma_numbers(
+    axioms: &Vec<(String, String)>,
+    derived_lemma: &Option<(String, usize)>,
+) -> BTreeSet<usize> {
+    let re = Regex::new(r"(?:history_|single_|abstract_)?lemma_(\d+)").unwrap();
+    let mut used = BTreeSet::new();
 
+    for (name, _) in axioms {
+        for cap in re.captures_iter(name) {
+            if let Ok(n) = cap[1].parse::<usize>() {
+                used.insert(n);
+            }
+        }
+    }
+
+    if let Some((name, _)) = derived_lemma {
+        for cap in re.captures_iter(name) {
+            if let Ok(n) = cap[1].parse::<usize>() {
+                used.insert(n);
+            }
+        }
+    }
+
+    used
+}
 /// Prepend superposition steps and dependency formulas to a proof
 /// `axioms` is a list of (name, formula) tuples, treated as existing dependencies/axioms
 /// `derived_lemma_name` is optional: the name of the lemma we are proving
@@ -379,15 +392,27 @@ fn last_lemma_index(deps: &Vec<(String, String)>) -> usize {
 pub fn prepend_superposition_steps(
     superposition_steps: &BTreeMap<usize, SuperpositionStep>,
     axioms: &Vec<(String, String)>, // existing deps, treated as axioms (name, formula)
-    derived_lemmas: Vec<(String, usize)>,
+    derived_lemma: Option<(String, usize)>, // (name, idx)
 ) -> (String, BTreeMap<usize, String>) {
-    // compute offset to continue lemma numbering
-    let mut next_lemma_idx = last_lemma_index(axioms) + 1;
+    // allocate lemma numbers from 1 upward, skipping already-used numbers (20,21,...)
+    let mut used = used_lemma_numbers(axioms, &derived_lemma);
+    let mut next = 1usize;
 
-    let derived_map: BTreeMap<usize, String> = derived_lemmas
-        .iter()
-        .map(|(name, idx)| (*idx, name.clone()))
-        .collect();
+    let mut fresh = || -> String {
+        while used.contains(&next) {
+            next += 1;
+        }
+        let n = next;
+        used.insert(n);
+        next += 1;
+        format!("lemma_{:04}", n)
+    };
+
+    // derived_map: seq_idx -> derived lemma name (at most one)
+    let mut derived_map: BTreeMap<usize, String> = BTreeMap::new();
+    if let Some((name, idx)) = &derived_lemma {
+        derived_map.insert(*idx, name.clone());
+    }
 
     // build local -> global renaming
     let mut renaming: BTreeMap<usize, String> = BTreeMap::new();
@@ -400,9 +425,7 @@ pub fn prepend_superposition_steps(
             derived_name.to_string()
         } else {
             // assign next unique lemma number
-            let n = next_lemma_idx;
-            next_lemma_idx += 1;
-            format!("lemma_{:04}", n)
+            fresh()
         };
         renaming.insert(*seq_idx, name);
     }
@@ -419,19 +442,8 @@ pub fn prepend_superposition_steps(
             .iter()
             .map(|(_vnum, sidx)| {
                 if *sidx == 0 {
-                    // dependency is an axiom
-                    if let Some((name, formula)) = axioms
-                        .iter()
-                        .find(|(_, f)| formulas_match(f, &step.formula))
-                    {
-                        if name == "a1" {
-                            "a1".to_string()
-                        } else {
-                            format!("{}: {}", name, formula)
-                        }
-                    } else {
-                        "a1".to_string()
-                    }
+                    // external dependency (axiom / clause) — formula not available here
+                    "a1".to_string()
                 } else {
                     // dependency is another superposition step
                     let dep_name = renaming

@@ -51,7 +51,7 @@ pub fn try_minimize(
     // precompute lemmas
     let precomputed = precompute_lemmas(&proofs_dir, &lemmas_dir, &twee_proofs_dir)?;
 
-    let mut offset = 4;
+    let mut offset = 1;
     let mut accepted = 0;
     let max_candidates = 4;
 
@@ -190,13 +190,13 @@ pub fn try_minimize(
                 // handle Vampire-specific prepending
                 let root_proof_steps = if prover == "vampire" {
                     if let Some((superposition_steps, idx)) =
-                        extract_superposition_steps(path, root_lemma)
+                        extract_superposition_steps(path, &root_formula)
                     {
                         // prepend only the relevant Vampire steps and get the renaming
                         let (proof, renaming) = prepend_superposition_steps(
                             &superposition_steps,
                             &extra_dependencies,
-                            vec![(root_lemma.to_string(), idx)],
+                            Some((root_lemma.to_string(), idx)),
                         );
                         extend_with_superposition_steps(
                             &mut extra_dependencies,
@@ -273,12 +273,7 @@ pub fn try_minimize(
                         let (dependencies, superposition_steps, derived, _) =
                             match maybe_superposition {
                                 Some((deps, steps, derived, ph)) => (deps, steps, derived, ph),
-                                None => (
-                                    Vec::new(),
-                                    BTreeMap::new(),
-                                    Vec::<(String, usize)>::new(),
-                                    false,
-                                ),
+                                None => (Vec::new(), BTreeMap::new(), None, false),
                             };
                         let superposition_steps_count = superposition_steps.len();
 
@@ -536,12 +531,7 @@ pub fn try_minimize(
                 let (dependencies, superposition_steps, derived, proved_history) =
                     match maybe_superposition {
                         Some((deps, steps, derived, ph)) => (deps, steps, derived, ph),
-                        None => (
-                            Vec::new(),
-                            BTreeMap::new(),
-                            Vec::<(String, usize)>::new(),
-                            false,
-                        ),
+                        None => (Vec::new(), BTreeMap::new(), None, false),
                     };
                 let superposition_steps_count = superposition_steps.len();
 
@@ -919,13 +909,13 @@ pub fn prove_lemma(
             // prepend superposition steps if they exist
             if let Some((sp_steps, idx)) =
                 extract_superposition_steps(&vampire_proof_file, &c_formula)
-            {println!("SUPERPOSE STEPS {:?}", sp_steps);
+            {
                 let v_len = sp_steps.len();
                 if v_len < t_len {
                     let (vp, renaming) = prepend_superposition_steps(
                         &sp_steps,
                         extra_dependencies,
-                        vec![(c_name, idx)],
+                        Some((c_name.clone(), idx)),
                     );
                     extend_with_superposition_steps(extra_dependencies, &sp_steps, &renaming);
                     Some((vp, v_len))
@@ -953,7 +943,7 @@ pub fn prove_lemma(
                 extract_superposition_steps(&vampire_proof_file, &c_formula)
             {
                 let (vp, renaming) =
-                    prepend_superposition_steps(&sp_steps, extra_dependencies, vec![(c_name, idx)]);
+                    prepend_superposition_steps(&sp_steps, extra_dependencies, Some((c_name.clone(), idx)));
                 extend_with_superposition_steps(extra_dependencies, &sp_steps, &renaming);
                 Some((vp, v_len))
             } else {
@@ -965,39 +955,132 @@ pub fn prove_lemma(
         (None, false) => None,
     };
 
+    // 7b. Fallback: load an existing proof from proofs_dir (only if <= current best)
+    let result = match result {
+        // we already found a proof in this run (Twee/Vampire)
+        Some((best_proof, best_steps)) => {
+            if let Ok((fb_proof, fb_steps)) = fallback_proof(&proofs_dir, &c_name, &c_formula) {
+                if fb_steps < best_steps {
+                    Some((fb_proof, fb_steps))
+                } else {
+                    Some((best_proof, best_steps))
+                }
+            } else {
+                Some((best_proof, best_steps))
+            }
+        }
+
+        // No proof found in this run -> try fallback
+        None => {
+            if let Ok((fb_proof, fb_steps)) = fallback_proof(&proofs_dir, &c_name, &c_formula) {
+                Some((fb_proof, fb_steps))
+            } else {
+                None
+            }
+        }
+    };
+
     // 8. Cleanup temporary file
     let _ = fs::remove_file(&tmp_path);
 
     Ok(result)
 }
 
+fn is_single_or_abstract(name: &str) -> bool {
+    name.starts_with("single_lemma_") || name.starts_with("abstract_lemma_")
+}
+
+/// Fallback: load an existing proof from proofs_dir (any variant),
+/// and if it's a Vampire proof try to prepend extracted superposition steps.
+/// Returns (proof_text, step_count).
+fn fallback_proof(
+    proofs_dir: &str,
+    lemma_name: &str,
+    lemma_formula: &str,
+) -> Result<(String, usize), String> {
+    // restrict to single_lemma_* and abstract_lemma_* only
+    // TODO but history_lemma_* is already what our tool does
+    if !is_single_or_abstract(lemma_name) {
+        return Err(format!(
+            "[INFO] Fallback only applies to single and abstract lemmas, got {}",
+            lemma_name
+        ));
+    }
+
+    let actual_file = select_actual_lemma(proofs_dir, lemma_name)
+        .ok_or_else(|| format!("No proof file found for {}", lemma_name))?;
+
+    // try different variants
+    let candidates = [
+        format!("{}/{}.proof", proofs_dir, actual_file),
+        format!("{}/{}_twee.proof", proofs_dir, actual_file),
+        format!("{}/{}_vampire.proof", proofs_dir, actual_file),
+    ];
+
+    let path = candidates
+        .iter()
+        .find(|p| Path::new(p).exists())
+        .ok_or_else(|| format!("No proof file found for {} in any variant", lemma_name))?;
+
+    let mut proof_text =
+        fs::read_to_string(path).map_err(|_| format!("Cannot read proof file {}", path))?;
+
+    let prover = actual_file
+        .rsplit('_')
+        .next()
+        .ok_or_else(|| format!("Cannot extract prover from filename {}", actual_file))?
+        .split('.')
+        .next()
+        .ok_or_else(|| format!("Cannot extract prover from filename {}", actual_file))?
+        .to_string();
+
+    // handle Vampire-specific prepending
+    let steps = if prover == "vampire" {
+        //let extra_dependencies = Vec::new();
+        if let Some((superposition_steps, idx)) = extract_superposition_steps(path, lemma_formula) {
+            let (prepended, _renaming) = prepend_superposition_steps(
+                &superposition_steps,
+                &Vec::new(), // no extra dependencies, we didn't run a prover it's the fallback
+                Some((lemma_name.to_string(), idx)),
+            );
+            // in case of a history problem we will have extra dependencies which we will need to prove
+            //extend_with_superposition_steps(extra_dependencies, &superposition_steps, &renaming);
+
+            let steps_init = proof_length(&prover, &proof_text);
+            proof_text = prepended;
+            //superposition_steps.len()
+            steps_init
+        } else {
+            // extraction failed --> initial proof
+            proof_length(&prover, &proof_text)
+        }
+    } else {
+        proof_length(&prover, &proof_text)
+    };
+
+    Ok((proof_text, steps))
+}
+
 /// Returns true iff the proof text already contains the lemma with the same number
-/// in any of your variants (lemma_, history_lemma_, single_lemma_, ...),
-/// in a way that indicates it is already *available* (axiom or recorded history).
-///
-/// Examples detected:
-///   Axiom 1 (lemma_0025): ...
-///   % history_lemma_0025: ... | deps: ...
-///   Axiom 7 (single_lemma_0025): ...
+/// but ONLY in these variants:
+///   history_lemma_<n>, single_lemma_<n>, abstract_lemma_<n>
+/// Plain lemma_<n> is intentionally NOT matched
 pub fn proof_uses_lemma(proof: &str, lemma_any_variant: &str) -> bool {
-    // extract trailing digits (the lemma number) from any variant.
-    // accepts: lemma_0025, history_lemma_0025, single_lemma_0025, abstract_lemma_0025
+    // extract trailing digits (the lemma number) from any variant
     let num_re = Regex::new(r"(\d+)\s*$").unwrap();
     let Some(cap) = num_re.captures(lemma_any_variant.trim()) else {
         return false;
     };
     let num = cap.get(1).unwrap().as_str();
 
-    // build the four canonical names for this lemma number
+    // build ONLY the allowed canonical names for this lemma number
     let names = [
-        format!("lemma_{}", num),
         format!("history_lemma_{}", num),
         format!("single_lemma_{}", num),
         format!("abstract_lemma_{}", num),
     ];
 
-    // 1) Present as an axiom: "Axiom 1 (lemma_0025): ..."
-    // we accept any of the 4 names in the parens
+    // 1) Present as an axiom: "Axiom 1 (single_lemma_0025): ..."
     let axiom_re = Regex::new(&format!(
         r"(?m)^\s*Axiom\s+\d+\s+\(\s*(?:{})\s*\)\s*:",
         names
@@ -1008,8 +1091,7 @@ pub fn proof_uses_lemma(proof: &str, lemma_any_variant: &str) -> bool {
     ))
     .unwrap();
 
-    // 2) Present as a recorded lemma line (any variant):
-    // "% lemma_0025: ..."
+    // 2) Present as a recorded lemma line (allowed variants only):
     // "% history_lemma_0025: ..."
     // "% single_lemma_0025: ..."
     // "% abstract_lemma_0025: ..."
@@ -1023,8 +1105,8 @@ pub fn proof_uses_lemma(proof: &str, lemma_any_variant: &str) -> bool {
     ))
     .unwrap();
 
-    // 3) (Optional) Mentioned in deps:
-    // "| deps: lemma_0007: ..., abstract_lemma_0003: ..."
+    // 3) Mentioned in deps:
+    // "| deps: single_lemma_0007: ..., abstract_lemma_0003: ..."
     let deps_re = Regex::new(&format!(
         r"\b(?:{})\s*:",
         names
