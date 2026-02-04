@@ -5,7 +5,7 @@ PYTHON_SCRIPT="../python/generate_input.py"
 RUST_DIR="../rust"
 # Use prebuilt binary instead of cargo
 BENCHMARK_BINARY="./benchmarking_binary"
-KRYMPA_BINARY="./krympa_history_abstract"
+KRYMPA_BINARY="./krympa_all"
 
 mkdir -p "$BENCHMARK_DIR/output_logs"
 ORIG_DIR=$(pwd)
