@@ -844,10 +844,10 @@ pub fn eq_proof_procedure(proof_text: &str) -> String {
 
     let formatted = format_proof(&final_steps);
 
-    // _debug_print_parsed_proof(&parsed);
-    // println!("\n[DEBUG] Contrapositive Vampire proof");
-    // println!("{}", formatted);
-    // println!("-------------------------------");
+    _debug_print_parsed_proof(&parsed);
+    println!("\n[DEBUG] Contrapositive Vampire proof");
+    println!("{}", formatted);
+    println!("-------------------------------");
 
     formatted
 }

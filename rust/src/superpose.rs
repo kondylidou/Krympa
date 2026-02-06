@@ -15,7 +15,7 @@ pub struct SuperpositionStep {
 
 /// Parse Vampire proof:
 /// - returns relevant inference steps as seq-indexed map
-/// - ALSO returns input clauses (Vampire-number -> formula) so we can resolve deps with seq_idx=0
+/// - returns input clauses (Vampire-number -> formula) so we can resolve deps with seq_idx=0
 pub fn parse_vampire_proof(
     file_path: &str,
 ) -> Result<(BTreeMap<usize, SuperpositionStep>, BTreeMap<usize, String>), String> {
@@ -39,32 +39,28 @@ pub fn parse_vampire_proof(
             continue;
         }
 
-        // extract Vampire number if present
-        let vamp_num: Option<usize> = line_trimmed
+        // split using the last '[ ... ]' which is the inference tag
+        let (main_part, tag_part) = match line_trimmed.rfind('[') {
+            Some(i) => (
+                line_trimmed[..i].trim(),
+                line_trimmed[i + 1..].trim_end_matches(']').trim(),
+            ),
+            None => continue,
+        };
+
+        // extract Vampire number if present (from main_part)
+        let vamp_num: Option<usize> = main_part
             .split('.')
             .next()
             .and_then(|s| s.trim().parse::<usize>().ok());
 
-        // formula (everything before first '['), with leading "N." stripped
-        let mut formula = line_trimmed
-            .split('[')
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_string();
-
-        // remove leading Vampire number + dot
+        // formula = main_part with leading "N." stripped (NOT split on '[')
+        let mut formula = main_part.to_string();
         if let Some(pos) = formula.find('.') {
             if formula[..pos].trim().parse::<usize>().is_ok() {
                 formula = formula[pos + 1..].trim().to_string();
             }
         }
-
-        // read bracket tag-part if present
-        let tag_part = match line_trimmed.split('[').nth(1) {
-            Some(t) => t.trim_end_matches(']').to_string(),
-            None => continue,
-        };
 
         // record input clauses (these are exactly the ones that later show up as deps with seq_idx=0)
         if tag_part.contains("input") {
@@ -178,7 +174,6 @@ pub fn superposition_steps(
 ) -> Option<(
     Vec<String>,
     BTreeMap<usize, SuperpositionStep>,
-    Option<(String, usize)>, // one derived match
     bool,
     BTreeMap<usize, String>, // input_formulas
 )> {
@@ -195,14 +190,13 @@ pub fn superposition_steps(
             return None; // if parsing fails, no steps can be returned
         }
     };
+    println!("INPUT {:?}", input_formulas);
 
     // store all Vampire steps that are relevant to the dependencies of the lemma
     let mut relevant_steps: BTreeMap<usize, SuperpositionStep> = BTreeMap::new();
     let mut proved_history = false;
     // TODO we might can do this a bit more elegantly but it works now:)
     let mut force_super = false;
-    // derived lemma (name, idx)
-    let mut derived: Option<(String, usize)> = None;
 
     // build the list of dependency lemmas from the DAG
     let mut deps: Vec<String> = if lemma.starts_with("history_") {
@@ -287,11 +281,6 @@ pub fn superposition_steps(
             if formulas_match(&dep_formula, &wrapped) {
                 matched_any = true;
 
-                // store only one derived lemma (the first match)
-                if derived.is_none() {
-                    derived = Some((dep.clone(), *step_num));
-                }
-
                 // recursively gather all dependencies of this Vampire step
                 let mut all_deps: BTreeSet<usize> = BTreeSet::new();
                 gather_all_dependencies(*step_num, &steps_map, &mut all_deps);
@@ -316,18 +305,18 @@ pub fn superposition_steps(
             // we have no other dependencies
             deps = Vec::new();
         }
-        Some((deps, relevant_steps, derived, proved_history, input_formulas))
+        Some((deps, relevant_steps, proved_history, input_formulas))
     } else {
         None // no matching Vampire steps found
     }
 }
 
 /// Parse a Vampire proof and extract the exact derivation path
-/// to prove a lemma. Returns (relevant steps, seq_idx of derived lemma)
+/// to prove a lemma. Returns relevant steps
 pub fn extract_superposition_steps(
     vampire_file: &str,
     lemma_formula: &str, // pass formula directly
-) -> Option<(BTreeMap<usize, SuperpositionStep>, usize, BTreeMap<usize, String>)> {
+) -> Option<(BTreeMap<usize, SuperpositionStep>, BTreeMap<usize, String>)> {
     let (steps_map, input_formulas) = match parse_vampire_proof(vampire_file) {
         Ok(x) => x,
         Err(err) => {
@@ -338,9 +327,10 @@ pub fn extract_superposition_steps(
             return None;
         }
     };
+    println!("INPUT {:?}", input_formulas);
 
     // find the Vampire step proving the lemma
-    let derived_seq_idx = steps_map.iter().find_map(|(step_num, step)| {
+    let seq_idx = steps_map.iter().find_map(|(step_num, step)| {
         let wrapped = format!("({})", step.formula);
         if formulas_match(lemma_formula, &wrapped) {
             Some(*step_num)
@@ -351,7 +341,7 @@ pub fn extract_superposition_steps(
 
     // collect all transitive dependencies of that step
     let mut all_deps: BTreeSet<usize> = BTreeSet::new();
-    gather_all_dependencies(derived_seq_idx, &steps_map, &mut all_deps);
+    gather_all_dependencies(seq_idx, &steps_map, &mut all_deps);
 
     let mut relevant_steps: BTreeMap<usize, SuperpositionStep> = BTreeMap::new();
     for idx in &all_deps {
@@ -360,33 +350,7 @@ pub fn extract_superposition_steps(
         }
     }
 
-    Some((relevant_steps, derived_seq_idx, input_formulas))
-}
-
-/// Append all relevant superposition steps to a temporary file
-pub fn append_superposition_steps_as_lemmas(
-    tmp_file: &str,
-    steps: &BTreeMap<usize, SuperpositionStep>,
-    lemmas_dir: &str,
-    proofs_dir: &str,
-) -> Result<(), String> {
-    for (seq_idx, _step) in steps {
-        let mut all_deps = BTreeSet::new();
-        gather_all_dependencies(*seq_idx, steps, &mut all_deps);
-
-        for dep_idx in all_deps {
-            let lemma_name = format!("lemma_{:04}", dep_idx);
-            if let Some(actual) = select_actual_lemma(proofs_dir, &lemma_name) {
-                let name = strip_prover_suffix(&actual);
-                let formula = load_lemma(lemmas_dir, &name)?;
-                append_as_axiom(tmp_file, &formula, &name);
-            } else {
-                let formula = load_lemma(lemmas_dir, &lemma_name)?;
-                append_as_axiom(tmp_file, &formula, &lemma_name);
-            }
-        }
-    }
-    Ok(())
+    Some((relevant_steps, input_formulas))
 }
 
 /// Recursively gather all sequential-indexed dependencies
@@ -427,20 +391,11 @@ pub fn extend_with_superposition_steps(
 /// Find the lemma indices already present in dependencies
 fn used_lemma_numbers(
     axioms: &Vec<(String, String)>,
-    derived_lemma: &Option<(String, usize)>,
 ) -> BTreeSet<usize> {
     let re = Regex::new(r"(?:history_|single_|abstract_)?lemma_(\d+)").unwrap();
     let mut used = BTreeSet::new();
 
     for (name, _) in axioms {
-        for cap in re.captures_iter(name) {
-            if let Ok(n) = cap[1].parse::<usize>() {
-                used.insert(n);
-            }
-        }
-    }
-
-    if let Some((name, _)) = derived_lemma {
         for cap in re.captures_iter(name) {
             if let Ok(n) = cap[1].parse::<usize>() {
                 used.insert(n);
@@ -454,13 +409,12 @@ fn used_lemma_numbers(
 /// Prepend superposition steps and dependency formulas to a proof
 /// Takes `input_formulas` so we can resolve seq_idx==0 deps by matching formulas to `axioms`.
 pub fn prepend_superposition_steps(
-    superposition_steps: &BTreeMap<usize, SuperpositionStep>,
     axioms: &Vec<(String, String)>,
-    derived_lemma: Option<(String, usize)>,
+    superposition_steps: &BTreeMap<usize, SuperpositionStep>,
     input_formulas: &BTreeMap<usize, String>, // vamp_num -> input formula
 ) -> (String, BTreeMap<usize, String>) {
     // allocate lemma numbers from 1 upward, skipping already-used numbers (20,21,...)
-    let mut used = used_lemma_numbers(axioms, &derived_lemma);
+    let mut used = used_lemma_numbers(axioms);
     let mut next = 1usize;
 
     let mut fresh = || -> String {
@@ -473,22 +427,10 @@ pub fn prepend_superposition_steps(
         format!("lemma_{:04}", n)
     };
 
-    // derived_map: seq_idx -> derived lemma name (at most one)
-    let mut derived_map: BTreeMap<usize, String> = BTreeMap::new();
-    if let Some((name, idx)) = &derived_lemma {
-        derived_map.insert(*idx, name.clone());
-    }
-
     // build local -> global renaming
     let mut renaming: BTreeMap<usize, String> = BTreeMap::new();
     for seq_idx in superposition_steps.keys() {
-        let name = if let Some(derived_name) = derived_map.get(seq_idx) {
-            derived_name.to_string()
-        } else {
-            // assign next unique lemma number
-            fresh()
-        };
-        renaming.insert(*seq_idx, name);
+        renaming.insert(*seq_idx, fresh()); // assign next unique lemma number
     }
 
     let mut annotated_proof = String::new();
@@ -615,17 +557,17 @@ mod tests {
 
         // Axioms available in the problem (name, formula)
         let axioms: Vec<(String, String)> = vec![
-            ("a1".to_string(), "p(a)".to_string()),
-            ("a2".to_string(), "q(a)".to_string()),
+            ("a1".to_string(), "(op(X0,X1) = op(op(X1,op(X0,X2)),X0))".to_string()),
+            ("a2".to_string(), "op(X1,op(X0,op(op(X1,X2),X3))) = op(op(op(X1,X2),X0),X1)".to_string()),
         ];
 
         // Input formulas parsed from Vampire
         let mut input_formulas: BTreeMap<usize, String> = BTreeMap::new();
-        input_formulas.insert(1, "p(a)".to_string());
-        input_formulas.insert(2, "q(a)".to_string());
+        input_formulas.insert(1, "(op(X0,X1) = op(op(X1,op(X0,X2)),X0))".to_string());
+        input_formulas.insert(2, "op(X1,op(X0,op(op(X1,X2),X3))) = op(op(op(X1,X2),X0),X1)".to_string());
 
         let (annotated, _renaming) =
-            prepend_superposition_steps(&steps, &axioms, None, &input_formulas);
+            prepend_superposition_steps(&axioms, &steps, &input_formulas);
 
         // Step 1 deps should resolve to a1, a2 (not a_1/a_2)
         assert!(
