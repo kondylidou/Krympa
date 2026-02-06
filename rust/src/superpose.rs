@@ -104,58 +104,6 @@ pub fn parse_vampire_proof(
     Ok((steps, input_formulas))
 }
 
-/// Find an axiom name whose formula matches `input_formula`
-/// Fast structural check first, then alpha-match as fallback.
-fn match_input_to_axiom_name(
-    axioms: &Vec<(String, String)>,
-    input_formula: &str,
-) -> Option<String> {
-    fn canon(s: &str) -> String {
-        // strip whitespace + trailing punctuation that Vampire/TPTP sometimes leaves
-        s.trim()
-            .trim_end_matches('.')
-            .trim()
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .collect()
-    }
-
-    fn wrap(s: &str) -> String {
-        let t = s.trim().trim_end_matches('.').trim();
-        if t.starts_with('!') || t.starts_with('(') {
-            t.to_string()
-        } else {
-            format!("({})", t)
-        }
-    }
-
-    let in_c = canon(input_formula);
-
-    // 1) exact match on canonical strings
-    for (name, ax_f) in axioms {
-        if canon(ax_f) == in_c {
-            return Some(name.clone());
-        }
-    }
-
-    // 2) try alpha match in a few safe variants (wrapped/unwrapped combinations)
-    let in_w = wrap(input_formula);
-    for (name, ax_f) in axioms {
-        let ax_raw = ax_f.trim().trim_end_matches('.').trim().to_string();
-        let ax_w = wrap(ax_f);
-
-        if formulas_match(&ax_raw, input_formula)
-            || formulas_match(&ax_w, input_formula)
-            || formulas_match(&ax_raw, &in_w)
-            || formulas_match(&ax_w, &in_w)
-        {
-            return Some(name.clone());
-        }
-    }
-
-    None
-}
-
 /// Extract nth (history) lemma and matching Vampire steps.
 ///
 /// This function takes a `dag`, a `vampire_file` (proof by Vampire),
@@ -190,7 +138,6 @@ pub fn superposition_steps(
             return None; // if parsing fails, no steps can be returned
         }
     };
-    println!("INPUT {:?}", input_formulas);
 
     // store all Vampire steps that are relevant to the dependencies of the lemma
     let mut relevant_steps: BTreeMap<usize, SuperpositionStep> = BTreeMap::new();
@@ -327,7 +274,6 @@ pub fn extract_superposition_steps(
             return None;
         }
     };
-    println!("INPUT {:?}", input_formulas);
 
     // find the Vampire step proving the lemma
     let seq_idx = steps_map.iter().find_map(|(step_num, step)| {
@@ -409,7 +355,7 @@ fn used_lemma_numbers(
 /// Prepend superposition steps and dependency formulas to a proof
 /// Takes `input_formulas` so we can resolve seq_idx==0 deps by matching formulas to `axioms`.
 pub fn prepend_superposition_steps(
-    axioms: &Vec<(String, String)>,
+    axioms: &Vec<(String, String)>, // (name, formula)
     superposition_steps: &BTreeMap<usize, SuperpositionStep>,
     input_formulas: &BTreeMap<usize, String>, // vamp_num -> input formula
 ) -> (String, BTreeMap<usize, String>) {
@@ -447,8 +393,11 @@ pub fn prepend_superposition_steps(
                 if *sidx == 0 {
                     // resolve input dep by formula -> axiom name if possible
                     if let Some(inp_f) = input_formulas.get(vnum) {
-                        if let Some(ax_name) = match_input_to_axiom_name(axioms, inp_f) {
-                            return ax_name;
+                        if let Some((name, _)) = axioms
+                            .iter()
+                            .find(|(_, f)| formulas_match(f, inp_f))
+                        {
+                            return name.clone();
                         }
                         // fallback: keep it distinct and show formula
                         return format!("a_{}: {}", vnum, inp_f);

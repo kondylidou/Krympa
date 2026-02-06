@@ -361,6 +361,20 @@ mod tests {
     }
 
     #[test]
+    fn test_match_from_example3() {
+        let f1 = "! [X0, X1, X2] : (op(X1,X2) = op(op(X0,X1),X2))";
+        let f2 = "op(x1, x2) = op(op(x0, x1), x2)";
+        assert!(formulas_match(f1, f2));
+    }
+
+    #[test]
+    fn test_no_match_from_example4() {
+        let f1 = "! [X0,X1,X2] : op(X0,X1) = op(op(X1,op(X2,X0)),X0)";
+        let f2 = "op(X0,X3) = op(op(X3,op(X1,X0)),X0)";
+        assert!(formulas_match(f1, f2));
+    }
+
+    #[test]
     fn test_no_match_from_example() {
         let f1 = "! [X0, X1, X2] :
         (op(X0,X1) = op(op(X1,op(X0,X2)),X0))";
