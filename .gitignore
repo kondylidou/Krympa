@@ -24,6 +24,8 @@ lean/.lake/
 /proofs/
 /output/
 /tmp/
+/raw_data/
+/thy/
 
 # === Prover Outputs ===
 *.out
