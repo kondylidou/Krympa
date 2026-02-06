@@ -750,8 +750,6 @@ pub fn try_minimize(
                         + sub_proof_steps;
                 }
 
-                println!("   [PROOOF-------------------------------------------------------] ");
-                println!("   [PROOOF] {}", annotated_proof);
                 // update local_best
                 local_best = match local_best {
                     None => Some((steps_total, Some(n_history_lemma.clone()), annotated_proof)),

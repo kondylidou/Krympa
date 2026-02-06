@@ -68,7 +68,7 @@ pub fn run(input_folder: &str, krympa_bin: &str) {
                 }
             };
 
-            let timeout = Duration::from_secs(3600); // 1 hour
+            let timeout = Duration::from_secs(2700); // 45 minutes
 
             let status = match child.wait_timeout(timeout) {
                 Ok(Some(status)) => status,

@@ -19,7 +19,7 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
         }
     };
 
-    let timeout = Duration::from_secs(20);
+    let timeout = Duration::from_secs(10);
     match child.wait_timeout(timeout).unwrap() {
         Some(status) => {
             let output = child.wait_with_output().unwrap();
