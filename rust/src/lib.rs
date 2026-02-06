@@ -18,7 +18,8 @@ pub struct BenchmarkResult {
 /// Run the benchmarking.
 /// `input_folder`: folder with input files
 /// `krympa_bin`: path to prebuilt krympa binary
-pub fn run(input_folder: &str, krympa_bin: &str) {
+/// `timeout_secs`: per-command timeout (seconds)
+pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
     let input_dir = Path::new(input_folder);
     if !input_dir.is_dir() {
         eprintln!(
@@ -27,6 +28,7 @@ pub fn run(input_folder: &str, krympa_bin: &str) {
         );
         return;
     }
+
     let output_dir = Path::new("../output");
     fs::create_dir_all(output_dir).expect("Failed to create output folder");
 
@@ -44,6 +46,7 @@ pub fn run(input_folder: &str, krympa_bin: &str) {
 
     println!("Starting benchmarking in folder: {}\n", input_dir.display());
     println!("Output folder: {}\n", output_dir.display());
+    println!("Per-command timeout: {} seconds\n", timeout_secs);
 
     'file_loop: for input_file in input_files {
         let input_str = input_file.to_string_lossy().to_string();
@@ -68,7 +71,7 @@ pub fn run(input_folder: &str, krympa_bin: &str) {
                 }
             };
 
-            let timeout = Duration::from_secs(2700); // 45 minutes
+            let timeout = Duration::from_secs(timeout_secs);
 
             let status = match child.wait_timeout(timeout) {
                 Ok(Some(status)) => status,
