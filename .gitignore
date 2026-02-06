@@ -63,4 +63,4 @@ lean/.lake/
 *.json
 
 # === zip Files ===
-*.zip
+*.ziprust/frankenstein_rust_debug.tar.gz
