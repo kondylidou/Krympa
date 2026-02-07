@@ -29,7 +29,7 @@ for proofs_file in "$BENCHMARK_DIR"/Proofs*.lean; do
 
     cd "$RUST_DIR" || exit 1
 
-    "$BENCHMARK_BINARY" "$input_folder" "$KRYMPA_BINARY" "$TIMEOUT_SECS" > "$log_file" 2>&1
+    "$BENCHMARK_BINARY" "$input_folder" "$TIMEOUT_SECS" "$KRYMPA_BINARY" > "$log_file" 2>&1
 
     cd "$ORIG_DIR" || exit 1
 
