@@ -24,7 +24,7 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
         println!("[INFO] Cleaned lemmas directory.");
     }
 
-    let modes = ["single", "history"];
+    let modes = ["single", "history", "abstract"];
     let mut all_lemma_files = Vec::new();
 
     for mode in &modes {
