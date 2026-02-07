@@ -217,7 +217,6 @@ pub fn try_minimize(
 
                 // we need to push what we already have proved to the extra dependencies for matching
                 extra_dependencies.push((root_lemma.to_string(), root_formula.clone()));
-                println!("INPUT {:?}", extra_dependencies);
 
                 let Some((sub_proof, sub_proof_steps)) = prove_lemma(
                     &input_file,
@@ -338,7 +337,6 @@ pub fn try_minimize(
                             };
 
                         extra_dependencies.push((root_lemma.to_string(), root_formula.clone()));
-                        println!("INPUT {:?}", extra_dependencies);
 
                         // 6. Compute root_proof
                         let Some((root_proof, root_proof_steps)) = prove_lemma(
@@ -362,7 +360,6 @@ pub fn try_minimize(
                             // no proof -> skip this candidate
                             continue;
                         };
-                        println!("INPUT {:?}", extra_dependencies);
 
                         // 7. Compute sub_proof / conjecture proof
                         let Some((sub_proof, sub_proof_steps)) = prove_lemma(
@@ -387,16 +384,25 @@ pub fn try_minimize(
                             continue;
                         };
 
+                        // 8. Check whether root lemma is actually used
+                        let root_used = proof_uses_lemma(&root_lemma, &[&sub_proof]);
+
+                        // after root_used/history_used computed, choose the segments that matter
+                        let mut segs: Vec<&str> = Vec::new();
+                        // if root proof will be included, include it for trimming
+                        if root_used {
+                            segs.push(&root_proof);
+                        }
+                        // sub_proof is always included in the outputs
+                        segs.push(&sub_proof);
+
                         let (start_proof_final, start_proof_final_steps) = if use_superposition {
-                            let trimmed = trim_superposition_block(&start_proof, &[&root_proof, &sub_proof]);
+                            let trimmed = trim_superposition_block(&start_proof, &segs);
                             let trimmed_steps = count_superposition_steps(&trimmed);
                             (trimmed, trimmed_steps)
                         } else {
                             (start_proof.clone(), start_proof_steps)
                         };
-
-                        // 8. Check whether root lemma is actually used
-                        let root_used = proof_uses_lemma(&root_lemma, &[&sub_proof]);
 
                         // check whether root lemma was actually used in the proof
                         if !root_used {
@@ -418,7 +424,8 @@ pub fn try_minimize(
                             );
 
                             // 9. Compute total steps
-                            steps_total = start_proof_final_steps + root_proof_steps + sub_proof_steps;
+                            steps_total =
+                                start_proof_final_steps + root_proof_steps + sub_proof_steps;
                         }
                     }
                     // if we fall back to an abstract candidate we will have to prove
@@ -454,7 +461,6 @@ pub fn try_minimize(
                             extra_dependencies.push((root_lemma.to_string(), root_formula.clone()));
                             extra_dependencies
                                 .push((candidate.to_string(), abstract_formula.clone()));
-                            println!("INPUT {:?}", extra_dependencies);
 
                             // 6. Compute root_proof
                             let Some((root_proof, root_proof_steps)) = prove_lemma(
@@ -469,7 +475,6 @@ pub fn try_minimize(
                                 // no proof -> skip this candidate
                                 continue;
                             };
-                            println!("INPUT {:?}", extra_dependencies);
 
                             // 7. Compute sub_proof / conjecture proof
                             let Some((sub_proof, sub_proof_steps)) = prove_lemma(
@@ -656,7 +661,6 @@ pub fn try_minimize(
 
                 // add the axioms (in this case it will become the conjecture)
                 extra_dependencies.push((n_history_lemma.to_string(), n_formula.clone()));
-                println!("INPUT {:?}", extra_dependencies);
 
                 // 6. Compute n_history_proof
                 let Some((n_history_proof, n_history_proof_steps)) = prove_lemma(
@@ -682,7 +686,6 @@ pub fn try_minimize(
                 };
 
                 extra_dependencies.push((root_lemma.to_string(), root_formula.clone()));
-                println!("INPUT {:?}", extra_dependencies);
 
                 // 7. Compute root_proof
                 let Some((root_proof, root_proof_steps)) = prove_lemma(
@@ -706,7 +709,6 @@ pub fn try_minimize(
                     // no proof -> skip this candidate
                     continue;
                 };
-                println!("INPUT {:?}", extra_dependencies);
 
                 // 8. Compute sub_proof / conjecture proof
                 let Some((sub_proof, sub_proof_steps)) = prove_lemma(
@@ -744,8 +746,22 @@ pub fn try_minimize(
                     false
                 };
 
+                // after root_used/history_used computed, choose the segments that matter
+                let mut segs: Vec<&str> = Vec::new();
+
+                // if history proof will be included, include it for trimming
+                if history_used && use_proved_history {
+                    segs.push(&n_history_proof);
+                }
+                // if root proof will be included, include it for trimming
+                if root_used {
+                    segs.push(&root_proof);
+                }
+                // sub_proof is always included in the outputs
+                segs.push(&sub_proof);
+
                 let (start_proof_final, start_proof_final_steps) = if use_superposition {
-                    let trimmed = trim_superposition_block(&start_proof, &[&n_history_proof, &root_proof, &sub_proof]);
+                    let trimmed = trim_superposition_block(&start_proof, &segs);
                     let trimmed_steps = count_superposition_steps(&trimmed);
                     (trimmed, trimmed_steps)
                 } else {
@@ -808,8 +824,6 @@ pub fn try_minimize(
                         + sub_proof_steps;
                 }
 
-                println!("   [PROOOF-------------------------------------------------------] ");
-                println!("   [PROOOF] {}", annotated_proof);
                 // update local_best
                 local_best = match local_best {
                     None => Some((steps_total, Some(n_history_lemma.clone()), annotated_proof)),
@@ -1106,13 +1120,18 @@ fn fallback_proof(
     Ok((proof_text, steps))
 }
 
-/// Returns true iff any proof segment uses the lemma
+/// Returns true iff any proof segment uses the lemma.
 /// Accepts any input variant like:
 ///   history_lemma_0060 / single_lemma_0060 / abstract_lemma_0060 / lemma_0060
-/// and searches for any of these variants in the proof
-pub fn proof_uses_lemma(name_or_variant: &str, segments: &[&str]) -> bool {
+///
+/// By default we count:
+///   - Axiom headers:  "Axiom k (lemma_0060):"
+///   - deps mentions:  "deps: ... lemma_0060 ..." (with or without a trailing ':')
+///
+pub fn proof_uses_lemma(lemma_any_variant: &str, segments: &[&str]) -> bool {
+    // extract trailing digits (lemma number) from any variant
     let num_re = Regex::new(r"(\d+)\s*$").unwrap();
-    let Some(cap) = num_re.captures(name_or_variant.trim()) else {
+    let Some(cap) = num_re.captures(lemma_any_variant.trim()) else {
         return false;
     };
     let num = cap.get(1).unwrap().as_str();
@@ -1125,40 +1144,39 @@ pub fn proof_uses_lemma(name_or_variant: &str, segments: &[&str]) -> bool {
         format!("lemma_{}", num),
     ];
 
-    // helper: (history_lemma_0060|single_lemma_0060|abstract_lemma_0060|lemma_0060)
+    // build alternation safely
     let alts = variants
         .iter()
         .map(|n| regex::escape(n))
         .collect::<Vec<_>>()
         .join("|");
 
-    // 1) As an axiom line: "Axiom 1 (lemma_0005): .
-    let axiom_hdr = Regex::new(&format!(
+    // 1) Present as an axiom: "Axiom 1 (single_lemma_0025): ..."
+    let axiom_re = Regex::new(&format!(
         r"(?m)^\s*Axiom\s+\d+\s*\(\s*(?:{})\s*\)\s*:",
         alts
     ))
     .unwrap();
 
-    // 2) As a superposition/recorded lemma header: "% lemma_0005: ..."
-    // or
-    // 3) In deps lists:
-    //    - your format sometimes uses "deps: lemma_0002, lemma_0003"
-    //    - sometimes "deps: lemma_0003: <formula>, ..."
-    let recorded_or_deps = Regex::new(&format!(
-        r"(?m)^\s*%\s*(?:{})\s*:|\b(?:{})\b\s*:",
-        alts, alts
+    // 2) Mentioned in deps (deps-only; does NOT match "% lemma_xxxx:" headers)
+    // Handles:
+    //   "| deps: lemma_0002, lemma_0003"
+    //   "| deps: lemma_0003: <formula>, ..."
+    let deps_re = Regex::new(&format!(
+        r"(?mi)\|\s*deps\s*:\s*[^|\n]*\b(?:{})\b(?:\s*:)?",
+        alts
     ))
     .unwrap();
 
     segments
         .iter()
-        .any(|s| axiom_hdr.is_match(s) || recorded_or_deps.is_match(s))
+        .any(|s| axiom_re.is_match(s) || deps_re.is_match(s))
 }
 
 /// Keep only those lemmas in `block` that are required to derive
 /// the lemmas referenced in later segments
-// TODO might needs tuning, keeping out for now
-// proof steps might be more due to skipping this
+// TODO might needs tuning
+// proof steps might be more due to this
 pub fn trim_superposition_block(block: &str, later_segments: &[&str]) -> String {
     let header_re = Regex::new(r"(?m)^\s*%\s*===\s*Superposition Steps\s*===\s*$").unwrap();
 
@@ -1352,7 +1370,7 @@ Axiom 2 (lemma_0059): op(X, op(Y, X)) = op(op(X, op(Y, X)), op(Z, op(Y, Z))).
     /// only ever uses lemma_0003 (as axiom 2).
     /// The trimmer must drop lemma_0004..lemma_0008
     #[test]
-    fn trim_with_three_segments() {
+    fn trim_with_three_segments1() {
         let block = r#"% === Superposition Steps ===
 % lemma_0001: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3))) | deps: a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0, a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0
 % lemma_0002: op(X1,op(op(X2,op(op(X3,op(X0,X1)),X2)),op(X0,X1))) = X1 | deps: a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0, a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0
@@ -1430,7 +1448,7 @@ Proof:
     /// Here the superposition block contains lemma_0001..lemma_0005, but the proof
     /// only ever uses lemma_0003
     #[test]
-    fn trim_two_segments() {
+    fn trim_two_segments1() {
         let block = r#"% === Superposition Steps ===
 % lemma_0001: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3))) | deps: a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0, a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0
 % lemma_0002: op(X1,op(op(X2,op(op(X3,op(X0,X1)),X2)),op(X0,X1))) = X1 | deps: a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0, a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0
@@ -1476,5 +1494,617 @@ Proof:
         assert!(!trimmed.contains("% lemma_0007:"));
         assert!(!trimmed.contains("% lemma_0008:"));
         assert_eq!(count_superposition_steps(&trimmed), 3);
+    }
+
+    #[test]
+    fn trim_with_two_segments2() {
+        let block = r#"
+% === Superposition Steps ===
+% lemma_0001: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3))) | deps: a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0, a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0
+% lemma_0002: op(X1,op(op(X2,op(op(X3,op(X0,X1)),X2)),op(X0,X1))) = X1 | deps: a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0, a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0
+% lemma_0003: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(op(X3,op(op(X4,X0),X3)),X0)) | deps: lemma_0002: op(X1,op(op(X2,op(op(X3,op(X0,X1)),X2)),op(X0,X1))) = X1, a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0
+% lemma_0004: op(X63,op(op(X66,op(op(X61,op(op(X62,X63),X61)),X66)),op(op(X64,op(op(X65,X63),X64)),X63))) = X63 | deps: lemma_0002: op(X1,op(op(X2,op(op(X3,op(X0,X1)),X2)),op(X0,X1))) = X1, lemma_0003: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(op(X3,op(op(X4,X0),X3)),X0))
+% lemma_0005: op(X2,op(op(op(X3,op(X2,X3)),op(X0,op(op(X1,X2),X0))),op(op(X4,op(op(X5,X2),X4)),X2))) = X2 | deps: lemma_0004: op(X63,op(op(X66,op(op(X61,op(op(X62,X63),X61)),X66)),op(op(X64,op(op(X65,X63),X64)),X63))) = X63, lemma_0001: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3)))
+"#;
+
+        // Segment 1
+        let seg2 = r#"
+The conjecture is true! Here is a proof.
+
+Axiom 1 (a1): X = op(X, op(Y, op(op(Z, X), Y))).
+Axiom 2 (lemma_0001): op(X, op(op(Y, Z), X)) = op(op(X, op(op(Y, Z), X)), op(W, op(Z, W))).
+Axiom 3 (lemma_0002): op(X, op(op(Y, op(op(Z, op(W, X)), Y)), op(W, X))) = X.
+Axiom 4 (lemma_0003): op(X, op(op(Y, Z), X)) = op(op(X, op(op(Y, Z), X)), op(op(W, op(op(V, Z), W)), Z)).
+
+Lemma 5: op(op(X, op(Y, X)), op(Z, op(op(W, op(op(V, Y), W)), Z))) = op(X, op(Y, X)).
+Proof:
+  op(op(X, op(Y, X)), op(Z, op(op(W, op(op(V, Y), W)), Z)))
+= { by axiom 1 (a1) }
+  op(op(X, op(op(Y, op(W, op(op(V, Y), W))), X)), op(Z, op(op(W, op(op(V, Y), W)), Z)))
+= { by axiom 2 (lemma_0001) R->L }
+  op(X, op(op(Y, op(W, op(op(V, Y), W))), X))
+= { by axiom 1 (a1) R->L }
+  op(X, op(Y, X))
+
+Lemma 6: op(op(X, op(Y, X)), op(op(Z, op(Y, Z)), op(W, op(op(V, Y), W)))) = op(X, op(Y, X)).
+Proof:
+  op(op(X, op(Y, X)), op(op(Z, op(Y, Z)), op(W, op(op(V, Y), W))))
+= { by axiom 2 (lemma_0001) }
+  op(op(X, op(Y, X)), op(op(Z, op(Y, Z)), op(op(W, op(op(V, Y), W)), op(Z, op(Y, Z)))))
+= { by lemma 5 }
+  op(X, op(Y, X))
+
+Lemma 7: op(op(X, op(op(Y, Y), X)), op(Y, op(op(Y, Y), Y))) = op(X, op(op(Y, Y), X)).
+Proof:
+  op(op(X, op(op(Y, Y), X)), op(Y, op(op(Y, Y), Y)))
+= { by axiom 1 (a1) }
+  op(op(X, op(op(Y, Y), X)), op(op(Y, op(op(Y, Y), Y)), op(op(Y, op(op(Y, Y), Y)), op(op(op(Y, op(Y, Y)), op(Y, op(op(Y, Y), Y))), op(Y, op(op(Y, Y), Y))))))
+= { by axiom 2 (lemma_0001) }
+  op(op(X, op(op(Y, Y), X)), op(op(Y, op(op(Y, Y), Y)), op(op(Y, op(op(Y, Y), Y)), op(op(op(Y, op(Y, Y)), op(op(Y, op(op(Y, Y), Y)), op(Y, op(Y, Y)))), op(Y, op(op(Y, Y), Y))))))
+= { by axiom 2 (lemma_0001) }
+  op(op(X, op(op(Y, Y), X)), op(op(Y, op(op(Y, Y), Y)), op(op(Y, op(op(Y, Y), Y)), op(op(op(Y, op(Y, Y)), op(op(Y, op(op(Y, Y), Y)), op(Y, op(Y, Y)))), op(op(Y, op(op(Y, Y), Y)), op(op(op(Y, Y), Y), op(Y, op(op(Y, Y), Y))))))))
+= { by axiom 2 (lemma_0001) R->L }
+  op(op(X, op(op(Y, Y), X)), op(op(Y, op(op(Y, Y), Y)), op(op(Y, op(op(Y, Y), Y)), op(op(Y, op(Y, Y)), op(op(Y, op(op(Y, Y), Y)), op(Y, op(Y, Y)))))))
+= { by axiom 2 (lemma_0001) R->L }
+  op(op(X, op(op(Y, Y), X)), op(op(Y, op(op(Y, Y), Y)), op(op(Y, op(op(Y, Y), Y)), op(op(Y, op(Y, Y)), op(Y, op(op(Y, Y), Y))))))
+= { by lemma 6 }
+  op(X, op(op(Y, Y), X))
+
+Lemma 8: op(op(op(X, X), X), op(X, op(op(X, X), X))) = op(op(X, X), X).
+Proof:
+  op(op(op(X, X), X), op(X, op(op(X, X), X)))
+= { by lemma 7 R->L }
+  op(op(op(X, X), X), op(op(X, op(op(X, X), X)), op(X, op(op(X, X), X))))
+= { by lemma 7 R->L }
+  op(op(op(X, X), X), op(op(X, op(op(X, X), X)), op(op(X, op(op(X, X), X)), op(X, op(op(X, X), X)))))
+= { by axiom 1 (a1) R->L }
+  op(op(X, X), X)
+
+Lemma 9: op(X, op(op(op(Y, X), op(Y, X)), op(Y, X))) = X.
+Proof:
+  op(X, op(op(op(Y, X), op(Y, X)), op(Y, X)))
+= { by lemma 8 R->L }
+  op(X, op(op(op(op(Y, X), op(Y, X)), op(Y, X)), op(op(Y, X), op(op(op(Y, X), op(Y, X)), op(Y, X)))))
+= { by axiom 1 (a1) R->L }
+  X
+
+Lemma 10: op(op(op(X, Y), Z), op(op(W, op(Y, W)), op(Z, op(op(X, Y), Z)))) = op(op(X, Y), Z).
+Proof:
+  op(op(op(X, Y), Z), op(op(W, op(Y, W)), op(Z, op(op(X, Y), Z))))
+= { by axiom 2 (lemma_0001) }
+  op(op(op(X, Y), Z), op(op(W, op(Y, W)), op(op(Z, op(op(X, Y), Z)), op(W, op(Y, W)))))
+= { by axiom 1 (a1) R->L }
+  op(op(X, Y), Z)
+
+Lemma 11: op(op(op(X, op(op(Y, Z), Z)), W), op(op(Z, op(op(Y, Z), Z)), op(W, op(op(X, op(op(Y, Z), Z)), W)))) = op(op(X, op(op(Y, Z), Z)), W).
+Proof:
+  op(op(op(X, op(op(Y, Z), Z)), W), op(op(Z, op(op(Y, Z), Z)), op(W, op(op(X, op(op(Y, Z), Z)), W))))
+= { by axiom 2 (lemma_0001) }
+  op(op(op(X, op(op(Y, Z), Z)), W), op(op(op(Z, op(op(Y, Z), Z)), op(op(op(Y, Z), Z), op(Z, op(op(Y, Z), Z)))), op(W, op(op(X, op(op(Y, Z), Z)), W))))
+= { by lemma 10 }
+  op(op(X, op(op(Y, Z), Z)), W)
+
+Lemma 12: op(op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))), op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X))))) = op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))).
+Proof:
+  op(op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))), op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))))
+= { by axiom 1 (a1) }
+  op(op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), X), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))), op(X, op(op(Y, X), X)))))))
+= { by axiom 1 (a1) }
+  op(op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), X), op(op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))), op(X, op(op(Y, X), X)))), op(X, op(op(Y, X), X)))))))
+= { by lemma 5 R->L }
+  op(op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), X), op(op(op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))), op(op(X, op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))))), op(X, op(op(Y, X), X)))), op(X, op(op(Y, X), X)))))))
+= { by axiom 1 (a1) }
+  op(op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))), op(op(op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))), op(op(X, op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))))), op(X, op(op(Y, X), X)))), op(X, op(op(Y, X), X)))))))
+= { by lemma 5 R->L }
+  op(op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(op(op(op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))), op(op(X, op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))))), op(op(op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))), op(op(X, op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))))), op(X, op(op(Y, X), X)))), op(X, op(op(Y, X), X)))))))
+= { by axiom 4 (lemma_0003) R->L }
+  op(op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))), op(op(X, op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))))), op(X, op(op(Y, X), X)))))))
+= { by lemma 5 }
+  op(op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), op(X, op(X, op(op(Y, X), X)))), op(X, op(op(Y, X), X)))))))
+= { by axiom 1 (a1) R->L }
+  op(op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))), op(op(X, op(op(Y, X), X)), op(op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X)))))))
+= { by lemma 11 }
+  op(op(X, op(op(Y, X), X)), op(op(op(X, op(op(Y, X), X)), X), op(X, op(op(Y, X), X))))
+
+Lemma 13: op(op(X, op(Y, X)), op(Y, op(Y, Y))) = op(X, op(Y, X)).
+Proof:
+  op(op(X, op(Y, X)), op(Y, op(Y, Y)))
+= { by axiom 3 (lemma_0002) R->L }
+  op(op(X, op(Y, X)), op(op(Y, op(Y, Y)), op(op(op(op(Y, op(op(Z, Y), Y)), op(op(op(Y, op(op(Z, Y), Y)), Y), op(Y, op(op(Z, Y), Y)))), op(op(op(op(Y, op(op(Z, Y), Y)), op(op(op(Y, op(op(Z, Y), Y)), Y), op(Y, op(op(Z, Y), Y)))), op(op(Y, Y), op(Y, op(Y, Y)))), op(op(Y, op(op(Z, Y), Y)), op(op(op(Y, op(op(Z, Y), Y)), Y), op(Y, op(op(Z, Y), Y)))))), op(op(Y, Y), op(Y, op(Y, Y))))))
+= { by axiom 2 (lemma_0001) R->L }
+  op(op(X, op(Y, X)), op(op(Y, op(Y, Y)), op(op(op(op(Y, op(op(Z, Y), Y)), op(op(op(Y, op(op(Z, Y), Y)), Y), op(Y, op(op(Z, Y), Y)))), op(op(op(Y, op(op(Z, Y), Y)), op(op(op(Y, op(op(Z, Y), Y)), Y), op(Y, op(op(Z, Y), Y)))), op(op(Y, op(op(Z, Y), Y)), op(op(op(Y, op(op(Z, Y), Y)), Y), op(Y, op(op(Z, Y), Y)))))), op(op(Y, Y), op(Y, op(Y, Y))))))
+= { by lemma 12 }
+  op(op(X, op(Y, X)), op(op(Y, op(Y, Y)), op(op(op(op(Y, op(op(Z, Y), Y)), op(op(op(Y, op(op(Z, Y), Y)), Y), op(Y, op(op(Z, Y), Y)))), op(op(Y, op(op(Z, Y), Y)), op(op(op(Y, op(op(Z, Y), Y)), Y), op(Y, op(op(Z, Y), Y))))), op(op(Y, Y), op(Y, op(Y, Y))))))
+= { by lemma 12 }
+  op(op(X, op(Y, X)), op(op(Y, op(Y, Y)), op(op(op(Y, op(op(Z, Y), Y)), op(op(op(Y, op(op(Z, Y), Y)), Y), op(Y, op(op(Z, Y), Y)))), op(op(Y, Y), op(Y, op(Y, Y))))))
+= { by axiom 2 (lemma_0001) R->L }
+  op(op(X, op(Y, X)), op(op(Y, op(Y, Y)), op(op(Y, op(op(Z, Y), Y)), op(op(op(Y, op(op(Z, Y), Y)), Y), op(Y, op(op(Z, Y), Y))))))
+= { by lemma 6 }
+  op(X, op(Y, X))
+
+Lemma 14: op(op(X, X), op(op(op(X, X), op(X, X)), op(X, X))) = op(X, X).
+Proof:
+  op(op(X, X), op(op(op(X, X), op(X, X)), op(X, X)))
+= { by lemma 8 R->L }
+  op(op(X, X), op(op(op(op(X, X), op(X, X)), op(X, X)), op(op(X, X), op(op(op(X, X), op(X, X)), op(X, X)))))
+= { by axiom 2 (lemma_0001) }
+  op(op(X, X), op(op(op(op(op(X, X), op(X, X)), op(X, X)), op(op(X, X), op(op(op(X, X), op(X, X)), op(X, X)))), op(X, op(X, X))))
+= { by lemma 9 R->L }
+  op(op(X, X), op(op(op(op(op(X, X), op(X, X)), op(X, X)), op(op(op(X, X), op(op(op(X, op(X, X)), op(X, op(X, X))), op(X, op(X, X)))), op(op(op(X, X), op(X, X)), op(X, X)))), op(X, op(X, X))))
+= { by lemma 13 }
+  op(op(X, X), op(op(op(op(op(X, X), op(X, X)), op(X, X)), op(op(op(X, X), op(op(X, op(X, X)), op(X, op(X, X)))), op(op(op(X, X), op(X, X)), op(X, X)))), op(X, op(X, X))))
+= { by lemma 13 }
+  op(op(X, X), op(op(op(op(op(X, X), op(X, X)), op(X, X)), op(op(op(X, X), op(X, op(X, X))), op(op(op(X, X), op(X, X)), op(X, X)))), op(X, op(X, X))))
+= { by axiom 3 (lemma_0002) }
+  op(X, X)
+
+Lemma 15: op(op(X, X), op(X, X)) = op(X, X).
+Proof:
+  op(op(X, X), op(X, X))
+= { by lemma 14 R->L }
+  op(op(X, X), op(op(X, X), op(op(op(X, X), op(X, X)), op(X, X))))
+= { by axiom 1 (a1) R->L }
+  op(X, X)
+
+Lemma 16: op(X, op(X, X)) = X.
+Proof:
+  op(X, op(X, X))
+= { by lemma 15 R->L }
+  op(X, op(op(X, X), op(X, X)))
+= { by lemma 15 R->L }
+  op(X, op(op(X, X), op(op(X, X), op(X, X))))
+= { by axiom 1 (a1) R->L }
+  X
+
+Lemma 17: op(X, X) = X.
+Proof:
+  op(X, X)
+= { by lemma 16 R->L }
+  op(X, op(X, op(X, X)))
+= { by lemma 16 R->L }
+  op(op(X, op(X, X)), op(X, op(X, X)))
+= { by lemma 13 }
+  op(X, op(X, X))
+= { by lemma 16 }
+  X
+
+Lemma 18: op(X, op(Y, X)) = X.
+Proof:
+  op(X, op(Y, X))
+= { by lemma 17 R->L }
+  op(X, op(op(Y, X), op(Y, X)))
+= { by lemma 17 R->L }
+  op(X, op(op(Y, X), op(op(Y, X), op(Y, X))))
+= { by axiom 1 (a1) R->L }
+  X
+
+Lemma 19: op(op(X, Y), Y) = op(X, Y).
+Proof:
+  op(op(X, Y), Y)
+= { by axiom 3 (lemma_0002) R->L }
+  op(op(X, Y), op(Y, op(op(Z, op(op(W, op(X, Y)), Z)), op(X, Y))))
+= { by lemma 16 R->L }
+  op(op(X, Y), op(op(Y, op(Y, Y)), op(op(Z, op(op(W, op(X, Y)), Z)), op(X, Y))))
+= { by axiom 3 (lemma_0002) R->L }
+  op(op(X, Y), op(op(Y, op(op(Y, op(op(Z, op(op(W, op(X, Y)), Z)), op(X, Y))), Y)), op(op(Z, op(op(W, op(X, Y)), Z)), op(X, Y))))
+= { by axiom 3 (lemma_0002) }
+  op(X, Y)
+
+Lemma 20: op(op(X, Y), op(Z, op(Y, Z))) = op(X, Y).
+Proof:
+  op(op(X, Y), op(Z, op(Y, Z)))
+= { by lemma 17 R->L }
+  op(op(op(X, Y), op(X, Y)), op(Z, op(Y, Z)))
+= { by lemma 19 R->L }
+  op(op(op(op(X, Y), op(X, Y)), op(X, Y)), op(Z, op(Y, Z)))
+= { by lemma 9 R->L }
+  op(op(op(op(X, Y), op(X, Y)), op(X, Y)), op(Z, op(op(Y, op(op(op(X, Y), op(X, Y)), op(X, Y))), Z)))
+= { by axiom 1 (a1) R->L }
+  op(op(op(X, Y), op(X, Y)), op(X, Y))
+= { by lemma 19 }
+  op(op(X, Y), op(X, Y))
+= { by lemma 17 }
+  op(X, Y)
+
+Lemma 21: op(X, op(op(Y, X), op(Z, op(Y, X)))) = X.
+Proof:
+  op(X, op(op(Y, X), op(Z, op(Y, X))))
+= { by lemma 19 R->L }
+  op(X, op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))))
+= { by axiom 1 (a1) }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(op(X, X), op(Y, X))), X), op(op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))), op(op(op(Y, X), op(op(X, X), op(Y, X))), X)))))
+= { by axiom 4 (lemma_0003) R->L }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(op(X, X), op(Y, X))), X), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by lemma 20 R->L }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(op(X, X), op(op(Y, X), op(X, op(X, X))))), X), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by lemma 9 R->L }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(op(X, X), op(op(Y, X), op(op(X, op(X, X)), op(op(op(op(Y, X), op(X, op(X, X))), op(op(Y, X), op(X, op(X, X)))), op(op(Y, X), op(X, op(X, X)))))))), X), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by lemma 20 }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(op(X, X), op(op(Y, X), op(op(X, op(X, X)), op(op(op(Y, X), op(op(Y, X), op(X, op(X, X)))), op(op(Y, X), op(X, op(X, X)))))))), X), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by lemma 20 }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(op(X, X), op(op(Y, X), op(op(X, op(X, X)), op(op(op(Y, X), op(op(Y, X), op(X, op(X, X)))), op(Y, X)))))), X), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by lemma 20 }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(op(X, X), op(op(Y, X), op(op(X, op(X, X)), op(op(op(Y, X), op(Y, X)), op(Y, X)))))), X), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by lemma 19 }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(op(X, X), op(op(Y, X), op(op(X, op(X, X)), op(op(Y, X), op(Y, X)))))), X), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by lemma 17 }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(op(X, X), op(op(Y, X), op(op(X, op(X, X)), op(Y, X))))), X), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by axiom 1 (a1) R->L }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(X, X)), X), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by axiom 1 (a1) }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(X, X)), op(X, op(op(X, X), op(op(Y, X), op(X, X))))), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by lemma 16 R->L }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(op(Y, X), op(X, X)), op(op(X, op(X, X)), op(op(X, X), op(op(Y, X), op(X, X))))), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by lemma 10 }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(Y, X), op(X, X)), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by lemma 17 }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(op(Y, X), X), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by lemma 19 }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(Y, X), op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))
+= { by axiom 2 (lemma_0001) }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(Y, X), op(op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))), op(X, op(X, X))))))
+= { by lemma 16 }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(Y, X), op(op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))), X))))
+= { by axiom 1 (a1) }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(op(Y, X), op(op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))), op(X, op(op(op(Z, op(Y, X)), op(Y, X)), op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X)))))))))
+= { by lemma 20 }
+  op(X, op(op(op(Y, X), op(op(Z, op(Y, X)), op(Y, X))), op(Y, X)))
+= { by axiom 3 (lemma_0002) }
+  X
+
+Lemma 22: op(X, op(Y, Z)) = X.
+Proof:
+  op(X, op(Y, Z))
+= { by lemma 18 R->L }
+  op(X, op(op(Y, Z), op(Z, op(Y, Z))))
+= { by lemma 19 R->L }
+  op(X, op(op(Y, Z), op(Z, op(op(Y, Z), Z))))
+= { by lemma 19 R->L }
+  op(X, op(op(op(Y, Z), Z), op(Z, op(op(Y, Z), Z))))
+= { by lemma 6 R->L }
+  op(X, op(op(op(op(Y, Z), Z), op(Z, op(op(Y, Z), Z))), op(op(op(op(W, X), op(Y, Z)), op(Z, op(op(W, X), op(Y, Z)))), op(Z, op(op(V, Z), Z)))))
+= { by lemma 18 }
+  op(X, op(op(op(op(Y, Z), Z), op(Z, op(op(Y, Z), Z))), op(op(op(W, X), op(Y, Z)), op(Z, op(op(V, Z), Z)))))
+= { by lemma 19 }
+  op(X, op(op(op(op(Y, Z), Z), op(Z, op(op(Y, Z), Z))), op(op(op(W, X), op(Y, Z)), op(Z, op(V, Z)))))
+= { by lemma 19 }
+  op(X, op(op(op(op(Y, Z), Z), op(Z, op(Y, Z))), op(op(op(W, X), op(Y, Z)), op(Z, op(V, Z)))))
+= { by lemma 19 }
+  op(X, op(op(op(Y, Z), op(Z, op(Y, Z))), op(op(op(W, X), op(Y, Z)), op(Z, op(V, Z)))))
+= { by lemma 18 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(Z, op(V, Z)))))
+= { by lemma 18 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), Z)))
+= { by lemma 21 R->L }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(Z, op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by axiom 1 (a1) }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(Z, op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 17 R->L }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(Z, Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 19 R->L }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(Z, Z), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 15 R->L }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, Z), op(Z, Z)), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 16 R->L }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(Z, Z)), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 17 R->L }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(Z, Z), Z)), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 14 R->L }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), op(Z, Z))), Z)), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 11 R->L }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), op(Z, Z))), Z), op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), op(Z, Z))), op(Z, op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), op(Z, Z))), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 14 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(op(Z, Z), Z), op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), op(Z, Z))), op(Z, op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), op(Z, Z))), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 17 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(op(Z, Z), Z), op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), op(Z, Z))), op(Z, op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), Z)), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 17 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(op(Z, Z), Z), op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), op(Z, Z))), op(Z, op(op(op(Z, Z), op(op(op(Z, Z), Z), Z)), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 17 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(op(Z, Z), Z), op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), op(Z, Z))), op(Z, op(op(op(Z, Z), op(op(Z, Z), Z)), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 17 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(op(Z, Z), Z), op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), op(Z, Z))), op(Z, op(op(Z, op(op(Z, Z), Z)), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 17 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(op(Z, Z), Z), op(op(op(Z, Z), op(op(op(Z, Z), op(Z, Z)), Z)), op(Z, op(op(Z, op(op(Z, Z), Z)), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 17 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(op(Z, Z), Z), op(op(op(Z, Z), op(op(op(Z, Z), Z), Z)), op(Z, op(op(Z, op(op(Z, Z), Z)), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 17 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(op(Z, Z), Z), op(op(op(Z, Z), op(op(Z, Z), Z)), op(Z, op(op(Z, op(op(Z, Z), Z)), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 17 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(op(Z, Z), Z), op(op(Z, op(op(Z, Z), Z)), op(Z, op(op(Z, op(op(Z, Z), Z)), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 17 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(Z, Z), op(op(Z, op(op(Z, Z), Z)), op(Z, op(op(Z, op(op(Z, Z), Z)), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 19 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(Z, Z), op(op(Z, op(op(Z, Z), Z)), op(Z, op(op(Z, op(Z, Z)), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 19 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(Z, Z), op(op(Z, op(Z, Z)), op(Z, op(op(Z, op(Z, Z)), Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 16 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(Z, Z), op(op(Z, op(Z, Z)), op(Z, op(Z, Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by lemma 16 }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(Z, Z), op(Z, op(Z, op(Z, Z))))), Z), op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z))))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by axiom 4 (lemma_0003) }
+  op(X, op(op(Y, Z), op(op(op(W, X), op(Y, Z)), op(op(op(op(op(Z, op(Z, op(Z, Z))), op(op(Z, Z), op(Z, op(Z, op(Z, Z))))), Z), op(op(op(op(W, X), op(Y, Z)), op(op(Y, Z), op(op(W, X), op(Y, Z)))), op(op(op(Z, op(Z, op(Z, Z))), op(op(Z, Z), op(Z, op(Z, op(Z, Z))))), Z))), op(op(Y, Z), op(op(W, X), op(Y, Z)))))))
+= { by axiom 3 (lemma_0002) }
+  op(X, op(op(Y, Z), op(op(W, X), op(Y, Z))))
+= { by axiom 1 (a1) R->L }
+  X
+
+Goal 1 (history_lemma_0061): x0 = op(x0, x1).
+Proof:
+  x0
+= { by lemma 22 R->L }
+  op(x0, op(X, x1))
+= { by lemma 19 R->L }
+  op(x0, op(op(X, x1), x1))
+= { by lemma 22 R->L }
+  op(op(x0, op(op(X, x1), x1)), op(Y, x1))
+= { by lemma 11 R->L }
+  op(op(op(x0, op(op(X, x1), x1)), op(Y, x1)), op(op(x1, op(op(X, x1), x1)), op(op(Y, x1), op(op(x0, op(op(X, x1), x1)), op(Y, x1)))))
+= { by lemma 22 }
+  op(op(x0, op(op(X, x1), x1)), op(op(x1, op(op(X, x1), x1)), op(op(Y, x1), op(op(x0, op(op(X, x1), x1)), op(Y, x1)))))
+= { by lemma 19 }
+  op(op(x0, op(op(X, x1), x1)), op(op(x1, op(op(X, x1), x1)), op(op(Y, x1), op(op(x0, op(X, x1)), op(Y, x1)))))
+= { by lemma 19 }
+  op(op(x0, op(op(X, x1), x1)), op(op(x1, op(X, x1)), op(op(Y, x1), op(op(x0, op(X, x1)), op(Y, x1)))))
+= { by lemma 19 }
+  op(op(x0, op(X, x1)), op(op(x1, op(X, x1)), op(op(Y, x1), op(op(x0, op(X, x1)), op(Y, x1)))))
+= { by lemma 22 }
+  op(op(x0, op(X, x1)), op(op(x1, op(X, x1)), op(op(Y, x1), op(x0, op(Y, x1)))))
+= { by lemma 22 }
+  op(x0, op(op(x1, op(X, x1)), op(op(Y, x1), op(x0, op(Y, x1)))))
+= { by lemma 18 }
+  op(x0, op(x1, op(op(Y, x1), op(x0, op(Y, x1)))))
+= { by lemma 21 }
+  op(x0, x1)
+
+RESULT: Theorem (the conjecture is true).
+"#;
+
+        // Segment 3
+        let seg3 = r#"
+RESULT: Theorem (the conjecture is true).
+The conjecture is true! Here is a proof.
+
+Axiom 1 (history_lemma_0061): X = op(X, Y).
+
+Goal 1 (conjecture0): x0 = op(x0, op(x1, op(x2, op(x0, x2)))).
+Proof:
+  x0
+= { by axiom 1 (history_lemma_0061) }
+  op(x0, op(x1, op(x2, op(x0, x2))))
+
+RESULT: Theorem (the conjecture is true).
+        "#;
+
+        let trimmed = trim_superposition_block(block, &[seg2, seg3]);
+
+        assert!(trimmed.contains("% === Superposition Steps ==="));
+        assert!(trimmed.contains("% lemma_0001:"));
+        assert!(trimmed.contains("% lemma_0002:"));
+        assert!(trimmed.contains("% lemma_0003:"));
+
+        // these must be gone (even though they appear after lemma_0003 in the block)
+        assert!(!trimmed.contains("% lemma_0004:"));
+        assert!(!trimmed.contains("% lemma_0005:"));
+        assert!(!trimmed.contains("% lemma_0006:"));
+        assert!(!trimmed.contains("% lemma_0007:"));
+        assert!(!trimmed.contains("% lemma_0008:"));
+        assert_eq!(count_superposition_steps(&trimmed), 3);
+    }
+
+    #[test]
+    fn trim_with_two_segments3() {
+        let block = r#"
+% === Superposition Steps ===
+% lemma_0001: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3))) | deps: a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0, a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0
+% lemma_0002: op(X1,op(op(X2,op(op(X3,op(X0,X1)),X2)),op(X0,X1))) = X1 | deps: a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0, a_1: ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0
+% lemma_0003: op(X2,op(op(X3,op(op(X1,X0),X0)),X2)) = op(op(X2,op(op(X3,op(op(X1,X0),X0)),X2)),op(X0,op(op(X1,X0),X0))) | deps: lemma_0001: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3))), lemma_0001: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3)))
+% lemma_0004: op(X15,X16) = op(op(X15,X16),op(op(X17,op(op(X13,op(op(X14,X15),X13)),X17)),op(X16,op(X15,X16)))) | deps: lemma_0002: op(X1,op(op(X2,op(op(X3,op(X0,X1)),X2)),op(X0,X1))) = X1, lemma_0001: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3)))
+% lemma_0005: op(X21,op(X20,X21)) = op(op(X21,op(X20,X21)),op(op(X22,op(op(X23,op(X18,op(op(X19,X20),X18))),X22)),op(X18,op(op(X19,X20),X18)))) | deps: lemma_0002: op(X1,op(op(X2,op(op(X3,op(X0,X1)),X2)),op(X0,X1))) = X1, lemma_0001: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3)))
+% lemma_0006: op(X61,op(X58,X61)) = op(op(X61,op(X58,X61)),op(op(X62,op(op(X58,op(op(X59,op(op(X60,X58),X59)),X58)),X62)),op(op(X58,op(op(X59,op(op(X60,X58),X59)),X58)),op(op(op(X59,op(op(X60,X58),X59)),X58),op(X58,op(op(X59,op(op(X60,X58),X59)),X58)))))) | deps: lemma_0005: op(X21,op(X20,X21)) = op(op(X21,op(X20,X21)),op(op(X22,op(op(X23,op(X18,op(op(X19,X20),X18))),X22)),op(X18,op(op(X19,X20),X18)))), lemma_0004: op(X15,X16) = op(op(X15,X16),op(op(X17,op(op(X13,op(op(X14,X15),X13)),X17)),op(X16,op(X15,X16))))
+% lemma_0007: op(X61,op(X58,X61)) = op(op(X61,op(X58,X61)),op(X62,op(op(X58,op(op(X59,op(op(X60,X58),X59)),X58)),X62))) | deps: lemma_0006: op(X61,op(X58,X61)) = op(op(X61,op(X58,X61)),op(op(X62,op(op(X58,op(op(X59,op(op(X60,X58),X59)),X58)),X62)),op(op(X58,op(op(X59,op(op(X60,X58),X59)),X58)),op(op(op(X59,op(op(X60,X58),X59)),X58),op(X58,op(op(X59,op(op(X60,X58),X59)),X58)))))), lemma_0001: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3)))
+% lemma_0008: op(X29,op(X27,X29)) = op(op(X29,op(X27,X29)),op(op(X27,op(op(X28,X27),X27)),op(X27,op(op(X27,op(op(X28,X27),X27)),X27)))) | deps: lemma_0007: op(X61,op(X58,X61)) = op(op(X61,op(X58,X61)),op(X62,op(op(X58,op(op(X59,op(op(X60,X58),X59)),X58)),X62))), lemma_0003: op(X2,op(op(X3,op(op(X1,X0),X0)),X2)) = op(op(X2,op(op(X3,op(op(X1,X0),X0)),X2)),op(X0,op(op(X1,X0),X0)))
+"#;
+
+        // Segment 2
+        let seg2 = r#"The conjecture is true! Here is a proof.
+
+Axiom 1 (a1): X = op(X, op(Y, op(op(Z, X), Y))).
+Axiom 2 (lemma_0001): op(X, op(op(Y, Z), X)) = op(op(X, op(op(Y, Z), X)), op(W, op(Z, W))).
+
+Lemma 3: op(op(X, op(op(Y, op(op(Z, W), W)), X)), op(W, op(op(Z, W), W))) = op(X, op(op(Y, op(op(Z, W), W)), X)).
+Proof:
+  op(op(X, op(op(Y, op(op(Z, W), W)), X)), op(W, op(op(Z, W), W)))
+= { by axiom 2 (lemma_0001) }
+  op(op(X, op(op(Y, op(op(Z, W), W)), X)), op(op(W, op(op(Z, W), W)), op(op(op(Z, W), W), op(W, op(op(Z, W), W)))))
+= { by axiom 2 (lemma_0001) R->L }
+  op(X, op(op(Y, op(op(Z, W), W)), X))
+
+Lemma 4: op(op(X, op(op(Y, X), X)), op(Z, op(op(W, op(op(V, op(op(Y, X), X)), W)), Z))) = op(X, op(op(Y, X), X)).
+Proof:
+  op(op(X, op(op(Y, X), X)), op(Z, op(op(W, op(op(V, op(op(Y, X), X)), W)), Z)))
+= { by lemma 3 R->L }
+  op(op(X, op(op(Y, X), X)), op(Z, op(op(op(W, op(op(V, op(op(Y, X), X)), W)), op(X, op(op(Y, X), X))), Z)))
+= { by axiom 1 (a1) R->L }
+  op(X, op(op(Y, X), X))
+
+Lemma 5: op(op(X, op(op(Y, op(op(Z, W), Y)), X)), op(V, op(op(U, op(W, U)), V))) = op(X, op(op(Y, op(op(Z, W), Y)), X)).
+Proof:
+  op(op(X, op(op(Y, op(op(Z, W), Y)), X)), op(V, op(op(U, op(W, U)), V)))
+= { by axiom 1 (a1) }
+  op(op(X, op(op(Y, op(op(Z, W), Y)), X)), op(V, op(op(U, op(op(W, op(Y, op(op(Z, W), Y))), U)), V)))
+= { by axiom 2 (lemma_0001) }
+  op(op(X, op(op(Y, op(op(Z, W), Y)), X)), op(V, op(op(op(U, op(op(W, op(Y, op(op(Z, W), Y))), U)), op(X, op(op(Y, op(op(Z, W), Y)), X))), V)))
+= { by axiom 1 (a1) R->L }
+  op(op(X, op(op(Y, op(op(Z, W), Y)), X)), op(V, op(op(op(U, op(W, U)), op(X, op(op(Y, op(op(Z, W), Y)), X))), V)))
+= { by axiom 1 (a1) R->L }
+  op(X, op(op(Y, op(op(Z, W), Y)), X))
+
+Lemma 6: op(op(op(X, Y), Z), op(op(W, op(Y, W)), op(Z, op(op(X, Y), Z)))) = op(op(X, Y), Z).
+Proof:
+  op(op(op(X, Y), Z), op(op(W, op(Y, W)), op(Z, op(op(X, Y), Z))))
+= { by axiom 2 (lemma_0001) }
+  op(op(op(X, Y), Z), op(op(W, op(Y, W)), op(op(Z, op(op(X, Y), Z)), op(W, op(Y, W)))))
+= { by axiom 1 (a1) R->L }
+  op(op(X, Y), Z)
+
+Lemma 7: op(op(op(X, op(op(Y, op(op(Z, W), W)), X)), V), op(op(U, op(op(W, op(op(Z, W), W)), U)), op(V, op(op(X, op(op(Y, op(op(Z, W), W)), X)), V)))) = op(op(X, op(op(Y, op(op(Z, W), W)), X)), V).
+Proof:
+  op(op(op(X, op(op(Y, op(op(Z, W), W)), X)), V), op(op(U, op(op(W, op(op(Z, W), W)), U)), op(V, op(op(X, op(op(Y, op(op(Z, W), W)), X)), V))))
+= { by lemma 3 R->L }
+  op(op(op(X, op(op(Y, op(op(Z, W), W)), X)), V), op(op(U, op(op(W, op(op(Z, W), W)), U)), op(V, op(op(op(X, op(op(Y, op(op(Z, W), W)), X)), op(W, op(op(Z, W), W))), V))))
+= { by lemma 3 R->L }
+  op(op(op(op(X, op(op(Y, op(op(Z, W), W)), X)), op(W, op(op(Z, W), W))), V), op(op(U, op(op(W, op(op(Z, W), W)), U)), op(V, op(op(op(X, op(op(Y, op(op(Z, W), W)), X)), op(W, op(op(Z, W), W))), V))))
+= { by lemma 6 }
+  op(op(op(X, op(op(Y, op(op(Z, W), W)), X)), op(W, op(op(Z, W), W))), V)
+= { by lemma 3 }
+  op(op(X, op(op(Y, op(op(Z, W), W)), X)), V)
+
+Lemma 8: op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), op(W, op(op(Y, op(op(Z, Y), Y)), W))) = op(X, op(op(Y, op(op(Z, Y), Y)), X)).
+Proof:
+  op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), op(W, op(op(Y, op(op(Z, Y), Y)), W)))
+= { by lemma 5 R->L }
+  op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), op(op(W, op(op(Y, op(op(Z, Y), Y)), W)), op(V, op(op(op(op(Z, Y), Y), op(Y, op(op(Z, Y), Y))), V))))
+= { by axiom 2 (lemma_0001) }
+  op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), op(op(W, op(op(Y, op(op(Z, Y), Y)), W)), op(op(V, op(op(op(op(Z, Y), Y), op(Y, op(op(Z, Y), Y))), V)), op(X, op(op(Y, op(op(Z, Y), Y)), X)))))
+= { by lemma 5 R->L }
+  op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), op(op(W, op(op(Y, op(op(Z, Y), Y)), W)), op(op(V, op(op(op(op(Z, Y), Y), op(Y, op(op(Z, Y), Y))), V)), op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), op(V, op(op(op(op(Z, Y), Y), op(Y, op(op(Z, Y), Y))), V))))))
+= { by lemma 5 R->L }
+  op(op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), op(V, op(op(op(op(Z, Y), Y), op(Y, op(op(Z, Y), Y))), V))), op(op(W, op(op(Y, op(op(Z, Y), Y)), W)), op(op(V, op(op(op(op(Z, Y), Y), op(Y, op(op(Z, Y), Y))), V)), op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), op(V, op(op(op(op(Z, Y), Y), op(Y, op(op(Z, Y), Y))), V))))))
+= { by lemma 7 }
+  op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), op(V, op(op(op(op(Z, Y), Y), op(Y, op(op(Z, Y), Y))), V)))
+= { by lemma 5 }
+  op(X, op(op(Y, op(op(Z, Y), Y)), X))
+
+Lemma 9: op(op(X, op(op(Y, X), X)), op(X, op(op(Y, X), X))) = op(X, op(op(Y, X), X)).
+Proof:
+  op(op(X, op(op(Y, X), X)), op(X, op(op(Y, X), X)))
+= { by lemma 4 R->L }
+  op(op(X, op(op(Y, X), X)), op(op(X, op(op(Y, X), X)), op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(Z, op(op(X, op(op(Y, X), X)), Z))))))
+= { by lemma 8 }
+  op(op(X, op(op(Y, X), X)), op(op(X, op(op(Y, X), X)), op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(W, op(op(X, op(op(Y, X), X)), W)))))
+= { by lemma 8 }
+  op(op(X, op(op(Y, X), X)), op(op(X, op(op(Y, X), X)), op(Z, op(op(X, op(op(Y, X), X)), Z))))
+= { by lemma 3 R->L }
+  op(op(X, op(op(Y, X), X)), op(op(X, op(op(Y, X), X)), op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(X, op(op(Y, X), X)))))
+= { by lemma 4 }
+  op(X, op(op(Y, X), X))
+
+Lemma 10: op(op(op(X, Y), Y), op(Y, op(op(X, Y), Y))) = op(op(X, Y), Y).
+Proof:
+  op(op(op(X, Y), Y), op(Y, op(op(X, Y), Y)))
+= { by lemma 9 R->L }
+  op(op(op(X, Y), Y), op(op(Y, op(op(X, Y), Y)), op(Y, op(op(X, Y), Y))))
+= { by lemma 9 R->L }
+  op(op(op(X, Y), Y), op(op(Y, op(op(X, Y), Y)), op(op(Y, op(op(X, Y), Y)), op(Y, op(op(X, Y), Y)))))
+= { by axiom 1 (a1) R->L }
+  op(op(X, Y), Y)
+
+Lemma 11: op(op(op(X, Y), Y), op(op(X, Y), Y)) = op(op(X, Y), Y).
+Proof:
+  op(op(op(X, Y), Y), op(op(X, Y), Y))
+= { by lemma 10 R->L }
+  op(op(op(X, Y), Y), op(op(op(X, Y), Y), op(Y, op(op(X, Y), Y))))
+= { by lemma 10 R->L }
+  op(op(op(X, Y), Y), op(op(op(op(X, Y), Y), op(Y, op(op(X, Y), Y))), op(Y, op(op(X, Y), Y))))
+= { by lemma 6 }
+  op(op(X, Y), Y)
+
+Lemma 12: op(op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), W), op(V, op(op(Y, op(op(Z, Y), Y)), V))) = op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), W).
+Proof:
+  op(op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), W), op(V, op(op(Y, op(op(Z, Y), Y)), V)))
+= { by axiom 1 (a1) }
+  op(op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), W), op(op(V, op(op(Y, op(op(Z, Y), Y)), V)), op(W, op(op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), op(V, op(op(Y, op(op(Z, Y), Y)), V))), W))))
+= { by lemma 8 }
+  op(op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), W), op(op(V, op(op(Y, op(op(Z, Y), Y)), V)), op(W, op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), W))))
+= { by lemma 7 }
+  op(op(X, op(op(Y, op(op(Z, Y), Y)), X)), W)
+
+Lemma 13: op(op(op(X, op(op(Y, X), X)), Z), op(op(X, op(op(Y, X), X)), W)) = op(op(X, op(op(Y, X), X)), Z).
+Proof:
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(X, op(op(Y, X), X)), W))
+= { by axiom 1 (a1) }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W))))))
+= { by axiom 2 (lemma_0001) }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(op(Y, X), X), op(op(op(Y, X), X), op(op(Y, X), X)))), op(op(X, op(op(Y, X), X)), W))))))
+= { by lemma 11 }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(op(Y, X), X), op(op(Y, X), X))), op(op(X, op(op(Y, X), X)), W))))))
+= { by lemma 11 }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(op(X, op(op(Y, X), X)), W))))))
+= { by lemma 12 R->L }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(W, op(op(X, op(op(Y, X), X)), W))), op(op(X, op(op(Y, X), X)), W))))))
+= { by axiom 1 (a1) }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(W, op(op(X, op(op(Y, X), X)), W))), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X))))))))))
+= { by axiom 1 (a1) }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(W, op(op(X, op(op(Y, X), X)), W))), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(op(Y, X), X), op(Z, op(op(X, op(op(Y, X), X)), Z))))))))))))
+= { by axiom 2 (lemma_0001) R->L }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(W, op(op(X, op(op(Y, X), X)), W))), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(W, op(op(X, op(op(Y, X), X)), W)))))))))
+= { by lemma 8 R->L }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(op(W, op(op(X, op(op(Y, X), X)), W)), op(W, op(op(X, op(op(Y, X), X)), W))), op(op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(W, op(op(X, op(op(Y, X), X)), W))), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(W, op(op(X, op(op(Y, X), X)), W)))))))))
+= { by lemma 8 R->L }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(W, op(op(X, op(op(Y, X), X)), W)))), op(op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(W, op(op(X, op(op(Y, X), X)), W))), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(Y, X), X)), op(W, op(op(X, op(op(Y, X), X)), W)))))))))
+= { by axiom 2 (lemma_0001) R->L }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(W, op(op(X, op(op(Y, X), X)), W)))))))
+= { by lemma 8 }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(op(W, op(op(X, op(op(Y, X), X)), W)), op(W, op(op(X, op(op(Y, X), X)), W))))))
+= { by lemma 8 }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W)), op(W, op(op(X, op(op(Y, X), X)), W)))))
+= { by lemma 12 }
+  op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(Z, op(op(X, op(op(Y, X), X)), Z)), op(op(X, op(op(Y, X), X)), W))))
+= { by axiom 1 (a1) R->L }
+  op(op(X, op(op(Y, X), X)), Z)
+
+Goal 1 (history_lemma_0058): op(x2, op(op(x0, op(op(x1, x0), x0)), x2)) = x2.
+Proof:
+  op(x2, op(op(x0, op(op(x1, x0), x0)), x2))
+= { by lemma 13 R->L }
+  op(x2, op(op(op(x0, op(op(x1, x0), x0)), x2), op(op(x0, op(op(x1, x0), x0)), x2)))
+= { by lemma 13 R->L }
+  op(x2, op(op(op(x0, op(op(x1, x0), x0)), x2), op(op(op(x0, op(op(x1, x0), x0)), x2), op(op(x0, op(op(x1, x0), x0)), x2))))
+= { by axiom 1 (a1) R->L }
+  x2
+
+RESULT: Theorem (the conjecture is true).
+"#;
+
+        // Segment 3
+        let seg3 = r#"
+The conjecture is true! Here is a proof.
+
+Axiom 1 (a1): X = op(X, op(Y, op(op(Z, X), Y))).
+Axiom 2 (history_lemma_0058): op(X, op(op(Y, op(op(Z, Y), Y)), X)) = X.
+
+Goal 1 (conjecture0): x0 = op(x0, op(x1, op(x2, op(x0, x2)))).
+Proof:
+  x0
+= { by axiom 1 (a1) }
+  op(x0, op(X, op(op(Y, x0), X)))
+= { by axiom 1 (a1) }
+  op(op(x0, op(X, op(op(Y, x0), X))), op(X, op(op(Y, x0), X)))
+= { by axiom 1 (a1) }
+  op(op(op(x0, op(X, op(op(Y, x0), X))), op(X, op(op(Y, x0), X))), op(op(x1, op(x2, op(x0, x2))), op(op(op(X, op(op(Y, x0), X)), op(op(x0, op(X, op(op(Y, x0), X))), op(X, op(op(Y, x0), X)))), op(x1, op(x2, op(x0, x2))))))
+= { by axiom 2 (history_lemma_0058) }
+  op(op(op(x0, op(X, op(op(Y, x0), X))), op(X, op(op(Y, x0), X))), op(x1, op(x2, op(x0, x2))))
+= { by axiom 1 (a1) R->L }
+  op(op(x0, op(X, op(op(Y, x0), X))), op(x1, op(x2, op(x0, x2))))
+= { by axiom 1 (a1) R->L }
+  op(x0, op(x1, op(x2, op(x0, x2))))
+
+RESULT: Theorem (the conjecture is true).
+        "#;
+
+        let trimmed = trim_superposition_block(block, &[seg2, seg3]);
+
+        assert!(trimmed.contains("% === Superposition Steps ==="));
+        assert!(trimmed.contains("% lemma_0001:"));
+
+        // these must be gone
+        assert!(!trimmed.contains("% lemma_0002:"));
+        assert!(!trimmed.contains("% lemma_0003:"));
+        assert!(!trimmed.contains("% lemma_0004:"));
+        assert!(!trimmed.contains("% lemma_0005:"));
+        assert!(!trimmed.contains("% lemma_0006:"));
+        assert!(!trimmed.contains("% lemma_0007:"));
+        assert!(!trimmed.contains("% lemma_0008:"));
+        assert_eq!(count_superposition_steps(&trimmed), 1);
     }
 }
