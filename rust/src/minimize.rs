@@ -145,8 +145,10 @@ pub fn try_minimize(
             // this is the second case: the root itself is single/abstract
             if candidates.is_empty() {
                 let conjecture = extract_conjecture_from_file(input_file)?;
-                if formulas_match(&root_formula, &conjecture) || formulas_match(&conjecture, &root_formula)
+                if formulas_match(&root_formula, &conjecture)
+                    || formulas_match(&conjecture, &root_formula)
                 {
+                    println!("   [INFO] Main theorem is root {} — skipping", root_lemma);
                     // don't re prove the main theorem
                     continue;
                 }
@@ -403,15 +405,17 @@ pub fn try_minimize(
                         };
 
                         let conjecture = extract_conjecture_from_file(input_file)?;
-                        if formulas_match(&root_formula, &conjecture) || formulas_match(&conjecture, &root_formula)
+                        if formulas_match(&root_formula, &conjecture)
+                            || formulas_match(&conjecture, &root_formula)
                         {
+                            println!("   [INFO] Main theorem is root {} — skipping", root_lemma);
                             let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
-                            trim_proof_parts(
-                                Some((&start_proof, &start_proved_by, start_proof_steps)),
-                                None, // or Some((history_name, &history_proof, &history_by, history_steps))
-                                (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
-                                None,
-                            );
+                                trim_proof_parts(
+                                    Some((&start_proof, &start_proved_by, start_proof_steps)),
+                                    None, // or Some((history_name, &history_proof, &history_by, history_steps))
+                                    (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
+                                    None,
+                                );
 
                             annotated_proof = format!(
                                 "% === Input Problem ===\n{}\n\n{}{}",
@@ -421,13 +425,13 @@ pub fn try_minimize(
                             // 8. Compute total steps
                             steps_total = kept_start_steps + kept_root_steps;
                         } else {
-                          let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
-                            trim_proof_parts(
-                                Some((&start_proof, &start_proved_by, start_proof_steps)),
-                                None, // or Some((history_name, &history_proof, &history_by, history_steps))
-                                (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
-                                Some(&sub_proof),
-                            );
+                            let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
+                                trim_proof_parts(
+                                    Some((&start_proof, &start_proved_by, start_proof_steps)),
+                                    None, // or Some((history_name, &history_proof, &history_by, history_steps))
+                                    (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
+                                    Some(&sub_proof),
+                                );
 
                             annotated_proof = format!(
                                 "% === Input Problem ===\n{}\n\n{}{}{}",
@@ -501,11 +505,16 @@ pub fn try_minimize(
                             };
 
                             let conjecture = extract_conjecture_from_file(input_file)?;
-                            if formulas_match(&root_formula, &conjecture) || formulas_match(&conjecture, &root_formula)
-                            { 
-                              // the goal was to prove something more abstract by dependencies, I doubt that in this case it will
-                              // be helpful but let's TODO
-                              continue;
+                            if formulas_match(&root_formula, &conjecture)
+                                || formulas_match(&conjecture, &root_formula)
+                            {
+                                println!(
+                                    "   [INFO] Main theorem is root {} — skipping",
+                                    root_lemma
+                                );
+                                // the goal was to prove something more abstract by dependencies, I doubt that in this case it will
+                                // be helpful but let's TODO
+                                continue;
                             }
 
                             let (
@@ -765,61 +774,111 @@ pub fn try_minimize(
                     );
 
                     let conjecture = extract_conjecture_from_file(input_file)?;
-                    if formulas_match(&root_formula, &conjecture) || formulas_match(&conjecture, &root_formula)
-                    { 
-                      // in this case here if root is the main theorem and we also have proved history 
-                      // we remain with start and root
-                      println!(
-                        "   [INFO] Main theorem is root {} — skipping",
-                        root_lemma
-                      );
+                    if formulas_match(&root_formula, &conjecture)
+                        || formulas_match(&conjecture, &root_formula)
+                    {
+                        // in this case here if root is the main theorem and we also have proved history
+                        // we remain with start and root
+                        println!("   [INFO] Main theorem is root {} — skipping", root_lemma);
+
+                        let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
+                            trim_proof_parts(
+                                Some((&start_proof, &start_proved_by, start_proof_steps)),
+                                None, // or Some((history_name, &history_proof, &history_by, history_steps))
+                                (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
+                                None,
+                            );
+
+                        annotated_proof = format!(
+                            "% === Input Problem ===\n{}\n\n{}{}",
+                            input_content, kept_start, kept_root
+                        );
+
+                        // 10. Compute total steps
+                        steps_total = kept_start_steps + kept_root_steps;
+                    } else {
+                        let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
+                            trim_proof_parts(
+                                Some((&start_proof, &start_proved_by, start_proof_steps)),
+                                None, // or Some((history_name, &history_proof, &history_by, history_steps))
+                                (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
+                                Some(&sub_proof),
+                            );
+
+                        annotated_proof = format!(
+                            "% === Input Problem ===\n{}\n\n{}{}{}",
+                            input_content, kept_start, kept_root, sub_proof
+                        );
+
+                        // 10. Compute total steps
+                        steps_total = kept_start_steps + kept_root_steps + sub_proof_steps;
                     }
+                } else {
+                    let conjecture = extract_conjecture_from_file(input_file)?;
+                    if formulas_match(&root_formula, &conjecture)
+                        || formulas_match(&conjecture, &root_formula)
+                    {
+                        println!("   [INFO] Main theorem is root {} — skipping", root_lemma);
 
-
-                    let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
-                        trim_proof_parts(
+                        let (
+                            kept_start,
+                            kept_history,
+                            kept_root,
+                            kept_start_steps,
+                            kept_history_steps,
+                            kept_root_steps,
+                        ) = trim_proof_parts(
                             Some((&start_proof, &start_proved_by, start_proof_steps)),
-                            None, // or Some((history_name, &history_proof, &history_by, history_steps))
+                            Some((
+                                n_history_lemma,
+                                &n_history_proof,
+                                &n_history_proved_by,
+                                n_history_proof_steps,
+                            )),
+                            (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
+                            None,
+                        );
+
+                        // root and history were used
+                        annotated_proof = format!(
+                            "% === Input Problem ===\n{}\n\n{}{}{}",
+                            input_content, kept_start, kept_history, kept_root
+                        );
+
+                        // 11. Compute total steps
+                        steps_total = kept_start_steps + kept_history_steps + kept_root_steps;
+                    } else {
+                        let (
+                            kept_start,
+                            kept_history,
+                            kept_root,
+                            kept_start_steps,
+                            kept_history_steps,
+                            kept_root_steps,
+                        ) = trim_proof_parts(
+                            Some((&start_proof, &start_proved_by, start_proof_steps)),
+                            Some((
+                                n_history_lemma,
+                                &n_history_proof,
+                                &n_history_proved_by,
+                                n_history_proof_steps,
+                            )),
                             (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
                             Some(&sub_proof),
                         );
 
-                    annotated_proof = format!(
-                        "% === Input Problem ===\n{}\n\n{}{}{}",
-                        input_content, kept_start, kept_root, sub_proof
-                    );
+                        // root and history were used
+                        annotated_proof = format!(
+                            "% === Input Problem ===\n{}\n\n{}{}{}{}",
+                            input_content, kept_start, kept_history, kept_root, sub_proof
+                        );
 
-                    // 10. Compute total steps
-                    steps_total = kept_start_steps + kept_root_steps + sub_proof_steps;
-                } else {
-                    let (
-                        kept_start,
-                        kept_history,
-                        kept_root,
-                        kept_start_steps,
-                        kept_history_steps,
-                        kept_root_steps,
-                    ) = trim_proof_parts(
-                        Some((&start_proof, &start_proved_by, start_proof_steps)),
-                        Some((
-                            n_history_lemma,
-                            &n_history_proof,
-                            &n_history_proved_by,
-                            n_history_proof_steps,
-                        )),
-                        (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
-                        Some(&sub_proof),
-                    );
-
-                    // root and history were used
-                    annotated_proof = format!(
-                        "% === Input Problem ===\n{}\n\n{}{}{}{}",
-                        input_content, kept_start, kept_history, kept_root, sub_proof
-                    );
-
-                    // 11. Compute total steps
-                    steps_total =
-                        kept_start_steps + kept_history_steps + kept_root_steps + sub_proof_steps;
+                        // 11. Compute total steps
+                        steps_total = kept_start_steps
+                            + kept_history_steps
+                            + kept_root_steps
+                            + sub_proof_steps;
+                    }
                 }
 
                 // update local_best
@@ -1285,9 +1344,9 @@ pub fn count_superposition_steps(block: &str) -> usize {
 }
 
 pub fn trim_proof_parts(
-    start: Option<(&str, &str, usize)>,              // (start_text, start_proved_by, start_steps)
-    history: Option<(&str, &str, &str, usize)>,      // (history_name, history_text, history_proved_by, history_steps)
-    root: (&str, &str, &str, usize),                 // (root_name, root_text, root_proved_by, root_steps)
+    start: Option<(&str, &str, usize)>, // (start_text, start_proved_by, start_steps)
+    history: Option<(&str, &str, &str, usize)>, // (history_name, history_text, history_proved_by, history_steps)
+    root: (&str, &str, &str, usize), // (root_name, root_text, root_proved_by, root_steps)
     sub: Option<&str>,
 ) -> (
     String, // kept_start
@@ -1310,7 +1369,8 @@ pub fn trim_proof_parts(
     // If ANY vampire segment is raw (i.e., not our "% === Superposition Steps ===" block),
     // we disable trimming entirely and just return the segments as-is with provided step counts.
     let is_superposition_block = |txt: &str| -> bool {
-        txt.lines().any(|l| l.trim() == "% === Superposition Steps ===")
+        txt.lines()
+            .any(|l| l.trim() == "% === Superposition Steps ===")
     };
 
     let any_raw_vampire = (start.is_some()
@@ -1323,7 +1383,9 @@ pub fn trim_proof_parts(
 
     if any_raw_vampire {
         let kept_start = start.map(|(t, _, _)| t.to_string()).unwrap_or_default();
-        let kept_history = history.map(|(_, t, _, _)| t.to_string()).unwrap_or_default();
+        let kept_history = history
+            .map(|(_, t, _, _)| t.to_string())
+            .unwrap_or_default();
         let kept_root = root_proof.to_string();
 
         let start_steps = start.map(|(_, _, s)| s).unwrap_or(0);
@@ -1391,7 +1453,11 @@ pub fn trim_proof_parts(
             segs.extend(sub_segs.iter().copied());
 
             let (kept, steps) = keep_named(h_name, h_proof, h_by, h_steps_in, &segs);
-            if kept.trim().is_empty() { (String::new(), 0) } else { (kept, steps) }
+            if kept.trim().is_empty() {
+                (String::new(), 0)
+            } else {
+                (kept, steps)
+            }
         }
     };
 
@@ -1417,7 +1483,11 @@ pub fn trim_proof_parts(
                 _ => (start_proof.to_string(), start_steps_in),
             };
 
-            if kept.trim().is_empty() { (String::new(), 0) } else { (kept, steps) }
+            if kept.trim().is_empty() {
+                (String::new(), 0)
+            } else {
+                (kept, steps)
+            }
         }
     };
 
