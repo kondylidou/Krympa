@@ -51,9 +51,9 @@ pub fn try_minimize(
     // precompute lemmas
     let precomputed = precompute_lemmas(&proofs_dir, &lemmas_dir, &twee_proofs_dir)?;
 
-    let mut offset = 1;
+    let mut offset = 0;
     let mut accepted = 0;
-    let max_candidates = 4;
+    let max_candidates = 1;
 
     while accepted < max_candidates && offset < max_key {
         let key = (max_key - offset).to_string();
@@ -218,7 +218,7 @@ pub fn try_minimize(
                 // we need to push what we already have proved to the extra dependencies for matching
                 extra_dependencies.push((root_lemma.to_string(), root_formula.clone()));
 
-                let Some((sub_proof, sub_proof_steps)) = prove_lemma(
+                let Some((sub_proof, sub_proof_steps, sub_proved_by)) = prove_lemma(
                     &input_file,
                     &lemmas_dir,
                     //None,
@@ -313,12 +313,16 @@ pub fn try_minimize(
                         let mut extra_dependencies: Vec<(String, String)> = Vec::new();
 
                         // start lemmas
-                        let (start_proof, start_proof_steps) =
+                        let (start_proof, start_proof_steps, start_proved_by) =
                             if total_dep_steps <= superposition_steps_count && total_dep_steps != 0
                             {
                                 // we don't need to add anything to extra_dependencies
                                 // TODO maybe merge dependencies and extra_dependencies?
-                                (combined_dep_proof_text.clone(), total_dep_steps)
+                                (
+                                    combined_dep_proof_text.clone(),
+                                    total_dep_steps,
+                                    "fallback".to_string(),
+                                )
                             } else {
                                 // here the extra_dependencies are empty, we are at the start
                                 // we also don't care about renaming because it's the initial superposition steps
@@ -333,13 +337,17 @@ pub fn try_minimize(
                                     &superposition_steps,
                                     &renaming,
                                 );
-                                (sp_proof_text, superposition_steps_count)
+                                (
+                                    sp_proof_text,
+                                    superposition_steps_count,
+                                    "vampire".to_string(),
+                                )
                             };
 
                         extra_dependencies.push((root_lemma.to_string(), root_formula.clone()));
 
                         // 6. Compute root_proof
-                        let Some((root_proof, root_proof_steps)) = prove_lemma(
+                        let Some((root_proof, root_proof_steps, root_proved_by)) = prove_lemma(
                             &input_file,
                             &lemmas_dir,
                             // if use_superposition {
@@ -362,7 +370,7 @@ pub fn try_minimize(
                         };
 
                         // 7. Compute sub_proof / conjecture proof
-                        let Some((sub_proof, sub_proof_steps)) = prove_lemma(
+                        let Some((sub_proof, sub_proof_steps, sub_proved_by)) = prove_lemma(
                             &input_file,
                             &lemmas_dir,
                             // if use_superposition {
@@ -384,49 +392,13 @@ pub fn try_minimize(
                             continue;
                         };
 
-                        // 8. Check whether root lemma is actually used
-                        let root_used = proof_uses_lemma(&root_lemma, &[&sub_proof]);
+                        annotated_proof = format!(
+                            "% === Input Problem ===\n{}\n\n{}{}{}",
+                            input_content, start_proof, root_proof, sub_proof
+                        );
 
-                        // after root_used/history_used computed, choose the segments that matter
-                        let mut segs: Vec<&str> = Vec::new();
-                        // if root proof will be included, include it for trimming
-                        if root_used {
-                            segs.push(&root_proof);
-                        }
-                        // sub_proof is always included in the outputs
-                        segs.push(&sub_proof);
-
-                        let (start_proof_final, start_proof_final_steps) = if use_superposition {
-                            let trimmed = trim_superposition_block(&start_proof, &segs);
-                            let trimmed_steps = count_superposition_steps(&trimmed);
-                            (trimmed, trimmed_steps)
-                        } else {
-                            (start_proof.clone(), start_proof_steps)
-                        };
-
-                        // check whether root lemma was actually used in the proof
-                        if !root_used {
-                            println!(
-                                "   [INFO] Root lemma {} not used in conjecture proof — skipping",
-                                root_lemma
-                            );
-                            annotated_proof = format!(
-                                "% === Input Problem ===\n{}\n\n{}{}",
-                                input_content, start_proof_final, sub_proof
-                            );
-
-                            // 9. Compute total steps
-                            steps_total = start_proof_final_steps + sub_proof_steps;
-                        } else {
-                            annotated_proof = format!(
-                                "% === Input Problem ===\n{}\n\n{}{}{}",
-                                input_content, start_proof_final, root_proof, sub_proof
-                            );
-
-                            // 9. Compute total steps
-                            steps_total =
-                                start_proof_final_steps + root_proof_steps + sub_proof_steps;
-                        }
+                        // 8. Compute total steps
+                        steps_total = start_proof_steps + root_proof_steps + sub_proof_steps;
                     }
                     // if we fall back to an abstract candidate we will have to prove
                     // it with Twee, we won't find it in the superposition steps.
@@ -463,7 +435,7 @@ pub fn try_minimize(
                                 .push((candidate.to_string(), abstract_formula.clone()));
 
                             // 6. Compute root_proof
-                            let Some((root_proof, root_proof_steps)) = prove_lemma(
+                            let Some((root_proof, root_proof_steps, root_proved_by)) = prove_lemma(
                                 &input_file,
                                 &lemmas_dir,
                                 None,
@@ -477,7 +449,7 @@ pub fn try_minimize(
                             };
 
                             // 7. Compute sub_proof / conjecture proof
-                            let Some((sub_proof, sub_proof_steps)) = prove_lemma(
+                            let Some((sub_proof, sub_proof_steps, sub_proved_by)) = prove_lemma(
                                 &input_file,
                                 &lemmas_dir,
                                 None,
@@ -489,32 +461,13 @@ pub fn try_minimize(
                                 // no proof -> skip this candidate
                                 continue;
                             };
-                            // 8. Check whether root lemma is actually used
-                            let root_used = proof_uses_lemma(&root_lemma, &[&sub_proof]);
+                            annotated_proof = format!(
+                                "% === Input Problem ===\n{}\n\n{}{}{}",
+                                input_content, abstract_proof, root_proof, sub_proof
+                            );
 
-                            // check whether root lemma was actually used in the proof
-                            if !root_used {
-                                println!(
-                                    "   [INFO] Root lemma {} not used in conjecture proof — skipping",
-                                    root_lemma
-                                );
-                                annotated_proof = format!(
-                                    "% === Input Problem ===\n{}\n\n{}{}",
-                                    input_content, abstract_proof, sub_proof
-                                );
-
-                                // 9. Compute total steps
-                                steps_total = abstract_proof_steps + sub_proof_steps;
-                            } else {
-                                annotated_proof = format!(
-                                    "% === Input Problem ===\n{}\n\n{}{}{}",
-                                    input_content, abstract_proof, root_proof, sub_proof
-                                );
-
-                                // 9. Compute total steps
-                                steps_total =
-                                    abstract_proof_steps + root_proof_steps + sub_proof_steps;
-                            }
+                            // 8. Compute total steps
+                            steps_total = abstract_proof_steps + root_proof_steps + sub_proof_steps;
                         } else {
                             println!(
                                 "   [WARN] Abstract lemma {} proof file does not exist, skipping",
@@ -616,7 +569,7 @@ pub fn try_minimize(
 
                 // we need to compare the history proof we found with the existing start proof
                 // in case this history lemma was already derived by superposition
-                let use_proved_history = if use_superposition && proved_history {
+                let prove_history = if use_superposition && proved_history {
                     // history lemma was already proved
                     false
                 } else {
@@ -624,17 +577,20 @@ pub fn try_minimize(
                     // and we are proving by dependencies
                     true
                 };
-                //let use_proved_history = !use_superposition || !proved_history;
 
                 // 4. Build extra_dependencies before prepending
                 let mut extra_dependencies: Vec<(String, String)> = Vec::new();
 
                 // start lemmas
-                let (start_proof, start_proof_steps) =
+                let (start_proof, start_proof_steps, start_proved_by) =
                     if total_dep_steps <= superposition_steps_count && total_dep_steps != 0 {
                         // we don't need to add the dependencies to the extra dependencies
                         // we already have them saved
-                        (combined_dep_proof_text.clone(), total_dep_steps)
+                        (
+                            combined_dep_proof_text.clone(),
+                            total_dep_steps,
+                            "fallback".to_string(),
+                        )
                     } else {
                         // we build the start proof before adding the new superposition steps
                         // to the extra dependencies. This is because extra dependencies has
@@ -652,7 +608,11 @@ pub fn try_minimize(
                             &superposition_steps,
                             &renaming,
                         );
-                        (sp_proof_text, superposition_steps_count)
+                        (
+                            sp_proof_text,
+                            superposition_steps_count,
+                            "vampire".to_string(),
+                        )
                     };
 
                 // 4. Load n_history formula
@@ -663,23 +623,24 @@ pub fn try_minimize(
                 extra_dependencies.push((n_history_lemma.to_string(), n_formula.clone()));
 
                 // 6. Compute n_history_proof
-                let Some((n_history_proof, n_history_proof_steps)) = prove_lemma(
-                    &input_file,
-                    &lemmas_dir,
-                    // if use_superposition {
-                    //     Some((superposition_steps, input_formulas)) // TODO maybe this is dupl information and we don't need this
-                    // } else {
-                    //     None
-                    // },
-                    if use_superposition {
-                        None
-                    } else {
-                        Some(&dependencies) // if we don't use superposition the dependencies are here
-                    },
-                    //vec![(&n_history_lemma, &n_formula)],
-                    &mut extra_dependencies, // this now includes the new superposition steps after renaming
-                    Some(&n_history_lemma),
-                )?
+                let Some((n_history_proof, n_history_proof_steps, n_history_proved_by)) =
+                    prove_lemma(
+                        &input_file,
+                        &lemmas_dir,
+                        // if use_superposition {
+                        //     Some((superposition_steps, input_formulas)) // TODO maybe this is dupl information and we don't need this
+                        // } else {
+                        //     None
+                        // },
+                        if use_superposition {
+                            None
+                        } else {
+                            Some(&dependencies) // if we don't use superposition the dependencies are here
+                        },
+                        //vec![(&n_history_lemma, &n_formula)],
+                        &mut extra_dependencies, // this now includes the new superposition steps after renaming
+                        Some(&n_history_lemma),
+                    )?
                 else {
                     // no proof -> skip this candidate
                     continue;
@@ -688,7 +649,7 @@ pub fn try_minimize(
                 extra_dependencies.push((root_lemma.to_string(), root_formula.clone()));
 
                 // 7. Compute root_proof
-                let Some((root_proof, root_proof_steps)) = prove_lemma(
+                let Some((root_proof, root_proof_steps, root_proved_by)) = prove_lemma(
                     &input_file,
                     &lemmas_dir,
                     // if use_superposition {
@@ -711,7 +672,7 @@ pub fn try_minimize(
                 };
 
                 // 8. Compute sub_proof / conjecture proof
-                let Some((sub_proof, sub_proof_steps)) = prove_lemma(
+                let Some((sub_proof, sub_proof_steps, sub_proved_by)) = prove_lemma(
                     &input_file,
                     &lemmas_dir,
                     // if use_superposition {
@@ -733,96 +694,38 @@ pub fn try_minimize(
                     continue;
                 };
 
-                // 9. Check whether root lemma is actually used
-                let root_used = proof_uses_lemma(&root_lemma, &[&sub_proof]);
-
-                let history_used = if use_proved_history && root_used {
-                    // history lemma may appear in root_proof or sub_proof
-                    proof_uses_lemma(&n_history_lemma, &[&root_proof, &sub_proof])
-                } else if use_proved_history && !root_used {
-                    // only sub proof matters
-                    proof_uses_lemma(&n_history_lemma, &[&sub_proof])
-                } else {
-                    false
-                };
-
-                // after root_used/history_used computed, choose the segments that matter
-                let mut segs: Vec<&str> = Vec::new();
-
-                // if history proof will be included, include it for trimming
-                if history_used && use_proved_history {
-                    segs.push(&n_history_proof);
-                }
-                // if root proof will be included, include it for trimming
-                if root_used {
-                    segs.push(&root_proof);
-                }
-                // sub_proof is always included in the outputs
-                segs.push(&sub_proof);
-
-                let (start_proof_final, start_proof_final_steps) = if use_superposition {
-                    let trimmed = trim_superposition_block(&start_proof, &segs);
-                    let trimmed_steps = count_superposition_steps(&trimmed);
-                    (trimmed, trimmed_steps)
-                } else {
-                    (start_proof.clone(), start_proof_steps)
-                };
-
-                // 10. Annotate all proofs
+                // 9. Annotate all proofs
                 let annotated_proof;
                 let steps_total;
-                if !root_used && !history_used {
+                if !prove_history {
                     println!(
-                        "   [INFO] Root {} and history lemma {} not used in the proof — skipping",
-                        root_lemma, n_history_lemma
-                    );
-
-                    annotated_proof = format!(
-                        "% === Input Problem ===\n{}\n\n{}{}",
-                        input_content, start_proof_final, sub_proof
-                    );
-
-                    // 11. Compute total steps
-                    steps_total = start_proof_final_steps + sub_proof_steps;
-                } else if !root_used && history_used {
-                    println!(
-                        "   [INFO] Root lemma {} not used in the proof — skipping",
-                        root_lemma
-                    );
-
-                    annotated_proof = format!(
-                        "% === Input Problem ===\n{}\n\n{}{}{}",
-                        input_content, start_proof_final, n_history_proof, sub_proof
-                    );
-
-                    // 11. Compute total steps
-                    steps_total = start_proof_final_steps + n_history_proof_steps + sub_proof_steps;
-                } else if root_used && !history_used {
-                    println!(
-                        "   [INFO] History lemma {} not used in the proof — skipping",
+                        "   [INFO] History lemma {} already proved — skipping",
                         n_history_lemma
                     );
 
                     annotated_proof = format!(
                         "% === Input Problem ===\n{}\n\n{}{}{}",
-                        input_content, start_proof_final, root_proof, sub_proof
+                        input_content, start_proof, root_proof, sub_proof
                     );
 
-                    // 11. Compute total steps
-                    steps_total = start_proof_final_steps + root_proof_steps + sub_proof_steps;
+                    // 10. Compute total steps
+                    steps_total = start_proof_steps + root_proof_steps + sub_proof_steps;
                 } else {
                     // root and history were used
                     annotated_proof = format!(
                         "% === Input Problem ===\n{}\n\n{}{}{}{}",
-                        input_content, start_proof_final, n_history_proof, root_proof, sub_proof
+                        input_content, start_proof, n_history_proof, root_proof, sub_proof
                     );
 
                     // 11. Compute total steps
-                    steps_total = start_proof_final_steps
+                    steps_total = start_proof_steps
                         + n_history_proof_steps
                         + root_proof_steps
                         + sub_proof_steps;
                 }
+
+                println!("   [PROOOF-------------------------------------------------------] ");
+                println!("   [PROOOF] {}", annotated_proof);
 
                 // update local_best
                 local_best = match local_best {
@@ -838,7 +741,7 @@ pub fn try_minimize(
 
                 println!(
                     "   [INFO] Candidate root {} with history {} requires {} total steps with {} initial superposition steps",
-                    root_lemma, n_history_lemma, steps_total, start_proof_final_steps
+                    root_lemma, n_history_lemma, steps_total, start_proof_steps
                 );
             }
         }
@@ -917,7 +820,7 @@ pub fn prove_lemma(
     dependencies: Option<&[String]>,    // names
     axioms: &mut Vec<(String, String)>, // (name, formula)
     conjecture: Option<&str>,
-) -> Result<Option<(String, usize)>, String> {
+) -> Result<Option<(String, usize, String)>, String> {
     let tmp_path = create_tmp_copy(input_file)?;
     let proofs_dir = "../proofs".to_string();
 
@@ -955,7 +858,7 @@ pub fn prove_lemma(
     let vampire_proof_exists = Path::new(&vampire_proof_file).exists();
 
     // 7. Select shorter proof
-    let result = match (twee_proof, vampire_proof_exists) {
+    let result: Option<(String, usize, String)> = match (twee_proof, vampire_proof_exists) {
         // Twee + Vampire available
         (Some(tp), true) => {
             let t_len = proof_length_twee(&tp);
@@ -974,20 +877,20 @@ pub fn prove_lemma(
                     let (vp, renaming) =
                         prepend_superposition_steps(axioms, &sp_steps, &input_formulas, &all_steps);
                     extend_with_superposition_steps(axioms, &sp_steps, &renaming);
-                    Some((vp, v_len))
+                    Some((vp, v_len, "vampire".to_string()))
                 } else {
-                    // we will do a fallback here to be revised TODO
-                    // if we for some reason cannot extract superposition steps we will
-                    // fall back to the Twee proof
-                    Some((tp, t_len))
+                    Some((tp, t_len, "twee".to_string()))
                 }
             } else {
-                Some((tp, t_len))
+                Some((tp, t_len, "twee".to_string()))
             }
         }
 
         // Twee only
-        (Some(tp), false) => Some((tp.clone(), proof_length_twee(&tp))),
+        (Some(tp), false) => {
+            let t_len = proof_length_twee(&tp);
+            Some((tp, t_len, "twee".to_string()))
+        }
 
         // Vampire only
         (None, true) => {
@@ -1001,9 +904,9 @@ pub fn prove_lemma(
                 let (vp, renaming) =
                     prepend_superposition_steps(axioms, &sp_steps, &input_formulas, &all_steps);
                 extend_with_superposition_steps(axioms, &sp_steps, &renaming);
-                Some((vp, v_len))
+                Some((vp, v_len, "vampire".to_string()))
             } else {
-                Some((vp_text, v_len))
+                Some((vp_text, v_len, "vampire".to_string()))
             }
         }
 
@@ -1012,24 +915,23 @@ pub fn prove_lemma(
     };
 
     // 8. Fallback: load an existing proof from proofs_dir (only if <= current best)
-    let result = match result {
-        // we already found a proof in this run (Twee/Vampire)
-        Some((best_proof, best_steps)) => {
+    let result: Option<(String, usize, String)> = match result {
+        Some((best_proof, best_steps, best_by)) => {
             if let Ok((fb_proof, fb_steps)) = fallback_proof(&proofs_dir, &c_name, &c_formula) {
                 if fb_steps < best_steps {
-                    Some((fb_proof, fb_steps))
+                    Some((fb_proof, fb_steps, "fallback".to_string()))
                 } else {
-                    Some((best_proof, best_steps))
+                    Some((best_proof, best_steps, best_by))
                 }
             } else {
-                Some((best_proof, best_steps))
+                Some((best_proof, best_steps, best_by))
             }
         }
 
         // no proof found in this run -> try fallback
         None => {
             if let Ok((fb_proof, fb_steps)) = fallback_proof(&proofs_dir, &c_name, &c_formula) {
-                Some((fb_proof, fb_steps))
+                Some((fb_proof, fb_steps, "fallback".to_string()))
             } else {
                 None
             }
@@ -1129,7 +1031,7 @@ fn fallback_proof(
 ///   - deps mentions:  "deps: ... lemma_0060 ..." (with or without a trailing ':')
 ///
 pub fn proof_uses_lemma(lemma_any_variant: &str, segments: &[&str]) -> bool {
-    // extract trailing digits (lemma number) from any variant
+    // extract trailing digits
     let num_re = Regex::new(r"(\d+)\s*$").unwrap();
     let Some(cap) = num_re.captures(lemma_any_variant.trim()) else {
         return false;
@@ -1168,15 +1070,23 @@ pub fn proof_uses_lemma(lemma_any_variant: &str, segments: &[&str]) -> bool {
     ))
     .unwrap();
 
+    // 3) Proof-step citations (should be handled by the above)
+    // Matches:
+    //   "= { by axiom 2 (lemma_0003) }"
+    //   "= { by lemma 5 (history_lemma_0061) R->L }"
+    let cite_re = Regex::new(&format!(
+        r"(?mi)\bby\s+(?:axiom|lemma)\s+\d+\s*\(\s*(?:{})\s*\)",
+        alts
+    ))
+    .unwrap();
+
     segments
         .iter()
-        .any(|s| axiom_re.is_match(s) || deps_re.is_match(s))
+        .any(|s| axiom_re.is_match(s) || deps_re.is_match(s) || cite_re.is_match(s))
 }
 
 /// Keep only those lemmas in `block` that are required to derive
 /// the lemmas referenced in later segments
-// TODO might needs tuning
-// proof steps might be more due to this
 pub fn trim_superposition_block(block: &str, later_segments: &[&str]) -> String {
     let header_re = Regex::new(r"(?m)^\s*%\s*===\s*Superposition Steps\s*===\s*$").unwrap();
 
@@ -1277,6 +1187,134 @@ pub fn trim_superposition_block(block: &str, later_segments: &[&str]) -> String 
 pub fn count_superposition_steps(block: &str) -> usize {
     let lemma_line_re = Regex::new(r"(?m)^\s*%\s*[A-Za-z_]*lemma_\d+\s*:").unwrap();
     lemma_line_re.find_iter(block).count()
+}
+
+pub fn trim_proof_parts(
+    start: Option<(&str, &str, usize)>, // (start_text, start_proved_by, start_steps)
+    history: Option<(&str, &str, &str, usize)>, // (history_name, history_text, history_proved_by, history_steps)
+    root: (&str, &str, &str, usize), // (root_name, root_text, root_proved_by, root_steps)
+    sub: &str,
+) -> (
+    Option<String>, // kept_start
+    Option<String>, // kept_history
+    String,         // kept_root
+    String,         // kept_sub
+    Option<usize>,  // start_steps
+    Option<usize>,  // history_steps
+    usize,          // root_steps
+) {
+    let kept_sub = sub.to_string();
+
+    let (root_name, root_proof, root_proved_by, root_steps_in) = root;
+
+    // Helper: decide what proof text to keep, and what step count to output.
+    //
+    // - If proved_by == "vampire": trim using dependencies; recompute steps.
+    // - Else if proved_by == "twee": keep only if it used at least in one segment (via proof_uses_lemma).
+    // - Else: keep as-is (fallback).
+    // - Steps: 0 if kept text is empty, otherwise either recomputed (vampire) or original steps_in.
+    let keep_and_steps =
+        |name: &str, proof: &str, by: &str, steps_in: usize, segs: &[&str]| -> (String, usize) {
+            match by {
+                "vampire" => {
+                    let trimmed = trim_superposition_block(proof, segs);
+                    let steps = count_superposition_steps(&trimmed);
+                    (trimmed, steps)
+                }
+                "twee" => {
+                    if !proof_uses_lemma(name, segs) {
+                        return (String::new(), 0);
+                    }
+                    let kept = proof.to_string();
+                    let steps = if kept.trim().is_empty() { 0 } else { steps_in };
+                    (kept, steps)
+                }
+                _ => {
+                    let kept = proof.to_string();
+                    let steps = if kept.trim().is_empty() { 0 } else { steps_in };
+                    (kept, steps)
+                }
+            }
+        };
+
+    // 1) oot
+    let (kept_root, root_steps) = keep_and_steps(
+        root_name,
+        root_proof,
+        root_proved_by,
+        root_steps_in,
+        &[&kept_sub],
+    );
+
+    // 2) history
+    let (kept_history, history_steps): (Option<String>, Option<usize>) = match history {
+        None => (None, None),
+        Some((history_name, history_proof, history_by, history_steps_in)) => {
+            let (kept, steps) = keep_and_steps(
+                history_name,
+                history_proof,
+                history_by,
+                history_steps_in,
+                &[&kept_root, &kept_sub],
+            );
+
+            if kept.trim().is_empty() {
+                // segment exists, but we trimmed it away: keep it as Some("") or drop it?
+                // this chooses to DROP it, which usually matches “none-ish”.
+                (None, None)
+            } else {
+                (Some(kept), Some(steps))
+            }
+        }
+    };
+
+    // 3) start
+    let (kept_start, start_steps): (Option<String>, Option<usize>) = match start {
+        None => (None, None),
+        Some((start_proof, start_by, start_steps_in)) => {
+            let mut segs: Vec<&str> = Vec::new();
+            if let Some(ref h) = kept_history {
+                if !h.trim().is_empty() {
+                    segs.push(h);
+                }
+            }
+            segs.push(&kept_root);
+            segs.push(&kept_sub);
+
+            let (kept, steps) = match start_by {
+                "vampire" => {
+                    let trimmed = trim_superposition_block(start_proof, &segs);
+                    let steps = count_superposition_steps(&trimmed);
+                    (trimmed, steps)
+                }
+                _ => {
+                    let kept = start_proof.to_string();
+                    let steps = if kept.trim().is_empty() {
+                        0
+                    } else {
+                        start_steps_in
+                    };
+                    (kept, steps)
+                }
+            };
+
+            if kept.trim().is_empty() {
+                (None, None)
+            } else {
+                (Some(kept), Some(steps))
+            }
+        }
+    };
+
+    (
+        kept_start,
+        kept_history,
+        kept_root,
+        kept_sub,
+        start_steps,
+        history_steps,
+        root_steps,
+    )
 }
 
 #[cfg(test)]
@@ -2106,5 +2144,203 @@ RESULT: Theorem (the conjecture is true).
         assert!(!trimmed.contains("% lemma_0007:"));
         assert!(!trimmed.contains("% lemma_0008:"));
         assert_eq!(count_superposition_steps(&trimmed), 1);
+    }
+
+    #[test]
+    fn proof_uses_lemma() {
+        let block = r#"% === Superposition Steps ===
+% lemma_0001: op(op(X1,X2),op(X0,X2)) = op(X3,op(X2,op(X3,op(op(X1,X2),op(X0,X2))))) | deps: a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0, a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0
+% lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2)) | deps: lemma_0001: op(op(X1,X2),op(X0,X2)) = op(X3,op(X2,op(X3,op(op(X1,X2),op(X0,X2))))), a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0
+% lemma_0003: op(X1,op(X1,op(X0,X0))) = X0 | deps: a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0, lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2))
+% lemma_0004: op(X0,op(op(X0,op(X1,X1)),op(X0,op(X1,X1)))) = op(op(X2,op(X0,op(X1,X1))),X1) | deps: lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2)), lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+% lemma_0005: op(op(X2,op(X0,op(X1,X1))),X1) = op(X0,op(X0,op(op(X1,X1),op(X1,X1)))) | deps: lemma_0004: op(X0,op(op(X0,op(X1,X1)),op(X0,op(X1,X1)))) = op(op(X2,op(X0,op(X1,X1))),X1), lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2))
+% lemma_0006: op(X1,X1) = op(op(X2,op(X0,op(X1,X1))),X1) | deps: lemma_0005: op(op(X2,op(X0,op(X1,X1))),X1) = op(X0,op(X0,op(op(X1,X1),op(X1,X1)))), lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+"#;
+
+        // Segment 1: the “main proof” (uses lemma_0003 as axiom 2)
+        let seg1 = r#"
+% === Superposition Steps ===
+% lemma_0007: op(X0,op(X2,X2)) = op(X3,op(X2,op(X3,op(X0,op(X2,X2))))) | deps: lemma_0001, lemma_0002
+% lemma_0003: op(X1,op(X1,op(X0,X0))) = X0 | deps: a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0, lemma_0002
+% lemma_0005: op(op(X2,op(X0,op(X1,X1))),X1) = op(X0,op(X0,op(op(X1,X1),op(X1,X1)))) | deps: lemma_0004, lemma_0002
+% lemma_0006: op(X1,X1) = op(op(X2,op(X0,op(X1,X1))),X1) | deps: lemma_0005: op(op(X2,op(X0,op(X1,X1))),X1) = op(X0,op(X0,op(op(X1,X1),op(X1,X1)))), lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+% lemma_0008: op(op(X0,X1),op(X1,op(X1,X1))) = X1 | deps: lemma_0003: op(X1,op(X1,op(X0,X0))) = X0, lemma_0002
+% lemma_0009: op(X6,X7) = op(X8,op(X8,op(X6,op(X7,X7)))) | deps: lemma_0003: op(X1,op(X1,op(X0,X0))) = X0, lemma_0002
+% lemma_0010: op(X0,op(X1,X1)) = op(X1,op(op(X0,op(X1,X1)),op(op(X0,op(X1,X1)),op(X0,op(X1,X1))))) | deps: lemma_0008: op(op(X0,X1),op(X1,op(X1,X1))) = X1, lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+% lemma_0011: op(X0,X0) = op(op(X1,op(X0,X0)),X0) | deps: lemma_0008: op(op(X0,X1),op(X1,op(X1,X1))) = X1, lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+% lemma_0012: op(X0,op(X1,X1)) = op(X1,op(X0,X1)) | deps: lemma_0010: op(X0,op(X1,X1)) = op(X1,op(op(X0,op(X1,X1)),op(op(X0,op(X1,X1)),op(X0,op(X1,X1))))), lemma_0009: op(X6,X7) = op(X8,op(X8,op(X6,op(X7,X7))))
+% lemma_0013: op(X3,op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))) = op(op(X2,op(X3,X3)),op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))) | deps: lemma_0007: op(X0,op(X2,X2)) = op(X3,op(X2,op(X3,op(X0,op(X2,X2))))), lemma_0007: op(X0,op(X2,X2)) = op(X3,op(X2,op(X3,op(X0,op(X2,X2)))))
+% lemma_0014: op(X2,X3) = op(X3,op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))) | deps: lemma_0013: op(X3,op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))) = op(op(X2,op(X3,X3)),op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))), lemma_0009: op(X6,X7) = op(X8,op(X8,op(X6,op(X7,X7))))
+% lemma_0015: op(X2,X3) = op(X3,op(X2,op(op(X3,X3),op(X3,X3)))) | deps: lemma_0014: op(X2,X3) = op(X3,op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))), lemma_0002
+% lemma_0016: op(X2,X3) = op(X3,op(X2,op(X3,op(X3,X3)))) | deps: lemma_0015: op(X2,X3) = op(X3,op(X2,op(op(X3,X3),op(X3,X3)))), lemma_0002
+% lemma_0017: op(X11,op(X12,op(X11,X12))) = X12 | deps: lemma_0003: op(X1,op(X1,op(X0,X0))) = X0, lemma_0012: op(X0,op(X1,X1)) = op(X1,op(X0,X1))
+% lemma_0018: op(op(X15,op(X16,op(op(X17,op(X17,X17)),op(X17,op(X17,X17))))),X17) = op(X17,op(op(X17,op(X17,X17)),op(X17,op(X17,X17)))) | deps: lemma_0016: op(X2,X3) = op(X3,op(X2,op(X3,op(X3,X3)))), lemma_0006: op(X1,X1) = op(op(X2,op(X0,op(X1,X1))),X1)
+% lemma_0019: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(op(X17,op(X17,X17)),op(X17,op(X17,X17))))),X17) | deps: lemma_0018: op(op(X15,op(X16,op(op(X17,op(X17,X17)),op(X17,op(X17,X17))))),X17) = op(X17,op(op(X17,op(X17,X17)),op(X17,op(X17,X17)))), lemma_0016: op(X2,X3) = op(X3,op(X2,op(X3,op(X3,X3))))
+% lemma_0020: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(op(X17,X17),op(X17,X17))))),X17) | deps: lemma_0019: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(op(X17,op(X17,X17)),op(X17,op(X17,X17))))),X17), lemma_0002
+% lemma_0021: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(X17,op(X17,X17))))),X17) | deps: lemma_0020: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(op(X17,X17),op(X17,X17))))),X17), lemma_0002
+% lemma_0022: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,X17)),X17) | deps: lemma_0021: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(X17,op(X17,X17))))),X17), lemma_0017: op(X11,op(X12,op(X11,X12))) = X12
+% history_lemma_0151: op(X17,X17) = op(op(X15,op(X16,X17)),X17) | deps: lemma_0022: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,X17)),X17), lemma_0011: op(X0,X0) = op(op(X1,op(X0,X0)),X0)
+"#;
+
+        // Segment 3: the final goal proof — still no lemma_0004..0008 usage
+        let seg3 = r#"The conjecture is true! Here is a proof.
+
+Axiom 1 (lemma_0022): op(op(X, op(X, X)), X) = op(op(Y, op(Z, X)), X).
+Axiom 2 (lemma_0011): op(X, X) = op(op(Y, op(X, X)), X).
+
+Goal 1 (conjecture0): op(x0, x0) = op(op(x1, op(x2, x0)), x0).
+Proof:
+  op(x0, x0)
+= { by axiom 2 (lemma_0011) }
+  op(op(x0, op(x0, x0)), x0)
+= { by axiom 1 (lemma_0022) }
+  op(op(x1, op(x2, x0)), x0)
+
+RESULT: Theorem (the conjecture is true).
+"#;
+        // Use trim_proof_parts: block is the "start" vampire block,
+        // seg1 is the "root" vampire block, seg3 is sub-proof.
+        let (kept_start, kept_hist, kept_root, kept_sub, start_steps, hist_steps, root_steps) =
+            trim_proof_parts(
+                Some((block, "vampire", count_superposition_steps(block))),
+                None,
+                (
+                    "history_lemma_0151",
+                    seg1,
+                    "vampire",
+                    count_superposition_steps(seg1),
+                ),
+                seg3,
+            );
+
+        // history is None -> None out
+        assert!(kept_hist.is_none());
+        assert!(hist_steps.is_none());
+
+        // start exists -> should be Some and non-empty
+        let kept_start = kept_start.expect("start should be Some");
+        let start_steps = start_steps.expect("start_steps should be Some");
+        assert!(!kept_start.trim().is_empty());
+
+        // start is vampire-trimmed, so it should NOT be empty
+        assert!(!kept_start.trim().is_empty());
+        assert!(kept_start.contains("% lemma_0001:"));
+        assert!(kept_start.contains("% lemma_0002:"));
+        assert!(kept_start.contains("% lemma_0003:"));
+        assert!(kept_start.contains("% lemma_0004:"));
+        assert!(kept_start.contains("% lemma_0005:"));
+        assert!(kept_start.contains("% lemma_0006:"));
+
+        // Root block must keep what the later proof actually uses:
+        assert!(kept_root.contains("% lemma_0007:"));
+        assert!(kept_root.contains("% lemma_0003:"));
+        assert!(kept_root.contains("% lemma_0022:"));
+        assert!(kept_root.contains("% lemma_0011:"));
+        assert!(!kept_root.contains("% history_lemma_0151:"));
+
+        // And the sub proof is preserved
+        assert!(kept_sub.contains("Axiom 1 (lemma_0022)"));
+        assert!(kept_sub.contains("Axiom 2 (lemma_0011)"));
+
+        // Step accounting
+        assert_eq!(start_steps, 6);
+        assert_eq!(root_steps, count_superposition_steps(&kept_root));
+    }
+
+    #[test]
+    fn proof_uses_lemma_remove_seg() {
+        let block = r#"% === Superposition Steps ===
+% lemma_0001: op(op(X1,X2),op(X0,X2)) = op(X3,op(X2,op(X3,op(op(X1,X2),op(X0,X2))))) | deps: a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0, a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0
+% lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2)) | deps: lemma_0001: op(op(X1,X2),op(X0,X2)) = op(X3,op(X2,op(X3,op(op(X1,X2),op(X0,X2))))), a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0
+% lemma_0003: op(X1,op(X1,op(X0,X0))) = X0 | deps: a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0, lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2))
+% lemma_0004: op(X0,op(op(X0,op(X1,X1)),op(X0,op(X1,X1)))) = op(op(X2,op(X0,op(X1,X1))),X1) | deps: lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2)), lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+% lemma_0005: op(op(X2,op(X0,op(X1,X1))),X1) = op(X0,op(X0,op(op(X1,X1),op(X1,X1)))) | deps: lemma_0004: op(X0,op(op(X0,op(X1,X1)),op(X0,op(X1,X1)))) = op(op(X2,op(X0,op(X1,X1))),X1), lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2))
+% lemma_0006: op(X1,X1) = op(op(X2,op(X0,op(X1,X1))),X1) | deps: lemma_0005: op(op(X2,op(X0,op(X1,X1))),X1) = op(X0,op(X0,op(op(X1,X1),op(X1,X1)))), lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+"#;
+
+        // Segment 1: the “main proof” (uses lemma_0003 as axiom 2)
+        let seg1 = r#"
+% === Superposition Steps ===
+% lemma_0007: op(X0,op(X2,X2)) = op(X3,op(X2,op(X3,op(X0,op(X2,X2))))) | deps: lemma_0001, lemma_0002
+% lemma_0003: op(X1,op(X1,op(X0,X0))) = X0 | deps: a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0, lemma_0002
+% lemma_0005: op(op(X2,op(X0,op(X1,X1))),X1) = op(X0,op(X0,op(op(X1,X1),op(X1,X1)))) | deps: lemma_0004, lemma_0002
+% lemma_0006: op(X1,X1) = op(op(X2,op(X0,op(X1,X1))),X1) | deps: lemma_0005: op(op(X2,op(X0,op(X1,X1))),X1) = op(X0,op(X0,op(op(X1,X1),op(X1,X1)))), lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+% lemma_0008: op(op(X0,X1),op(X1,op(X1,X1))) = X1 | deps: lemma_0003: op(X1,op(X1,op(X0,X0))) = X0, lemma_0002
+% lemma_0009: op(X6,X7) = op(X8,op(X8,op(X6,op(X7,X7)))) | deps: lemma_0003: op(X1,op(X1,op(X0,X0))) = X0, lemma_0002
+% lemma_0010: op(X0,op(X1,X1)) = op(X1,op(op(X0,op(X1,X1)),op(op(X0,op(X1,X1)),op(X0,op(X1,X1))))) | deps: lemma_0008: op(op(X0,X1),op(X1,op(X1,X1))) = X1, lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+% lemma_0011: op(X0,X0) = op(op(X1,op(X0,X0)),X0) | deps: lemma_0008: op(op(X0,X1),op(X1,op(X1,X1))) = X1, lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+% lemma_0012: op(X0,op(X1,X1)) = op(X1,op(X0,X1)) | deps: lemma_0010: op(X0,op(X1,X1)) = op(X1,op(op(X0,op(X1,X1)),op(op(X0,op(X1,X1)),op(X0,op(X1,X1))))), lemma_0009: op(X6,X7) = op(X8,op(X8,op(X6,op(X7,X7))))
+% lemma_0013: op(X3,op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))) = op(op(X2,op(X3,X3)),op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))) | deps: lemma_0007: op(X0,op(X2,X2)) = op(X3,op(X2,op(X3,op(X0,op(X2,X2))))), lemma_0007: op(X0,op(X2,X2)) = op(X3,op(X2,op(X3,op(X0,op(X2,X2)))))
+% lemma_0014: op(X2,X3) = op(X3,op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))) | deps: lemma_0013: op(X3,op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))) = op(op(X2,op(X3,X3)),op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))), lemma_0009: op(X6,X7) = op(X8,op(X8,op(X6,op(X7,X7))))
+% lemma_0015: op(X2,X3) = op(X3,op(X2,op(op(X3,X3),op(X3,X3)))) | deps: lemma_0014: op(X2,X3) = op(X3,op(op(X2,op(X3,X3)),op(X2,op(X3,X3)))), lemma_0002
+% lemma_0016: op(X2,X3) = op(X3,op(X2,op(X3,op(X3,X3)))) | deps: lemma_0015: op(X2,X3) = op(X3,op(X2,op(op(X3,X3),op(X3,X3)))), lemma_0002
+% lemma_0017: op(X11,op(X12,op(X11,X12))) = X12 | deps: lemma_0003: op(X1,op(X1,op(X0,X0))) = X0, lemma_0012: op(X0,op(X1,X1)) = op(X1,op(X0,X1))
+% lemma_0018: op(op(X15,op(X16,op(op(X17,op(X17,X17)),op(X17,op(X17,X17))))),X17) = op(X17,op(op(X17,op(X17,X17)),op(X17,op(X17,X17)))) | deps: lemma_0016: op(X2,X3) = op(X3,op(X2,op(X3,op(X3,X3)))), lemma_0006: op(X1,X1) = op(op(X2,op(X0,op(X1,X1))),X1)
+% lemma_0019: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(op(X17,op(X17,X17)),op(X17,op(X17,X17))))),X17) | deps: lemma_0018: op(op(X15,op(X16,op(op(X17,op(X17,X17)),op(X17,op(X17,X17))))),X17) = op(X17,op(op(X17,op(X17,X17)),op(X17,op(X17,X17)))), lemma_0016: op(X2,X3) = op(X3,op(X2,op(X3,op(X3,X3))))
+% lemma_0020: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(op(X17,X17),op(X17,X17))))),X17) | deps: lemma_0019: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(op(X17,op(X17,X17)),op(X17,op(X17,X17))))),X17), lemma_0002
+% lemma_0021: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(X17,op(X17,X17))))),X17) | deps: lemma_0020: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(op(X17,X17),op(X17,X17))))),X17), lemma_0002
+% lemma_0022: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,X17)),X17) | deps: lemma_0021: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(X17,op(X17,X17))))),X17), lemma_0017: op(X11,op(X12,op(X11,X12))) = X12
+% history_lemma_0151: op(X17,X17) = op(op(X15,op(X16,X17)),X17) | deps: lemma_0022: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,X17)),X17), lemma_0011: op(X0,X0) = op(op(X1,op(X0,X0)),X0)
+"#;
+
+        // Segment 3: the final goal proof — still no lemma_0004..0008 usage
+        let seg3 = r#"The conjecture is true! Here is a proof.
+
+Axiom 1 (lemma_0001): op(op(X, op(X, X)), X) = op(op(Y, op(Z, X)), X).
+Axiom 2 (lemma_0002): op(X, X) = op(op(Y, op(X, X)), X).
+
+Goal 1 (conjecture0): op(x0, x0) = op(op(x1, op(x2, x0)), x0).
+Proof:
+  op(x0, x0)
+= { by axiom 2 (lemma_0002) }
+  op(op(x0, op(x0, x0)), x0)
+= { by axiom 1 (lemma_0001) }
+  op(op(x1, op(x2, x0)), x0)
+
+RESULT: Theorem (the conjecture is true).
+"#;
+        // Use trim_proof_parts: block is the "start" vampire block,
+        // seg1 is the "root" vampire block, seg3 is sub-proof.
+        let (kept_start, kept_hist, kept_root, kept_sub, start_steps, hist_steps, root_steps) =
+            trim_proof_parts(
+                Some((block, "vampire", count_superposition_steps(block))),
+                None,
+                (
+                    "history_lemma_0151",
+                    seg1,
+                    "vampire",
+                    count_superposition_steps(seg1),
+                ),
+                seg3,
+            );
+
+        // history is None -> None out
+        assert!(kept_hist.is_none());
+        assert!(hist_steps.is_none());
+
+        // start exists -> should be Some and non-empty
+        let kept_start = kept_start.expect("start should be Some");
+        let start_steps = start_steps.expect("start_steps should be Some");
+        assert!(!kept_start.trim().is_empty());
+
+        // start is vampire-trimmed
+        assert!(!kept_start.trim().is_empty());
+        assert!(kept_start.contains("% lemma_0001:"));
+        assert!(kept_start.contains("% lemma_0002:"));
+        assert!(!kept_start.contains("% lemma_0003:"));
+        assert!(!kept_start.contains("% lemma_0004:"));
+        assert!(!kept_start.contains("% lemma_0005:"));
+        assert!(!kept_start.contains("% lemma_0006:"));
+
+        // Root block must be empty
+        assert!(kept_root.trim().is_empty());
+
+        // And the sub proof is preserved
+        assert!(kept_sub.contains("Axiom 1 (lemma_0001)"));
+        assert!(kept_sub.contains("Axiom 2 (lemma_0002)"));
+
+        // Step accounting
+        assert_eq!(start_steps, 2);
+        assert_eq!(root_steps, 0);
     }
 }
