@@ -1269,7 +1269,7 @@ pub fn trim_proof_parts(
         }
     };
 
-    // helper: keep/trim a *named* segment (root/history), given dependencies
+    // helper: keep/trim a segment
     let keep_named =
         |name: &str, proof: &str, by: &str, steps_in: usize, segs: &[&str]| -> (String, usize) {
             match by {
