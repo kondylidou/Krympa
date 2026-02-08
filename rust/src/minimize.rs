@@ -4,6 +4,7 @@ use crate::prover_wrapper::*;
 use crate::run_vamp::run_vampire;
 use crate::superpose::*;
 use crate::utils::*;
+use crate::alpha_match::formulas_match;
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -53,7 +54,7 @@ pub fn try_minimize(
 
     let mut offset = 0;
     let mut accepted = 0;
-    let max_candidates = 1;
+    let max_candidates = 4;
 
     while accepted < max_candidates && offset < max_key {
         let key = (max_key - offset).to_string();
@@ -74,6 +75,13 @@ pub fn try_minimize(
         let skolem_re = Regex::new(r"\bsK\d+\b").unwrap();
         let root_formula = load_lemma(&lemmas_dir, root_lemma)
             .map_err(|_| format!("Missing lemma {}", root_lemma))?;
+
+        let conjecture = extract_conjecture_from_file(input_file)?;
+        if formulas_match(&root_formula, &conjecture) || formulas_match(&conjecture, &root_formula) {
+            // don't re prove the main theorem
+            continue;
+        }
+
         if skolem_re.is_match(&root_formula) {
             println!(
                 "[DEBUG] Skipping root lemma {} due to Skolem constants in formula: {}",
@@ -188,7 +196,7 @@ pub fn try_minimize(
                     .to_string();
 
                 // handle Vampire-specific prepending
-                let (root_proof_steps, root_proved_by) = if prover == "vampire" {
+                let (root_proof_steps, _root_proved_by) = if prover == "vampire" {
                     if let Some((superposition_steps, input_formulas, all_steps)) =
                         extract_superposition_steps(path, &root_formula)
                     {
@@ -231,19 +239,12 @@ pub fn try_minimize(
                     continue;
                 };
 
-                let (_, _, kept_root, _, _, kept_root_steps) = trim_proof_parts(
-                    None,
-                    None,
-                    (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
-                    &sub_proof,
-                );
-
                 let annotated_proof = format!(
                     "% === Input Problem ===\n{}\n\n{}{}",
-                    input_content, kept_root, sub_proof
+                    input_content, root_proof, sub_proof
                 );
 
-                let steps_total = kept_root_steps + sub_proof_steps;
+                let steps_total = root_proof_steps + sub_proof_steps;
 
                 // root-only fallback:
                 local_best = Some((steps_total, None, annotated_proof));
@@ -779,9 +780,6 @@ pub fn try_minimize(
                     steps_total =
                         kept_start_steps + kept_history_steps + kept_root_steps + sub_proof_steps;
                 }
-
-                println!("   [PROOOF-------------------------------------------------------] ");
-                println!("   [PROOOF] {}", annotated_proof);
 
                 // update local_best
                 local_best = match local_best {
