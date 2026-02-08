@@ -188,7 +188,7 @@ pub fn try_minimize(
                     .to_string();
 
                 // handle Vampire-specific prepending
-                let root_proof_steps = if prover == "vampire" {
+                let (root_proof_steps, root_proved_by) = if prover == "vampire" {
                     if let Some((superposition_steps, input_formulas, all_steps)) =
                         extract_superposition_steps(path, &root_formula)
                     {
@@ -205,20 +205,20 @@ pub fn try_minimize(
                             &renaming,
                         );
                         root_proof = proof;
-                        superposition_steps.len()
+                        (superposition_steps.len(), "vampire".to_string())
                     } else {
                         // fallback if extraction fails
-                        proof_length(&prover, &root_proof)
+                        (proof_length(&prover, &root_proof), "fallback".to_string())
                     }
                 } else {
                     // Twee proof
-                    proof_length(&prover, &root_proof)
+                    (proof_length(&prover, &root_proof), "twee".to_string())
                 };
 
                 // we need to push what we already have proved to the extra dependencies for matching
                 extra_dependencies.push((root_lemma.to_string(), root_formula.clone()));
 
-                let Some((sub_proof, sub_proof_steps, sub_proved_by)) = prove_lemma(
+                let Some((sub_proof, sub_proof_steps, _sub_proved_by)) = prove_lemma(
                     &input_file,
                     &lemmas_dir,
                     //None,
@@ -231,12 +231,19 @@ pub fn try_minimize(
                     continue;
                 };
 
-                let annotated_proof = format!(
-                    "% === Input Problem ===\n{}\n\n{}{}",
-                    input_content, root_proof, sub_proof
+                let (_, _, kept_root, _, _, kept_root_steps) = trim_proof_parts(
+                    None,
+                    None,
+                    (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
+                    &sub_proof,
                 );
 
-                let steps_total = root_proof_steps + sub_proof_steps;
+                let annotated_proof = format!(
+                    "% === Input Problem ===\n{}\n\n{}{}",
+                    input_content, kept_root, sub_proof
+                );
+
+                let steps_total = kept_root_steps + sub_proof_steps;
 
                 // root-only fallback:
                 local_best = Some((steps_total, None, annotated_proof));
@@ -313,36 +320,37 @@ pub fn try_minimize(
                         let mut extra_dependencies: Vec<(String, String)> = Vec::new();
 
                         // start lemmas
-                        let (start_proof, start_proof_steps, start_proved_by) =
-                            if total_dep_steps <= superposition_steps_count && total_dep_steps != 0
-                            {
-                                // we don't need to add anything to extra_dependencies
-                                // TODO maybe merge dependencies and extra_dependencies?
-                                (
-                                    combined_dep_proof_text.clone(),
-                                    total_dep_steps,
-                                    "fallback".to_string(),
-                                )
-                            } else {
-                                // here the extra_dependencies are empty, we are at the start
-                                // we also don't care about renaming because it's the initial superposition steps
-                                let (sp_proof_text, renaming) = prepend_superposition_steps(
-                                    &extra_dependencies,
-                                    &superposition_steps,
-                                    &input_formulas,
-                                    &all_steps,
-                                );
-                                extend_with_superposition_steps(
-                                    &mut extra_dependencies,
-                                    &superposition_steps,
-                                    &renaming,
-                                );
-                                (
-                                    sp_proof_text,
-                                    superposition_steps_count,
-                                    "vampire".to_string(),
-                                )
-                            };
+                        let (start_proof, start_proof_steps, start_proved_by) = if total_dep_steps
+                            < superposition_steps_count
+                            && total_dep_steps != 0
+                        {
+                            // we don't need to add anything to extra_dependencies
+                            // TODO maybe merge dependencies and extra_dependencies?
+                            (
+                                combined_dep_proof_text.clone(),
+                                total_dep_steps,
+                                "fallback".to_string(),
+                            )
+                        } else {
+                            // here the extra_dependencies are empty, we are at the start
+                            // we also don't care about renaming because it's the initial superposition steps
+                            let (sp_proof_text, renaming) = prepend_superposition_steps(
+                                &extra_dependencies,
+                                &superposition_steps,
+                                &input_formulas,
+                                &all_steps,
+                            );
+                            extend_with_superposition_steps(
+                                &mut extra_dependencies,
+                                &superposition_steps,
+                                &renaming,
+                            );
+                            (
+                                sp_proof_text,
+                                superposition_steps_count,
+                                "vampire".to_string(),
+                            )
+                        };
 
                         extra_dependencies.push((root_lemma.to_string(), root_formula.clone()));
 
@@ -370,7 +378,7 @@ pub fn try_minimize(
                         };
 
                         // 7. Compute sub_proof / conjecture proof
-                        let Some((sub_proof, sub_proof_steps, sub_proved_by)) = prove_lemma(
+                        let Some((sub_proof, sub_proof_steps, _sub_proved_by)) = prove_lemma(
                             &input_file,
                             &lemmas_dir,
                             // if use_superposition {
@@ -392,13 +400,21 @@ pub fn try_minimize(
                             continue;
                         };
 
+                        let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
+                            trim_proof_parts(
+                                Some((&start_proof, &start_proved_by, start_proof_steps)),
+                                None, // or Some((history_name, &history_proof, &history_by, history_steps))
+                                (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
+                                &sub_proof,
+                            );
+
                         annotated_proof = format!(
                             "% === Input Problem ===\n{}\n\n{}{}{}",
-                            input_content, start_proof, root_proof, sub_proof
+                            input_content, kept_start, kept_root, sub_proof
                         );
 
                         // 8. Compute total steps
-                        steps_total = start_proof_steps + root_proof_steps + sub_proof_steps;
+                        steps_total = kept_start_steps + kept_root_steps + sub_proof_steps;
                     }
                     // if we fall back to an abstract candidate we will have to prove
                     // it with Twee, we won't find it in the superposition steps.
@@ -449,7 +465,7 @@ pub fn try_minimize(
                             };
 
                             // 7. Compute sub_proof / conjecture proof
-                            let Some((sub_proof, sub_proof_steps, sub_proved_by)) = prove_lemma(
+                            let Some((sub_proof, sub_proof_steps, _sub_proved_by)) = prove_lemma(
                                 &input_file,
                                 &lemmas_dir,
                                 None,
@@ -461,13 +477,28 @@ pub fn try_minimize(
                                 // no proof -> skip this candidate
                                 continue;
                             };
+
+                            let (
+                                kept_abstract,
+                                _,
+                                kept_root,
+                                kept_abstract_steps,
+                                _,
+                                kept_root_steps,
+                            ) = trim_proof_parts(
+                                Some((&abstract_proof, &prover, abstract_proof_steps)),
+                                None, // or Some((history_name, &history_proof, &history_by, history_steps))
+                                (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
+                                &sub_proof,
+                            );
+
                             annotated_proof = format!(
                                 "% === Input Problem ===\n{}\n\n{}{}{}",
-                                input_content, abstract_proof, root_proof, sub_proof
+                                input_content, kept_abstract, kept_root, sub_proof
                             );
 
                             // 8. Compute total steps
-                            steps_total = abstract_proof_steps + root_proof_steps + sub_proof_steps;
+                            steps_total = kept_abstract_steps + kept_root_steps + sub_proof_steps;
                         } else {
                             println!(
                                 "   [WARN] Abstract lemma {} proof file does not exist, skipping",
@@ -583,7 +614,7 @@ pub fn try_minimize(
 
                 // start lemmas
                 let (start_proof, start_proof_steps, start_proved_by) =
-                    if total_dep_steps <= superposition_steps_count && total_dep_steps != 0 {
+                    if total_dep_steps < superposition_steps_count && total_dep_steps != 0 {
                         // we don't need to add the dependencies to the extra dependencies
                         // we already have them saved
                         (
@@ -672,7 +703,7 @@ pub fn try_minimize(
                 };
 
                 // 8. Compute sub_proof / conjecture proof
-                let Some((sub_proof, sub_proof_steps, sub_proved_by)) = prove_lemma(
+                let Some((sub_proof, sub_proof_steps, _sub_proved_by)) = prove_lemma(
                     &input_file,
                     &lemmas_dir,
                     // if use_superposition {
@@ -703,25 +734,50 @@ pub fn try_minimize(
                         n_history_lemma
                     );
 
+                    let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
+                        trim_proof_parts(
+                            Some((&start_proof, &start_proved_by, start_proof_steps)),
+                            None, // or Some((history_name, &history_proof, &history_by, history_steps))
+                            (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
+                            &sub_proof,
+                        );
+
                     annotated_proof = format!(
                         "% === Input Problem ===\n{}\n\n{}{}{}",
-                        input_content, start_proof, root_proof, sub_proof
+                        input_content, kept_start, kept_root, sub_proof
                     );
 
                     // 10. Compute total steps
-                    steps_total = start_proof_steps + root_proof_steps + sub_proof_steps;
+                    steps_total = kept_start_steps + kept_root_steps + sub_proof_steps;
                 } else {
+                    let (
+                        kept_start,
+                        kept_history,
+                        kept_root,
+                        kept_start_steps,
+                        kept_history_steps,
+                        kept_root_steps,
+                    ) = trim_proof_parts(
+                        Some((&start_proof, &start_proved_by, start_proof_steps)),
+                        Some((
+                            n_history_lemma,
+                            &n_history_proof,
+                            &n_history_proved_by,
+                            n_history_proof_steps,
+                        )),
+                        (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
+                        &sub_proof,
+                    );
+
                     // root and history were used
                     annotated_proof = format!(
                         "% === Input Problem ===\n{}\n\n{}{}{}{}",
-                        input_content, start_proof, n_history_proof, root_proof, sub_proof
+                        input_content, kept_start, kept_history, kept_root, sub_proof
                     );
 
                     // 11. Compute total steps
-                    steps_total = start_proof_steps
-                        + n_history_proof_steps
-                        + root_proof_steps
-                        + sub_proof_steps;
+                    steps_total =
+                        kept_start_steps + kept_history_steps + kept_root_steps + sub_proof_steps;
                 }
 
                 println!("   [PROOOF-------------------------------------------------------] ");
@@ -1195,25 +1251,26 @@ pub fn trim_proof_parts(
     root: (&str, &str, &str, usize), // (root_name, root_text, root_proved_by, root_steps)
     sub: &str,
 ) -> (
-    Option<String>, // kept_start
-    Option<String>, // kept_history
-    String,         // kept_root
-    String,         // kept_sub
-    Option<usize>,  // start_steps
-    Option<usize>,  // history_steps
-    usize,          // root_steps
+    String, // kept_start
+    String, // kept_history
+    String, // kept_root
+    usize,  // start_steps
+    usize,  // history_steps
+    usize,  // root_steps
 ) {
-    let kept_sub = sub.to_string();
+    let (root_name, root_proof, root_by, root_steps_in) = root;
 
-    let (root_name, root_proof, root_proved_by, root_steps_in) = root;
+    // helper: standard "keep string => steps, else 0"
+    let steps_or_zero = |kept: &str, steps_in: usize| -> usize {
+        if kept.trim().is_empty() {
+            0
+        } else {
+            steps_in
+        }
+    };
 
-    // Helper: decide what proof text to keep, and what step count to output.
-    //
-    // - If proved_by == "vampire": trim using dependencies; recompute steps.
-    // - Else if proved_by == "twee": keep only if it used at least in one segment (via proof_uses_lemma).
-    // - Else: keep as-is (fallback).
-    // - Steps: 0 if kept text is empty, otherwise either recomputed (vampire) or original steps_in.
-    let keep_and_steps =
+    // helper: keep/trim a *named* segment (root/history), given dependencies
+    let keep_named =
         |name: &str, proof: &str, by: &str, steps_in: usize, segs: &[&str]| -> (String, usize) {
             match by {
                 "vampire" => {
@@ -1226,60 +1283,43 @@ pub fn trim_proof_parts(
                         return (String::new(), 0);
                     }
                     let kept = proof.to_string();
-                    let steps = if kept.trim().is_empty() { 0 } else { steps_in };
+                    let steps = steps_or_zero(&kept, steps_in);
                     (kept, steps)
                 }
                 _ => {
                     let kept = proof.to_string();
-                    let steps = if kept.trim().is_empty() { 0 } else { steps_in };
+                    let steps = steps_or_zero(&kept, steps_in);
                     (kept, steps)
                 }
             }
         };
 
-    // 1) oot
-    let (kept_root, root_steps) = keep_and_steps(
-        root_name,
-        root_proof,
-        root_proved_by,
-        root_steps_in,
-        &[&kept_sub],
-    );
+    // 1) root depends on sub
+    let (kept_root, root_steps) = keep_named(root_name, root_proof, root_by, root_steps_in, &[sub]);
 
-    // 2) history
-    let (kept_history, history_steps): (Option<String>, Option<usize>) = match history {
-        None => (None, None),
-        Some((history_name, history_proof, history_by, history_steps_in)) => {
-            let (kept, steps) = keep_and_steps(
-                history_name,
-                history_proof,
-                history_by,
-                history_steps_in,
-                &[&kept_root, &kept_sub],
-            );
-
+    // 2) history depends on root + sub
+    let (kept_history, history_steps) = match history {
+        None => (String::new(), 0),
+        Some((h_name, h_proof, h_by, h_steps_in)) => {
+            let (kept, steps) = keep_named(h_name, h_proof, h_by, h_steps_in, &[&kept_root, sub]);
             if kept.trim().is_empty() {
-                // segment exists, but we trimmed it away: keep it as Some("") or drop it?
-                // this chooses to DROP it, which usually matches “none-ish”.
-                (None, None)
+                (String::new(), 0)
             } else {
-                (Some(kept), Some(steps))
+                (kept, steps)
             }
         }
     };
 
-    // 3) start
-    let (kept_start, start_steps): (Option<String>, Option<usize>) = match start {
-        None => (None, None),
+    // 3) start depends on (history if non-empty) + root + sub
+    let (kept_start, start_steps) = match start {
+        None => (String::new(), 0),
         Some((start_proof, start_by, start_steps_in)) => {
             let mut segs: Vec<&str> = Vec::new();
-            if let Some(ref h) = kept_history {
-                if !h.trim().is_empty() {
-                    segs.push(h);
-                }
+            if !kept_history.trim().is_empty() {
+                segs.push(&kept_history);
             }
             segs.push(&kept_root);
-            segs.push(&kept_sub);
+            segs.push(sub);
 
             let (kept, steps) = match start_by {
                 "vampire" => {
@@ -1289,19 +1329,15 @@ pub fn trim_proof_parts(
                 }
                 _ => {
                     let kept = start_proof.to_string();
-                    let steps = if kept.trim().is_empty() {
-                        0
-                    } else {
-                        start_steps_in
-                    };
+                    let steps = steps_or_zero(&kept, start_steps_in);
                     (kept, steps)
                 }
             };
 
             if kept.trim().is_empty() {
-                (None, None)
+                (String::new(), 0)
             } else {
-                (Some(kept), Some(steps))
+                (kept, steps)
             }
         }
     };
@@ -1310,7 +1346,6 @@ pub fn trim_proof_parts(
         kept_start,
         kept_history,
         kept_root,
-        kept_sub,
         start_steps,
         history_steps,
         root_steps,
@@ -2200,7 +2235,7 @@ RESULT: Theorem (the conjecture is true).
 "#;
         // Use trim_proof_parts: block is the "start" vampire block,
         // seg1 is the "root" vampire block, seg3 is sub-proof.
-        let (kept_start, kept_hist, kept_root, kept_sub, start_steps, hist_steps, root_steps) =
+        let (kept_start, kept_hist, kept_root, start_steps, hist_steps, root_steps) =
             trim_proof_parts(
                 Some((block, "vampire", count_superposition_steps(block))),
                 None,
@@ -2213,13 +2248,11 @@ RESULT: Theorem (the conjecture is true).
                 seg3,
             );
 
-        // history is None -> None out
-        assert!(kept_hist.is_none());
-        assert!(hist_steps.is_none());
+        // history is None -> empty string + 0 steps
+        assert!(kept_hist.trim().is_empty());
+        assert_eq!(hist_steps, 0);
 
-        // start exists -> should be Some and non-empty
-        let kept_start = kept_start.expect("start should be Some");
-        let start_steps = start_steps.expect("start_steps should be Some");
+        // start exists
         assert!(!kept_start.trim().is_empty());
 
         // start is vampire-trimmed, so it should NOT be empty
@@ -2237,10 +2270,6 @@ RESULT: Theorem (the conjecture is true).
         assert!(kept_root.contains("% lemma_0022:"));
         assert!(kept_root.contains("% lemma_0011:"));
         assert!(!kept_root.contains("% history_lemma_0151:"));
-
-        // And the sub proof is preserved
-        assert!(kept_sub.contains("Axiom 1 (lemma_0022)"));
-        assert!(kept_sub.contains("Axiom 2 (lemma_0011)"));
 
         // Step accounting
         assert_eq!(start_steps, 6);
@@ -2301,7 +2330,7 @@ RESULT: Theorem (the conjecture is true).
 "#;
         // Use trim_proof_parts: block is the "start" vampire block,
         // seg1 is the "root" vampire block, seg3 is sub-proof.
-        let (kept_start, kept_hist, kept_root, kept_sub, start_steps, hist_steps, root_steps) =
+        let (kept_start, kept_hist, kept_root, start_steps, hist_steps, root_steps) =
             trim_proof_parts(
                 Some((block, "vampire", count_superposition_steps(block))),
                 None,
@@ -2314,13 +2343,11 @@ RESULT: Theorem (the conjecture is true).
                 seg3,
             );
 
-        // history is None -> None out
-        assert!(kept_hist.is_none());
-        assert!(hist_steps.is_none());
+        // history is None -> empty string + 0 steps
+        assert!(kept_hist.trim().is_empty());
+        assert_eq!(hist_steps, 0);
 
-        // start exists -> should be Some and non-empty
-        let kept_start = kept_start.expect("start should be Some");
-        let start_steps = start_steps.expect("start_steps should be Some");
+        // start exists -> should not be empty
         assert!(!kept_start.trim().is_empty());
 
         // start is vampire-trimmed
@@ -2334,10 +2361,6 @@ RESULT: Theorem (the conjecture is true).
 
         // Root block must be empty
         assert!(kept_root.trim().is_empty());
-
-        // And the sub proof is preserved
-        assert!(kept_sub.contains("Axiom 1 (lemma_0001)"));
-        assert!(kept_sub.contains("Axiom 2 (lemma_0002)"));
 
         // Step accounting
         assert_eq!(start_steps, 2);
