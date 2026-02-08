@@ -1,10 +1,10 @@
+use crate::alpha_match::formulas_match;
 use crate::dag::*;
 use crate::extract_suffix;
 use crate::prover_wrapper::*;
 use crate::run_vamp::run_vampire;
 use crate::superpose::*;
 use crate::utils::*;
-use crate::alpha_match::formulas_match;
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -54,7 +54,7 @@ pub fn try_minimize(
 
     let mut offset = 0;
     let mut accepted = 0;
-    let max_candidates = 4;
+    let max_candidates = 5;
 
     while accepted < max_candidates && offset < max_key {
         let key = (max_key - offset).to_string();
@@ -75,12 +75,6 @@ pub fn try_minimize(
         let skolem_re = Regex::new(r"\bsK\d+\b").unwrap();
         let root_formula = load_lemma(&lemmas_dir, root_lemma)
             .map_err(|_| format!("Missing lemma {}", root_lemma))?;
-
-        let conjecture = extract_conjecture_from_file(input_file)?;
-        if formulas_match(&root_formula, &conjecture) || formulas_match(&conjecture, &root_formula) {
-            // don't re prove the main theorem
-            continue;
-        }
 
         if skolem_re.is_match(&root_formula) {
             println!(
@@ -150,6 +144,13 @@ pub fn try_minimize(
             // if no single or abstract lemmas are present either, fallback to root-only proof
             // this is the second case: the root itself is single/abstract
             if candidates.is_empty() {
+                let conjecture = extract_conjecture_from_file(input_file)?;
+                if formulas_match(&root_formula, &conjecture) || formulas_match(&conjecture, &root_formula)
+                {
+                    // don't re prove the main theorem
+                    continue;
+                }
+
                 let root_deps = dag.get(root_lemma).cloned().unwrap_or_default();
                 let has_history_dependency = root_deps.iter().any(|d| d.starts_with("history_"));
 
@@ -401,21 +402,41 @@ pub fn try_minimize(
                             continue;
                         };
 
-                        let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
+                        let conjecture = extract_conjecture_from_file(input_file)?;
+                        if formulas_match(&root_formula, &conjecture) || formulas_match(&conjecture, &root_formula)
+                        {
+                            let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
                             trim_proof_parts(
                                 Some((&start_proof, &start_proved_by, start_proof_steps)),
                                 None, // or Some((history_name, &history_proof, &history_by, history_steps))
                                 (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
-                                &sub_proof,
+                                None,
                             );
 
-                        annotated_proof = format!(
-                            "% === Input Problem ===\n{}\n\n{}{}{}",
-                            input_content, kept_start, kept_root, sub_proof
-                        );
+                            annotated_proof = format!(
+                                "% === Input Problem ===\n{}\n\n{}{}",
+                                input_content, kept_start, kept_root
+                            );
 
-                        // 8. Compute total steps
-                        steps_total = kept_start_steps + kept_root_steps + sub_proof_steps;
+                            // 8. Compute total steps
+                            steps_total = kept_start_steps + kept_root_steps;
+                        } else {
+                          let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
+                            trim_proof_parts(
+                                Some((&start_proof, &start_proved_by, start_proof_steps)),
+                                None, // or Some((history_name, &history_proof, &history_by, history_steps))
+                                (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
+                                Some(&sub_proof),
+                            );
+
+                            annotated_proof = format!(
+                                "% === Input Problem ===\n{}\n\n{}{}{}",
+                                input_content, kept_start, kept_root, sub_proof
+                            );
+
+                            // 8. Compute total steps
+                            steps_total = kept_start_steps + kept_root_steps + sub_proof_steps;
+                        }
                     }
                     // if we fall back to an abstract candidate we will have to prove
                     // it with Twee, we won't find it in the superposition steps.
@@ -479,6 +500,14 @@ pub fn try_minimize(
                                 continue;
                             };
 
+                            let conjecture = extract_conjecture_from_file(input_file)?;
+                            if formulas_match(&root_formula, &conjecture) || formulas_match(&conjecture, &root_formula)
+                            { 
+                              // the goal was to prove something more abstract by dependencies, I doubt that in this case it will
+                              // be helpful but let's TODO
+                              continue;
+                            }
+
                             let (
                                 kept_abstract,
                                 _,
@@ -490,7 +519,7 @@ pub fn try_minimize(
                                 Some((&abstract_proof, &prover, abstract_proof_steps)),
                                 None, // or Some((history_name, &history_proof, &history_by, history_steps))
                                 (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
-                                &sub_proof,
+                                Some(&sub_proof),
                             );
 
                             annotated_proof = format!(
@@ -735,12 +764,24 @@ pub fn try_minimize(
                         n_history_lemma
                     );
 
+                    let conjecture = extract_conjecture_from_file(input_file)?;
+                    if formulas_match(&root_formula, &conjecture) || formulas_match(&conjecture, &root_formula)
+                    { 
+                      // in this case here if root is the main theorem and we also have proved history 
+                      // we remain with start and root
+                      println!(
+                        "   [INFO] Main theorem is root {} — skipping",
+                        root_lemma
+                      );
+                    }
+
+
                     let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
                         trim_proof_parts(
                             Some((&start_proof, &start_proved_by, start_proof_steps)),
                             None, // or Some((history_name, &history_proof, &history_by, history_steps))
                             (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
-                            &sub_proof,
+                            Some(&sub_proof),
                         );
 
                     annotated_proof = format!(
@@ -767,7 +808,7 @@ pub fn try_minimize(
                             n_history_proof_steps,
                         )),
                         (root_lemma, &root_proof, &root_proved_by, root_proof_steps),
-                        &sub_proof,
+                        Some(&sub_proof),
                     );
 
                     // root and history were used
@@ -1244,10 +1285,10 @@ pub fn count_superposition_steps(block: &str) -> usize {
 }
 
 pub fn trim_proof_parts(
-    start: Option<(&str, &str, usize)>, // (start_text, start_proved_by, start_steps)
-    history: Option<(&str, &str, &str, usize)>, // (history_name, history_text, history_proved_by, history_steps)
-    root: (&str, &str, &str, usize), // (root_name, root_text, root_proved_by, root_steps)
-    sub: &str,
+    start: Option<(&str, &str, usize)>,              // (start_text, start_proved_by, start_steps)
+    history: Option<(&str, &str, &str, usize)>,      // (history_name, history_text, history_proved_by, history_steps)
+    root: (&str, &str, &str, usize),                 // (root_name, root_text, root_proved_by, root_steps)
+    sub: Option<&str>,
 ) -> (
     String, // kept_start
     String, // kept_history
@@ -1258,18 +1299,62 @@ pub fn trim_proof_parts(
 ) {
     let (root_name, root_proof, root_by, root_steps_in) = root;
 
-    // helper: standard "keep string => steps, else 0"
-    let steps_or_zero = |kept: &str, steps_in: usize| -> usize {
-        if kept.trim().is_empty() {
-            0
-        } else {
-            steps_in
+    // precompute sub segments (0 or 1 segment)
+    let mut sub_segs: Vec<&str> = Vec::new();
+    if let Some(s) = sub {
+        if !s.trim().is_empty() {
+            sub_segs.push(s);
         }
+    }
+
+    // If ANY vampire segment is raw (i.e., not our "% === Superposition Steps ===" block),
+    // we disable trimming entirely and just return the segments as-is with provided step counts.
+    let is_superposition_block = |txt: &str| -> bool {
+        txt.lines().any(|l| l.trim() == "% === Superposition Steps ===")
     };
+
+    let any_raw_vampire = (start.is_some()
+        && start.as_ref().unwrap().1 == "vampire"
+        && !is_superposition_block(start.as_ref().unwrap().0))
+        || (history.is_some()
+            && history.as_ref().unwrap().2 == "vampire"
+            && !is_superposition_block(history.as_ref().unwrap().1))
+        || (root_by == "vampire" && !is_superposition_block(root_proof));
+
+    if any_raw_vampire {
+        let kept_start = start.map(|(t, _, _)| t.to_string()).unwrap_or_default();
+        let kept_history = history.map(|(_, t, _, _)| t.to_string()).unwrap_or_default();
+        let kept_root = root_proof.to_string();
+
+        let start_steps = start.map(|(_, _, s)| s).unwrap_or(0);
+        let history_steps = history.map(|(_, _, _, s)| s).unwrap_or(0);
+        let root_steps = root_steps_in;
+
+        return (
+            kept_start,
+            kept_history,
+            kept_root,
+            start_steps,
+            history_steps,
+            root_steps,
+        );
+    }
 
     // helper: keep/trim a segment
     let keep_named =
         |name: &str, proof: &str, by: &str, steps_in: usize, segs: &[&str]| -> (String, usize) {
+            // TERMINAL RULE: if nothing comes after this segment, keep it.
+            // (root becomes terminal when sub is absent)
+            if segs.is_empty() {
+                let kept = proof.to_string();
+                let steps = if by == "vampire" {
+                    count_superposition_steps(&kept)
+                } else {
+                    steps_in
+                };
+                return (kept, steps);
+            }
+
             match by {
                 "vampire" => {
                     let trimmed = trim_superposition_block(proof, segs);
@@ -1277,34 +1362,36 @@ pub fn trim_proof_parts(
                     (trimmed, steps)
                 }
                 "twee" => {
+                    // if this segment isn't referenced later, drop it
                     if !proof_uses_lemma(name, segs) {
                         return (String::new(), 0);
                     }
                     let kept = proof.to_string();
-                    let steps = steps_or_zero(&kept, steps_in);
-                    (kept, steps)
+                    (kept, steps_in)
                 }
                 _ => {
                     let kept = proof.to_string();
-                    let steps = steps_or_zero(&kept, steps_in);
-                    (kept, steps)
+                    (kept, steps_in)
                 }
             }
         };
 
-    // 1) root depends on sub
-    let (kept_root, root_steps) = keep_named(root_name, root_proof, root_by, root_steps_in, &[sub]);
+    // 1) root depends on sub (if any)
+    let (kept_root, root_steps) =
+        keep_named(root_name, root_proof, root_by, root_steps_in, &sub_segs);
 
     // 2) history depends on root + sub
     let (kept_history, history_steps) = match history {
         None => (String::new(), 0),
         Some((h_name, h_proof, h_by, h_steps_in)) => {
-            let (kept, steps) = keep_named(h_name, h_proof, h_by, h_steps_in, &[&kept_root, sub]);
-            if kept.trim().is_empty() {
-                (String::new(), 0)
-            } else {
-                (kept, steps)
+            let mut segs: Vec<&str> = Vec::new();
+            if !kept_root.trim().is_empty() {
+                segs.push(&kept_root);
             }
+            segs.extend(sub_segs.iter().copied());
+
+            let (kept, steps) = keep_named(h_name, h_proof, h_by, h_steps_in, &segs);
+            if kept.trim().is_empty() { (String::new(), 0) } else { (kept, steps) }
         }
     };
 
@@ -1316,8 +1403,10 @@ pub fn trim_proof_parts(
             if !kept_history.trim().is_empty() {
                 segs.push(&kept_history);
             }
-            segs.push(&kept_root);
-            segs.push(sub);
+            if !kept_root.trim().is_empty() {
+                segs.push(&kept_root);
+            }
+            segs.extend(sub_segs.iter().copied());
 
             let (kept, steps) = match start_by {
                 "vampire" => {
@@ -1325,18 +1414,10 @@ pub fn trim_proof_parts(
                     let steps = count_superposition_steps(&trimmed);
                     (trimmed, steps)
                 }
-                _ => {
-                    let kept = start_proof.to_string();
-                    let steps = steps_or_zero(&kept, start_steps_in);
-                    (kept, steps)
-                }
+                _ => (start_proof.to_string(), start_steps_in),
             };
 
-            if kept.trim().is_empty() {
-                (String::new(), 0)
-            } else {
-                (kept, steps)
-            }
+            if kept.trim().is_empty() { (String::new(), 0) } else { (kept, steps) }
         }
     };
 
@@ -2243,7 +2324,7 @@ RESULT: Theorem (the conjecture is true).
                     "vampire",
                     count_superposition_steps(seg1),
                 ),
-                seg3,
+                Some(seg3),
             );
 
         // history is None -> empty string + 0 steps
@@ -2338,7 +2419,7 @@ RESULT: Theorem (the conjecture is true).
                     "vampire",
                     count_superposition_steps(seg1),
                 ),
-                seg3,
+                Some(seg3),
             );
 
         // history is None -> empty string + 0 steps
@@ -2363,5 +2444,143 @@ RESULT: Theorem (the conjecture is true).
         // Step accounting
         assert_eq!(start_steps, 2);
         assert_eq!(root_steps, 0);
+    }
+
+    #[test]
+    fn untouched() {
+        let block = r#"% === Superposition Steps ===
+% lemma_0001: op(op(X1,X2),op(X0,X2)) = op(X3,op(X2,op(X3,op(op(X1,X2),op(X0,X2))))) | deps: a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0, a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0
+% lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2)) | deps: lemma_0001: op(op(X1,X2),op(X0,X2)) = op(X3,op(X2,op(X3,op(op(X1,X2),op(X0,X2))))), a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0
+% lemma_0003: op(X1,op(X1,op(X0,X0))) = X0 | deps: a_1: ! [X0,X1,X2] : op(X1,op(op(X2,X0),op(X1,X0))) = X0, lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2))
+% lemma_0004: op(X0,op(op(X0,op(X1,X1)),op(X0,op(X1,X1)))) = op(op(X2,op(X0,op(X1,X1))),X1) | deps: lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2)), lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+% lemma_0005: op(op(X2,op(X0,op(X1,X1))),X1) = op(X0,op(X0,op(op(X1,X1),op(X1,X1)))) | deps: lemma_0004: op(X0,op(op(X0,op(X1,X1)),op(X0,op(X1,X1)))) = op(op(X2,op(X0,op(X1,X1))),X1), lemma_0002: op(op(X1,X2),op(X0,X2)) = op(X0,op(X2,X2))
+% lemma_0006: op(X1,X1) = op(op(X2,op(X0,op(X1,X1))),X1) | deps: lemma_0005: op(op(X2,op(X0,op(X1,X1))),X1) = op(X0,op(X0,op(op(X1,X1),op(X1,X1)))), lemma_0003: op(X1,op(X1,op(X0,X0))) = X0
+"#;
+
+        // Segment 2: raw Vampire output
+        let seg2 = r#"
+1. ! [X0,X1,X2] : op(X0,op(X1,op(op(X2,X0),X1))) = X0 [input]
+2. ! [X0,X1,X2,X3] : op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3))) [input]
+3. ! [X0,X1,X2,X3] : op(X1,op(op(X2,op(op(X3,op(X0,X1)),X2)),op(X0,X1))) = X1 [input]
+4. ! [X0,X1,X2,X3,X4] : op(X3,op(X0,X3)) = op(op(X3,op(X0,X3)),op(X4,op(op(X1,op(op(X2,X0),X1)),X4))) [input]
+6. ! [X7,X8,X9,X10,X11] : op(X9,X10) = op(op(X9,X10),op(op(X11,op(op(X7,op(op(X8,X9),X7)),X11)),op(X10,op(X9,X10)))) [input]
+7. ! [X0,X1,X2,X3,X4] : op(X4,op(X2,X4)) = op(op(X4,op(X2,X4)),op(op(X3,op(X2,X3)),op(X0,op(op(X1,X2),X0)))) [input]
+8. ! [X0,X1,X2,X3,X4] : op(X2,X4) = op(op(X2,X4),op(op(op(X3,op(X2,X3)),op(X0,op(op(X1,X2),X0))),op(X4,op(X2,X4)))) [input]
+9. ! [X12,X13,X14,X15] : op(op(X13,op(op(X14,X13),X13)),X15) = op(op(op(X13,op(op(X14,X13),X13)),X15),op(op(X12,op(op(X13,op(op(X14,X13),X13)),X12)),op(X15,op(op(X13,op(op(X14,X13),X13)),X15)))) [input]
+10. ! [X16,X17,X18,X19] : op(X19,op(op(X17,op(op(X18,X17),X17)),X19)) = op(op(X19,op(op(X17,op(op(X18,X17),X17)),X19)),op(X16,op(op(X17,op(op(X18,X17),X17)),X16))) [input]
+14. ! [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) = X0 [input]
+15. ~! [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) = X0 [negated conjecture 14]
+17. ! [X0,X1,X2,X3,X4] : op(X2,X3) = op(op(X2,X3),op(op(X4,op(op(X0,op(op(X1,X2),X0)),X4)),op(X3,op(X2,X3)))) [rectify 6]
+18. ! [X0,X1,X2,X3] : op(op(X1,op(op(X2,X1),X1)),X3) = op(op(op(X1,op(op(X2,X1),X1)),X3),op(op(X0,op(op(X1,op(op(X2,X1),X1)),X0)),op(X3,op(op(X1,op(op(X2,X1),X1)),X3)))) [rectify 9]
+19. ! [X0,X1,X2,X3] : op(X3,op(op(X1,op(op(X2,X1),X1)),X3)) = op(op(X3,op(op(X1,op(op(X2,X1),X1)),X3)),op(X0,op(op(X1,op(op(X2,X1),X1)),X0))) [rectify 10]
+22. ? [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) != X0 [ennf transformation 15]
+23. ? [X0,X1,X2] : op(X0,op(X1,op(X2,op(X0,X2)))) != X0 => sK0 != op(sK0,op(sK1,op(sK2,op(sK0,sK2)))) [choice axiom]
+24. sK0 != op(sK0,op(sK1,op(sK2,op(sK0,sK2)))) [skolemisation 22,23]
+25. op(X0,op(X1,op(op(X2,X0),X1))) = X0 [cnf transformation 1]
+26. op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3))) [cnf transformation 2]
+27. op(X1,op(op(X2,op(op(X3,op(X0,X1)),X2)),op(X0,X1))) = X1 [cnf transformation 3]
+28. op(X3,op(X0,X3)) = op(op(X3,op(X0,X3)),op(X4,op(op(X1,op(op(X2,X0),X1)),X4))) [cnf transformation 4]
+30. op(X2,X3) = op(op(X2,X3),op(op(X4,op(op(X0,op(op(X1,X2),X0)),X4)),op(X3,op(X2,X3)))) [cnf transformation 17]
+31. op(X4,op(X2,X4)) = op(op(X4,op(X2,X4)),op(op(X3,op(X2,X3)),op(X0,op(op(X1,X2),X0)))) [cnf transformation 7]
+32. op(X2,X4) = op(op(X2,X4),op(op(op(X3,op(X2,X3)),op(X0,op(op(X1,X2),X0))),op(X4,op(X2,X4)))) [cnf transformation 8]
+33. op(op(X1,op(op(X2,X1),X1)),X3) = op(op(op(X1,op(op(X2,X1),X1)),X3),op(op(X0,op(op(X1,op(op(X2,X1),X1)),X0)),op(X3,op(op(X1,op(op(X2,X1),X1)),X3)))) [cnf transformation 18]
+34. op(X3,op(op(X1,op(op(X2,X1),X1)),X3)) = op(op(X3,op(op(X1,op(op(X2,X1),X1)),X3)),op(X0,op(op(X1,op(op(X2,X1),X1)),X0))) [cnf transformation 19]
+38. $true [cnf transformation 24]
+39. op(op(X1,op(op(X2,X1),X1)),X3) = op(op(op(X1,op(op(X2,X1),X1)),X3),op(X0,op(op(X1,op(op(X2,X1),X1)),X0))) [backward demodulation 33,34]
+42. op(op(X2,X0),X1) = op(op(op(X2,X0),X1),op(op(X3,op(X0,X3)),op(X1,op(op(X2,X0),X1)))) [superposition 27,25]
+62. op(X4,op(op(op(X7,op(X6,X7)),op(X4,op(op(X5,X6),X4))),op(op(X5,X6),X4))) = X4 [superposition 27,26]
+66. op(X21,op(X20,X21)) = op(op(X21,op(X20,X21)),op(op(X22,op(op(X23,op(X18,op(op(X19,X20),X18))),X22)),op(X18,op(op(X19,X20),X18)))) [superposition 27,26]
+191. op(X24,op(op(X20,op(op(X21,X22),X20)),X24)) = op(op(X24,op(op(X20,op(op(X21,X22),X20)),X24)),op(op(op(X23,op(X22,X23)),op(X20,op(op(X21,X22),X20))),op(X25,op(op(X26,op(X20,op(op(X21,X22),X20))),X25)))) [superposition 31,26]
+224. op(X77,op(op(X78,op(X72,op(X73,X72))),X77)) = op(op(X77,op(op(X78,op(X72,op(X73,X72))),X77)),op(op(op(X74,op(X73,X74)),op(X75,op(op(X76,X73),X75))),op(X72,op(X73,X72)))) [superposition 26,31]
+663. op(op(op(X24,X23),X23),X26) = op(op(op(op(X24,X23),X23),X26),op(op(op(X23,op(op(X24,X23),X23)),op(op(op(X24,X23),X23),op(X23,op(op(X24,X23),X23)))),op(X26,op(op(op(X24,X23),X23),X26)))) [superposition 32,39]
+684. op(X134,op(op(X131,op(op(X132,X131),X131)),op(X133,X134))) = X134 [superposition 25,39]
+748. op(op(op(X24,X23),X23),X26) = op(op(op(op(X24,X23),X23),X26),op(op(X23,op(op(X24,X23),X23)),op(X26,op(op(op(X24,X23),X23),X26)))) [forward demodulation 663,26]
+754. op(X3,op(op(op(X1,op(op(X2,X0),X1)),op(X0,op(X1,op(op(X2,X0),X1)))),op(X4,X3))) = X3 [superposition 684,25]
+785. op(X0,X2) = op(op(X0,X2),op(X0,op(op(X1,X0),X0))) [superposition 684,26]
+847. op(X3,op(op(op(X1,op(op(X2,X0),X1)),X0),op(X4,X3))) = X3 [forward demodulation 754,25]
+1097. op(op(X8,X6),X6) = op(op(op(X8,X6),X6),op(X6,op(op(X7,X6),X6))) [superposition 684,785]
+1100. op(op(X27,X26),X26) = op(op(op(X27,X26),X26),op(X26,op(X26,X26))) [superposition 42,785]
+1101. op(X30,op(X28,X30)) = op(op(X30,op(X28,X30)),op(X28,op(X28,X28))) [superposition 31,785]
+1102. op(X31,op(op(X31,op(X31,X31)),op(op(X32,X31),X31))) = X31 [superposition 62,785]
+1486. op(X241,op(X239,X241)) = op(op(X241,op(X239,X241)),op(op(op(op(X237,op(op(X238,X239),X237)),op(op(X237,op(op(X238,X239),X237)),op(X237,op(op(X238,X239),X237)))),op(op(X240,op(X237,op(op(X238,X239),X237))),op(X237,op(op(X238,X239),X237)))),op(X237,op(op(X238,X239),X237)))) [superposition 28,1102]
+2088. op(X20,op(X19,X20)) = op(op(X20,op(X19,X20)),op(op(X21,op(X19,X21)),op(op(X19,op(X19,X19)),op(op(X18,X19),X19)))) [superposition 31,1100]
+2136. op(X224,op(op(op(X225,op(op(op(X222,X223),X223),X225)),op(X223,op(X223,X223))),op(X226,X224))) = X224 [superposition 847,1100]
+2199. op(X224,op(op(X225,op(op(op(X222,X223),X223),X225)),op(X226,X224))) = X224 [forward demodulation 2136,26]
+3790. op(X14,X15) = op(op(X14,X15),op(X12,op(op(op(X13,X14),X14),X12))) [superposition 2199,26]
+3911. op(op(op(X24,X23),X23),X26) = op(op(op(op(X24,X23),X23),X26),op(X23,op(op(X24,X23),X23))) [backward demodulation 748,3790]
+4003. op(X62,op(X61,X62)) = op(op(X62,op(X61,X62)),op(op(op(X60,X61),X61),op(X61,op(op(X60,X61),X61)))) [superposition 31,3911]
+4163. op(X62,op(X61,X62)) = op(op(X62,op(X61,X62)),op(op(X60,X61),X61)) [forward demodulation 4003,1097]
+4202. op(X20,op(X19,X20)) = op(op(X20,op(X19,X20)),op(op(X21,op(X19,X21)),op(X19,op(X19,X19)))) [backward demodulation 2088,4163]
+4239. op(X241,op(X239,X241)) = op(op(X241,op(X239,X241)),op(op(op(X237,op(op(X238,X239),X237)),op(op(X237,op(op(X238,X239),X237)),op(X237,op(op(X238,X239),X237)))),op(X237,op(op(X238,X239),X237)))) [backward demodulation 1486,4163]
+4330. op(X20,op(X19,X20)) = op(op(X20,op(X19,X20)),op(X21,op(X19,X21))) [forward demodulation 4202,1101]
+4380. op(X241,op(X239,X241)) = op(op(X241,op(X239,X241)),op(op(op(X237,op(op(X238,X239),X237)),op(X237,op(op(X238,X239),X237))),op(X237,op(op(X238,X239),X237)))) [forward demodulation 4239,4330]
+4381. op(X241,op(X239,X241)) = op(op(X241,op(X239,X241)),op(op(X237,op(op(X238,X239),X237)),op(X237,op(op(X238,X239),X237)))) [forward demodulation 4380,4330]
+4382. op(X241,op(X239,X241)) = op(op(X241,op(X239,X241)),op(X237,op(op(X238,X239),X237))) [forward demodulation 4381,4330]
+4464. op(X24,op(op(X20,op(op(X21,X22),X20)),X24)) = op(op(X24,op(op(X20,op(op(X21,X22),X20)),X24)),op(op(X23,op(X22,X23)),op(X25,op(op(X26,op(X20,op(op(X21,X22),X20))),X25)))) [backward demodulation 191,4382]
+4478. op(X77,op(op(X78,op(X72,op(X73,X72))),X77)) = op(op(X77,op(op(X78,op(X72,op(X73,X72))),X77)),op(op(X74,op(X73,X74)),op(X72,op(X73,X72)))) [backward demodulation 224,4382]
+4906. op(X77,op(op(X78,op(X72,op(X73,X72))),X77)) = op(op(X77,op(op(X78,op(X72,op(X73,X72))),X77)),op(X74,op(X73,X74))) [forward demodulation 4478,4330]
+4914. op(X21,op(X20,X21)) = op(op(X21,op(X20,X21)),op(X22,op(op(X23,op(X18,op(op(X19,X20),X18))),X22))) [backward demodulation 66,4906]
+4948. op(X24,op(op(X20,op(op(X21,X22),X20)),X24)) = op(op(X24,op(op(X20,op(op(X21,X22),X20)),X24)),op(X23,op(X22,X23))) [backward demodulation 4464,4914]
+4950. op(X2,X3) = op(op(X2,X3),op(X4,op(op(X0,op(op(X1,X2),X0)),X4))) [backward demodulation 30,4948]
+5701. op(X17,X19) = op(op(X17,X19),op(op(X18,op(X17,X18)),op(X15,op(op(X16,X17),X15)))) [superposition 4950,26]
+5829. op(X17,X19) = op(op(X17,X19),op(X18,op(X17,X18))) [forward demodulation 5701,4382]
+5856. op(X0,op(X3,op(X0,X3))) = X0 [superposition 5829,25]
+6572. op(X12,op(X11,X12)) = X12 [superposition 5856,5829]
+6656. op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),X3) [backward demodulation 26,6572]
+8341. ! [X0,X1,X2] : X0 = op(X0,op(X1,X2)) [backward demodulation 38,6572]
+8342. op(X1,X3) = X1 [forward demodulation 6656,6572]
+8351. ! [X0,X1,X2] : X0 = op(X0,op(X1,op(X2,op(X0,X2)))) [subsumption resolution 8341,8342]
+"#;
+
+        // Segment 3: the final goal proof — still no lemma_0004..0008 usage
+        let seg3 = r#"The conjecture is true! Here is a proof.
+
+Axiom 1 (history_lemma_0151): op(op(X, op(X, X)), X) = op(op(Y, op(Z, X)), X).
+
+Goal 1 (conjecture0): op(x0, x0) = op(op(x1, op(x2, x0)), x0).
+Proof:
+  op(x0, x0)
+= { by axiom 1 (history_lemma_0151) }
+  op(op(x1, op(x2, x0)), x0)
+
+RESULT: Theorem (the conjecture is true).
+"#;
+        // Use trim_proof_parts: block is the "start" vampire block,
+        // seg1 is the "root" vampire block, seg3 is sub-proof.
+        let (kept_start, kept_hist, kept_root, _start_steps, hist_steps, root_steps) =
+            trim_proof_parts(
+                Some((block, "vampire", count_superposition_steps(block))),
+                None,
+                (
+                    "history_lemma_0151",
+                    seg2,
+                    "vampire",
+                    proof_length_vampire(seg2),
+                ),
+                Some(seg3),
+            );
+
+        // history is None -> empty string + 0 steps
+        assert!(kept_hist.trim().is_empty());
+        assert_eq!(hist_steps, 0);
+
+        // start exists -> should not be empty
+        assert!(!kept_start.trim().is_empty());
+
+        // start is vampire-trimmed
+        assert!(!kept_start.trim().is_empty());
+        assert!(kept_start.contains("% lemma_0001:"));
+        assert!(kept_start.contains("% lemma_0002:"));
+        assert!(kept_start.contains("% lemma_0003:"));
+        assert!(kept_start.contains("% lemma_0004:"));
+        assert!(kept_start.contains("% lemma_0005:"));
+        assert!(kept_start.contains("% lemma_0006:"));
+
+        // Root block must be empty
+        assert!(!kept_root.trim().is_empty());
+
+        // Step accounting
+        assert_eq!(root_steps, 44);
+        assert_eq!(proof_length_twee(seg3), 1);
     }
 }
