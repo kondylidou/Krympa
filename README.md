@@ -48,11 +48,12 @@ cd shell
 To run the complete benchmarking pipeline:
 
 ```bash
-./run
+./run <timeout>
 ```
 
-This will run the tool on the full benchmark set and collect proof-minimization
-results.
+Where <timeout> specifies the per-problem timeout (in seconds) used during the
+benchmarking process. This will run the tool on the full benchmark set and
+collect proof-minimization results.
 
 ---
 
@@ -103,7 +104,9 @@ python tolean.py /path/to/input_proof_file
 ## Notes
 
 - The `run` script performs full benchmarking and may take a long time to
-  complete.
+  complete depending on the chosen timeout and benchmark size.
+- Benchmarking is currently executed sequentially. Parallel execution has not
+  yet been implemented and is a planned optimization.
 - The tool assumes the binaries are named and located exactly as described
   above.
 - Output files (logs, minimized proofs, etc) are written to directories created
