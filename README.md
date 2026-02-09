@@ -65,10 +65,22 @@ To run the tool on a single input file:
 ./run_one <path-to-problem-file>
 ```
 
+Before running this command, the input files must be generated. From the
+repository root, navigate to the `python` directory and run:
+
+```bash
+cd python
+python generate_input.py <path-to-benchmark-file>
+```
+
 Example:
 
 ```bash
-./run_one benchmarks/input7/Equation650_implies_Equation448.p
+cd python
+python generate_input.py ../benchmarks/Proofs1.lean
+
+cd ../shell
+./run_one ../benchmarks/input11/Equation650_implies_Equation448.p
 ```
 
 This mode is useful for debugging or inspecting individual minimized proofs.
