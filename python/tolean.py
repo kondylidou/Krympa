@@ -2,6 +2,24 @@ import re
 import sys
 import os
 
+VAR_NAMES = ["x","y","z","w","v","u","t","s","r","q","p","o","n","m","l","k","j","i","h","g","f","e","d","c","b","a"]
+
+def vars_in_order(expr: str):
+    """Variables in first-appearance order (case-insensitive), excluding op."""
+    seen = set()
+    out = []
+    for m in re.finditer(r"[A-Za-z]\w*", expr):
+        v = m.group(0).lower()
+        if v == "op":
+            continue
+        if v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+def fresh_name(i: int) -> str:
+    return VAR_NAMES[i] if i < len(VAR_NAMES) else f"x{i}"
+
 # Recursive parser for op(...) terms into Lean infix ◇
 def parse_term(s, i=0):
     n = len(s)
@@ -82,9 +100,10 @@ def extract_variables(s):
 def parse_dependencies_from_proof(proof_lines):
     deps = set()
     for line in proof_lines:
-        matches = re.findall(r'\((single_lemma_\d+|history_lemma_\d+|a1)\)', line)
+        matches = re.findall(r'\((lemma_\d+|history_lemma_\d+|single_lemma_\d+|a1|a_1)\)', line)
         for m in matches:
-            deps.add("op_law" if m == "a1" else m)
+            m = re.match(r"[A-Za-z_]\w*", m).group(0)
+            deps.add("op_law" if m in ("a1","a_1") else m)
 
         matches2 = re.findall(r'by lemma (\d+)', line, flags=re.IGNORECASE)
         for m in matches2:
@@ -92,28 +111,27 @@ def parse_dependencies_from_proof(proof_lines):
     return sorted(deps)
 
 def normalize_variables(expr):
-    """
-    Renames variables in expr to x0, x1, x2, ... in sorted order.
-    Variable matching is case-insensitive: X and x map to the same variable.
-    Returns (new_expr, new_vars)
-    """
-
-    # Extract variables, normalize case
-    raw_vars = re.findall(r"[A-Za-z]\w*", expr)
-
-    # Remove 'op' and normalize to lowercase
-    canon_vars = sorted({v.lower() for v in raw_vars if v.lower() != "op"})
-
-    # Canonical renaming
-    renaming = {v: f"x{i}" for i, v in enumerate(canon_vars)}
+    canon_vars = vars_in_order(expr)
+    renaming = {v: fresh_name(i) for i, v in enumerate(canon_vars)}
 
     def repl(match):
         v = match.group(0)
-        return renaming.get(v.lower(), v)
+        if v.lower() == "op":
+            return v
+        return renaming.get(v.lower(), v.lower())
 
     new_expr = re.sub(r"[A-Za-z]\w*", repl, expr)
     new_vars = [renaming[v] for v in canon_vars]
+    return new_expr, new_vars
 
+    def repl(match):
+        v = match.group(0)
+        if v.lower() == "op":
+            return v
+        return renaming.get(v.lower(), v.lower())
+
+    new_expr = re.sub(r"[A-Za-z]\w*", repl, expr)
+    new_vars = [renaming[v] for v in canon_vars]
     return new_expr, new_vars
 
 # Lean abbreviation
@@ -149,20 +167,16 @@ def lean_axiom(name, expr):
 """
 
 def build_variable_renaming_from_expr(expr):
-    """
-    Build a variable renaming map from the lemma expression only.
-    Case-insensitive: X and x are the same variable.
-    """
-    vars = sorted(
-        set(v.lower() for v in extract_variables(expr))
-        - {"op"}
-    )
-    return {v: f"x{i}" for i, v in enumerate(vars)}
+    canon_vars = vars_in_order(expr)
+    return {v: fresh_name(i) for i, v in enumerate(canon_vars)}
 
 def apply_renaming(expr, renaming):
     def repl(match):
         v = match.group(0)
-        return renaming.get(v.lower(), v)
+        if v.lower() == "op":
+            return v
+        # if mapped, use mapping; otherwise force lowercase (X -> x)
+        return renaming.get(v.lower(), v.lower())
     return re.sub(r"[A-Za-z]\w*", repl, expr)
 
 def format_calc_step(lhs, rhs, dep, indent="        ", max_len=80):
@@ -248,11 +262,11 @@ def build_calc_block(proof_lines, renaming):
         m = re.match(r"=\s*\{\s*by\s+(\S+).*?\}", line)
         if m:
             # Determine dependency (only the first reference)
-            refs = re.findall(r"(single_lemma_\d+|history_lemma_\d+|a1)", line)
+            refs = re.findall(r"(lemma_\d+|history_lemma_\d+|single_lemma_\d+|a1|a_1)", line)
             dep = None
             if refs:
                 r = refs[0]
-                if r == "a1":
+                if r in ("a1","a_1"):
                     dep = "op_law"
                 elif r in name_mapping:
                     dep = name_mapping[r]
@@ -289,7 +303,7 @@ def lean_lemma(name, expr, deps_from_proof=[], proof_lines=None):
     renaming = build_variable_renaming_from_expr(expr_core)
     expr_norm = apply_renaming(expr_core, renaming)
     lhs, rhs = parse_equation_tptp(expr_norm)
-    vars = [renaming[v] for v in sorted(renaming)]
+    vars = [renaming[v] for v in vars_in_order(expr_core)]
     var_list = " ".join(vars)
 
     #body = lhs if rhs is None else f"{lhs} = {rhs}"
@@ -364,7 +378,7 @@ with open(input_file) as f:
             continue
 
         # Lemmas
-        if stripped.startswith("% single_lemma_") or stripped.startswith("% history_lemma_"):
+        if stripped.startswith("% lemma_") or stripped.startswith("% history_lemma_") or stripped.startswith("% single_lemma_"):
             parts = stripped.split("|")
             body = parts[0]
             deps_part = parts[1] if len(parts) > 1 else ""
@@ -373,9 +387,22 @@ with open(input_file) as f:
                 name, expr = m.group(1), m.group(2)
                 deps = []
                 if "deps:" in deps_part:
-                    for d in deps_part.split("deps:")[1].split(","):
-                        d = d.split("->")[0].strip()
-                        deps.append("op_law" if d == "a1" else d)
+                    deps_str = deps_part.split("deps:", 1)[1]
+
+                    # grab only dependency headers like "a_1:" or "lemma_0001:" (ignores X0,X1,X2)
+                    # 1) names that appear as "name:"
+                    dep_names = re.findall(r'([A-Za-z_]\w*)\s*:', deps_str)
+
+                    # 2) also grab bare lemma/history_lemma tokens that might appear without ':'
+                    dep_names += re.findall(r'\b(lemma_\d+|history_lemma_\d+|single_lemma_\d+)\b', deps_str)
+
+                    # normalize + de-dup (preserve order)
+                    seen = set()
+                    for d in dep_names:
+                        d = "op_law" if d in ("a1", "a_1") else d
+                        if d not in seen:
+                            deps.append(d)
+                            seen.add(d)
                 lemmas[name] = (expr, deps)
             continue
 
@@ -407,7 +434,7 @@ with open(input_file) as f:
                 if stripped and not stripped.startswith("Goal") and not stripped.startswith("Lemma") and not stripped.startswith("RESULT"):
                     current_proof_lines.append(stripped)
                     # detect usage of inline axioms or lemmas
-                    matches = re.findall(r'\((single_lemma_\d+|history_lemma_\d+|a1)\)', stripped)
+                    matches = re.findall(r'\((lemma_\d+|history_lemma_\d+|single_lemma_\d+|a1|a_1)\)', stripped)
                     for ax in matches:
                         used_inline_axioms.add(ax)
 
