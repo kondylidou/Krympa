@@ -57,6 +57,16 @@ collect proof-minimization results.
 
 ---
 
+### Run a Single Benchmark File
+
+Run a single file by number (e.g., Proofs7.lean):
+
+```bash
+./run 7 <timeout>
+```
+
+---
+
 ### Run on a Single Problem
 
 To run the tool on a single input file:
