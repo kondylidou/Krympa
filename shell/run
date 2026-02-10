@@ -5,14 +5,18 @@ PYTHON_SCRIPT="../python/generate_input.py"
 RUST_DIR="../rust"
 BENCHMARK_BINARY="./benchmarking_binary"
 KRYMPA_BINARY="./krympa_all"
-# Take timeout from CLI, default to 2700 (45 min)
-TIMEOUT_SECS=${1:-2700}
+
+# args
+TARGET="$1"
+TIMEOUT_SECS=${2:-2700}
 
 mkdir -p "$BENCHMARK_DIR/output_logs"
 ORIG_DIR=$(pwd)
 
-for proofs_file in "$BENCHMARK_DIR"/Proofs*.lean; do
+run_one() {
+    proofs_file="$1"
     base=$(basename "$proofs_file" .lean)
+
     echo "Processing $base ..."
 
     # Generate input using python script
@@ -21,19 +25,40 @@ for proofs_file in "$BENCHMARK_DIR"/Proofs*.lean; do
     input_folder="$BENCHMARK_DIR/input${base//Proofs/}"
     if [ ! -d "$input_folder" ]; then
         echo "Input folder $input_folder not found! Skipping $base."
-        continue
+        return
     fi
 
     log_file="$BENCHMARK_DIR/output_logs/${base}.log"
     echo "Running benchmarking for $input_folder (timeout=${TIMEOUT_SECS}s)..."
 
     cd "$RUST_DIR" || exit 1
-
     "$BENCHMARK_BINARY" "$input_folder" "$TIMEOUT_SECS" "$KRYMPA_BINARY" > "$log_file" 2>&1
-
     cd "$ORIG_DIR" || exit 1
 
     echo "Finished benchmarking for $base"
-done
+}
 
-echo "All jobs completed."
+# Run ALL (default)
+if [ -z "$TARGET" ] || [ "$TARGET" = "all" ]; then
+    for proofs_file in "$BENCHMARK_DIR"/Proofs*.lean; do
+        run_one "$proofs_file"
+    done
+
+    echo "All jobs completed."
+    exit 0
+fi
+
+# Run ONE Proofs file
+if [[ "$TARGET" =~ ^[0-9]+$ ]]; then
+    TARGET="Proofs$TARGET"
+fi
+
+proofs_file="$BENCHMARK_DIR/${TARGET}.lean"
+
+if [ ! -f "$proofs_file" ]; then
+    echo "File not found: $proofs_file"
+    exit 1
+fi
+
+run_one "$proofs_file"
+echo "Done."

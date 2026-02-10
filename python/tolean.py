@@ -97,17 +97,20 @@ def extract_variables(s):
     return vars
 
 # Parse dependencies from proof lines
-def parse_dependencies_from_proof(proof_lines):
+def parse_dependencies_from_proof(proof_lines, lemma_num_map=None):
     deps = set()
+    lemma_num_map = lemma_num_map or {}
+
     for line in proof_lines:
         matches = re.findall(r'\((lemma_\d+|history_lemma_\d+|single_lemma_\d+|a1|a_1)\)', line)
         for m in matches:
-            m = re.match(r"[A-Za-z_]\w*", m).group(0)
             deps.add("op_law" if m in ("a1","a_1") else m)
 
+        # "by lemma 3" should refer to the lemma 3 of THIS proof block
         matches2 = re.findall(r'by lemma (\d+)', line, flags=re.IGNORECASE)
-        for m in matches2:
-            deps.add(f"Lemma_{m}")
+        for num in matches2:
+            deps.add(lemma_num_map.get(num, f"Lemma_{num}"))
+
     return sorted(deps)
 
 def normalize_variables(expr):
@@ -239,7 +242,7 @@ def format_side(expr, indent="      ", max_len=80):
     # Join with newline + indent
     return ("\n" + indent).join(lines)
 
-def build_calc_block(proof_lines, renaming):
+def build_calc_block(proof_lines, renaming, lemma_num_map):
     """
     Builds Lean calc block from TPTP proof lines.
     Each step may have:
@@ -277,9 +280,9 @@ def build_calc_block(proof_lines, renaming):
                 m2 = re.search(r"lemma\s+(\d+)", line, flags=re.IGNORECASE)
                 if m2:
                     dep_num = m2.group(1)
-                    # Original TPTP name may be "lemma_3", map via name_mapping
-                    original_name = f"Lemma_{dep_num}"  # depends on how TPTP numbered lemmas
-                    dep = name_mapping.get(original_name, f"lemma_{dep_num}")
+                    dep_name = lemma_num_map.get(dep_num, f"Lemma_{dep_num}")
+                    dep = name_mapping.get(dep_name, dep_name)
+
                 else:
                     # fallback: just take first word and translate if possible
                     dep = name_mapping.get(line.split()[0], line.split()[0])
@@ -298,7 +301,7 @@ def build_calc_block(proof_lines, renaming):
     
 
 # Lean lemma with dependencies (works for lemmas and conjecture)
-def lean_lemma(name, expr, deps_from_proof=[], proof_lines=None):
+def lean_lemma(name, expr, deps_from_proof=[], proof_lines=None, lemma_num_map=None):
     expr_core = strip_forall(expr)
     renaming = build_variable_renaming_from_expr(expr_core)
     expr_norm = apply_renaming(expr_core, renaming)
@@ -310,7 +313,7 @@ def lean_lemma(name, expr, deps_from_proof=[], proof_lines=None):
     body = format_lemma_body(lhs, rhs, indent="      ", max_len=80)
 
     if name.startswith("lemma_") and proof_lines:
-        calc_block = build_calc_block(proof_lines, renaming)
+        calc_block = build_calc_block(proof_lines, renaming, lemma_num_map or {})
         return f"""     
   have {name} ({var_list} : G) :
   {body} := by
@@ -319,7 +322,7 @@ def lean_lemma(name, expr, deps_from_proof=[], proof_lines=None):
   """
 
     if name.startswith("conjecture") and proof_lines:
-        calc_block = build_calc_block(proof_lines, renaming)
+        calc_block = build_calc_block(proof_lines, renaming, lemma_num_map or {})
         intros = " ".join(vars)
         return f"""
   show _ by
@@ -359,6 +362,9 @@ proof_section = False
 current_proof_lines = []
 current_lemmaname = None
 proofs_by_lemma = {}  # lemma_name -> list of proof lines
+proof_block_id = 0
+lemma_num_map = {}
+proof_block_maps_by_lemma = {}  # lemma_name -> lemma_num_map snapshot
 
 with open(input_file) as f:
     for line in f:
@@ -375,6 +381,8 @@ with open(input_file) as f:
         # Start proof section
         if stripped.startswith("The conjecture is true! Here is a proof"):
             proof_section = True
+            proof_block_id += 1
+            lemma_num_map = {}   # reset numbering per block
             continue
 
         # Lemmas
@@ -411,21 +419,38 @@ with open(input_file) as f:
             m = re.match(r'(?:Goal|Lemma)\s+(\d+)(?:\s*\(([^)]+)\))?\s*:\s*(.*)', stripped)
             if m:
                 # If there is a current lemma being accumulated, finalize it
-                if current_proof_lines and current_lemmaname:
+                if current_proof_lines and current_lemmaname and current_lemmaname in lemmas:
                     proofs_by_lemma[current_lemmaname] = current_proof_lines.copy()
-                    deps = parse_dependencies_from_proof(current_proof_lines)
+                    proof_block_maps_by_lemma[current_lemmaname] = dict(lemma_num_map)
+                    deps = parse_dependencies_from_proof(current_proof_lines, lemma_num_map)
                     expr, _ = lemmas[current_lemmaname]
                     lemmas[current_lemmaname] = (expr, deps)
                     current_proof_lines = []
 
                 # Start new lemma
-                number = m.group(1)
-                current_lemmaname = m.group(2) if m.group(2) else f"Lemma_{number}"
+                number = m.group(1)  # this is "3" for "Lemma 3: ..."
+                given_name = m.group(2)
+
+                if given_name:
+                    current_lemmaname = given_name
+                else:
+                    # make it unique per proof block
+                    current_lemmaname = f"Lemma_{number}_b{proof_block_id}"
+
+                # record the mapping so "by lemma 3" resolves correctly in this block
+                lemma_num_map[number] = current_lemmaname
                 lemmaexpr = m.group(3).strip()
                 current_proof_lines = []
 
+                # If this goal name was declared as an inline axiom, do NOT treat it as a lemma.
+                # Otherwise we "prove" an axiom and later the real axiom never gets emitted.
+                if current_lemmaname in inline_axioms:
+                    current_lemmaname = None
+                    current_proof_lines = []
+                    continue
+
                 # Initialize lemma if not 'a1' (hypothesis)
-                if "a1" not in current_lemmaname.lower():
+                if ("a1" not in current_lemmaname.lower()) and ("a_1" not in current_lemmaname.lower()):
                     lemmas[current_lemmaname] = (lemmaexpr, [])
                 continue
 
@@ -443,7 +468,8 @@ with open(input_file) as f:
             if re.match(r'(?:Goal|Lemma)\s+\d+', stripped) or stripped.startswith("RESULT"):
                 if current_lemmaname and current_proof_lines:
                     proofs_by_lemma[current_lemmaname] = current_proof_lines.copy()
-                    deps = parse_dependencies_from_proof(current_proof_lines)
+                    deps = parse_dependencies_from_proof(current_proof_lines, lemma_num_map)
+                    proof_block_maps_by_lemma[current_lemmaname] = dict(lemma_num_map)
                     expr, _ = lemmas[current_lemmaname]
                     lemmas[current_lemmaname] = (expr, deps)
                     current_proof_lines = []
@@ -475,7 +501,7 @@ with open(input_file) as f:
                         conjecture = (name, formula)
                 buffer = ""
 
-if axiom is None or conjecture is None:
+if axiom is None:
     print("ERROR: Missing axiom or conjecture in TPTP")
     sys.exit(1)
 
@@ -507,6 +533,8 @@ for old_name in lemmas.keys():
     normalized_lemmas[new_name] = lemmas[old_name]
 
 lemmas = normalized_lemmas
+has_conj_lemma = any(old.startswith("conjecture") for old in name_mapping.keys())
+last_lemma_name = list(lemmas.keys())[-1] if lemmas else None
 
 # Normalize dependencies in lemmas
 for lem_name, (expr, deps) in lemmas.items():
@@ -521,6 +549,12 @@ for old_name, lines in proofs_by_lemma.items():
         normalized_proofs[new_name] = lines
 proofs_by_lemma = normalized_proofs
 
+normalized_maps = {}
+for old_name, mp in proof_block_maps_by_lemma.items():
+    if old_name in name_mapping:
+        normalized_maps[name_mapping[old_name]] = mp
+proof_block_maps_by_lemma = normalized_maps
+
 # Update lemma dependencies to point to axiom_n if needed
 for lemmaname, (expr, deps) in lemmas.items():
     new_deps = []
@@ -533,10 +567,18 @@ for lemmaname, (expr, deps) in lemmas.items():
 
 # Output Lean file
 axname, axexpr = axiom
-conjname, conjexpr = conjecture
-
 lean_ax = lean_abbrev(axname, axexpr)
-lean_conj = lean_abbrev(conjname, conjexpr)
+conj_vars = []
+if conjecture is not None:
+    conjname, conjexpr = conjecture
+    _, conj_vars = normalize_variables(strip_forall(conjexpr))  # gives ["x","y","z",...]
+
+if conjecture is not None:
+    conjname, conjexpr = conjecture
+    lean_conj = lean_abbrev(conjname, conjexpr)
+else:
+    conjname = "no_conjecture"
+    lean_conj = ""
 
 # Theorem header
 theorem_header = (
@@ -555,7 +597,28 @@ for old, new in axiom_name_map.items():
 lemma_text = ""
 for lemmaname, (expr, deps) in lemmas.items():
     proof_lines = proofs_by_lemma.get(lemmaname)
-    lemma_text += lean_lemma(lemmaname, expr, deps, proof_lines)
+    lmap = proof_block_maps_by_lemma.get(lemmaname, {})
+    lemma_text += lean_lemma(lemmaname, expr, deps, proof_lines, lmap)
+
+ending = ""
+
+if (not has_conj_lemma) and last_lemma_name:
+    # no conjecture at all -> end with last lemma
+    if last_lemma_name:
+        ending = f"""
+  show _ by
+    exact {last_lemma_name}
+"""
+# else:
+#     # conjecture exists, but if it was NOT proved as a conjecture-lemma, close goal using last lemma
+#     if (not has_conj_lemma) and last_lemma_name:
+#         intros = " ".join(conj_vars) if conj_vars else "x y z"
+#         args = " ".join(conj_vars) if conj_vars else "x y z"
+#         ending = f"""
+#   show _ by
+#     intro {intros}
+#     exact {last_lemma_name} {args}
+# """
 
 lean_output = f"""import Mathlib.Tactic.NthRewrite
 import Duper
@@ -569,7 +632,7 @@ infix:65 " ◇ " => Magma.op
 {lean_ax}
 {lean_axioms}
 {lean_conj}
-{theorem_header}{lemma_text}
+{theorem_header}{lemma_text}{ending}
 """
 
 with open(output_file, "w") as f:

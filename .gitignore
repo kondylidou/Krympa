@@ -64,3 +64,6 @@ lean/.lake/
 
 # === zip Files ===
 *.ziprust/frankenstein_rust_debug.tar.gz
+
+/python/scan.py
+/python/rerun.py

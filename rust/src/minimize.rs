@@ -170,6 +170,14 @@ pub fn try_minimize(
                     "   [INFO] No history or single lemmas found — falling back to root-only proof"
                 );
 
+                if root_lemma.starts_with("history_lemma_") {
+                  // TODO this is a bug in the dag
+                  println!(
+                      "   [BUG] No dependencies found — skipping"
+                  );
+                  continue;
+                }
+
                 // vector to collect new Vampire lemmas (names + formulas)
                 let mut extra_dependencies: Vec<(String, String)> = Vec::new();
 
@@ -1343,6 +1351,28 @@ pub fn count_superposition_steps(block: &str) -> usize {
     lemma_line_re.find_iter(block).count()
 }
 
+// STOP-THE-BLEED: helpers
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum FreezeBefore {
+    None,
+    Start,   // don't trim start
+    History, // don't trim start + history
+    Root,    // don't trim start + history + root
+}
+
+/// Match a_2, a_6:, a_26, etc. (no fragile \b word-boundary)
+fn has_bleed(text: &str) -> Option<u32> {
+    let re = Regex::new(r"a_(\d+)").unwrap();
+    for cap in re.captures_iter(text) {
+        if let Ok(n) = cap[1].parse::<u32>() {
+            if n != 1 {
+                return Some(n);
+            }
+        }
+    }
+    None
+}
+
 pub fn trim_proof_parts(
     start: Option<(&str, &str, usize)>, // (start_text, start_proved_by, start_steps)
     history: Option<(&str, &str, &str, usize)>, // (history_name, history_text, history_proved_by, history_steps)
@@ -1402,6 +1432,26 @@ pub fn trim_proof_parts(
         );
     }
 
+    // STOP-THE-BLEED PATCH
+    // TODO fix better
+    let start_txt = start.map(|(t, _, _)| t).unwrap_or("");
+    let hist_txt  = history.map(|(_, t, _, _)| t).unwrap_or("");
+    let root_txt  = root_proof;
+
+    // earliest->latest: start, history, root
+    let mut freeze = FreezeBefore::None;
+
+    if let Some(n) = has_bleed(root_txt) {
+        freeze = FreezeBefore::Root;
+        eprintln!("[DEBUG] stop-the-bleed: found unresolved a_{} in ROOT segment; freezing trimming of start/history/root", n);
+    } else if let Some(n) = has_bleed(hist_txt) {
+        freeze = FreezeBefore::History;
+        eprintln!("[DEBUG] stop-the-bleed: found unresolved a_{} in HISTORY segment; freezing trimming of start/history", n);
+    } else if let Some(n) = has_bleed(start_txt) {
+        freeze = FreezeBefore::Start;
+        eprintln!("[DEBUG] stop-the-bleed: found unresolved a_{} in START segment; freezing trimming of start", n);
+    }
+
     // helper: keep/trim a segment
     let keep_named =
         |name: &str, proof: &str, by: &str, steps_in: usize, segs: &[&str]| -> (String, usize) {
@@ -1439,24 +1489,41 @@ pub fn trim_proof_parts(
         };
 
     // 1) root depends on sub (if any)
-    let (kept_root, root_steps) =
-        keep_named(root_name, root_proof, root_by, root_steps_in, &sub_segs);
+    let (kept_root, root_steps) = if freeze >= FreezeBefore::Root {
+        // keep untrimmed
+        let kept = root_proof.to_string();
+        let steps = root_steps_in;
+        (kept, steps)
+    } else {
+        keep_named(root_name, root_proof, root_by, root_steps_in, &sub_segs)
+    };
 
     // 2) history depends on root + sub
     let (kept_history, history_steps) = match history {
         None => (String::new(), 0),
         Some((h_name, h_proof, h_by, h_steps_in)) => {
-            let mut segs: Vec<&str> = Vec::new();
-            if !kept_root.trim().is_empty() {
-                segs.push(&kept_root);
-            }
-            segs.extend(sub_segs.iter().copied());
-
-            let (kept, steps) = keep_named(h_name, h_proof, h_by, h_steps_in, &segs);
-            if kept.trim().is_empty() {
-                (String::new(), 0)
+            if freeze >= FreezeBefore::History {
+                // keep untrimmed
+                let kept = h_proof.to_string();
+                let steps = h_steps_in;
+                if kept.trim().is_empty() {
+                    (String::new(), 0)
+                } else {
+                    (kept, steps)
+                }
             } else {
-                (kept, steps)
+                let mut segs: Vec<&str> = Vec::new();
+                if !kept_root.trim().is_empty() {
+                    segs.push(&kept_root);
+                }
+                segs.extend(sub_segs.iter().copied());
+
+                let (kept, steps) = keep_named(h_name, h_proof, h_by, h_steps_in, &segs);
+                if kept.trim().is_empty() {
+                    (String::new(), 0)
+                } else {
+                    (kept, steps)
+                }
             }
         }
     };
@@ -1465,28 +1532,39 @@ pub fn trim_proof_parts(
     let (kept_start, start_steps) = match start {
         None => (String::new(), 0),
         Some((start_proof, start_by, start_steps_in)) => {
-            let mut segs: Vec<&str> = Vec::new();
-            if !kept_history.trim().is_empty() {
-                segs.push(&kept_history);
-            }
-            if !kept_root.trim().is_empty() {
-                segs.push(&kept_root);
-            }
-            segs.extend(sub_segs.iter().copied());
-
-            let (kept, steps) = match start_by {
-                "vampire" => {
-                    let trimmed = trim_superposition_block(start_proof, &segs);
-                    let steps = count_superposition_steps(&trimmed);
-                    (trimmed, steps)
+            if freeze >= FreezeBefore::Start {
+                // keep untrimmed
+                let kept = start_proof.to_string();
+                let steps = start_steps_in;
+                if kept.trim().is_empty() {
+                    (String::new(), 0)
+                } else {
+                    (kept, steps)
                 }
-                _ => (start_proof.to_string(), start_steps_in),
-            };
-
-            if kept.trim().is_empty() {
-                (String::new(), 0)
             } else {
-                (kept, steps)
+                let mut segs: Vec<&str> = Vec::new();
+                if !kept_history.trim().is_empty() {
+                    segs.push(&kept_history);
+                }
+                if !kept_root.trim().is_empty() {
+                    segs.push(&kept_root);
+                }
+                segs.extend(sub_segs.iter().copied());
+
+                let (kept, steps) = match start_by {
+                    "vampire" => {
+                        let trimmed = trim_superposition_block(start_proof, &segs);
+                        let steps = count_superposition_steps(&trimmed);
+                        (trimmed, steps)
+                    }
+                    _ => (start_proof.to_string(), start_steps_in),
+                };
+
+                if kept.trim().is_empty() {
+                    (String::new(), 0)
+                } else {
+                    (kept, steps)
+                }
             }
         }
     };
