@@ -1362,7 +1362,9 @@ enum FreezeBefore {
 
 /// Match a_2, a_6:, a_26, etc. (no fragile \b word-boundary)
 fn has_bleed(text: &str) -> Option<u32> {
-    let re = Regex::new(r"a_(\d+)").unwrap();
+    // Require a colon after the number to avoid matching inside other tokens.
+    // Also require a word boundary before `a_` so we don't match `lemma_a_0002` etc.
+    let re = Regex::new(r"\ba_(\d+)\s*:").unwrap();
     for cap in re.captures_iter(text) {
         if let Ok(n) = cap[1].parse::<u32>() {
             if n != 1 {
@@ -1374,9 +1376,9 @@ fn has_bleed(text: &str) -> Option<u32> {
 }
 
 pub fn trim_proof_parts(
-    start: Option<(&str, &str, usize)>, // (start_text, start_proved_by, start_steps)
+    start: Option<(&str, &str, usize)>,      // (start_text, start_proved_by, start_steps)
     history: Option<(&str, &str, &str, usize)>, // (history_name, history_text, history_proved_by, history_steps)
-    root: (&str, &str, &str, usize), // (root_name, root_text, root_proved_by, root_steps)
+    root: (&str, &str, &str, usize),         // (root_name, root_text, root_proved_by, root_steps)
     sub: Option<&str>,
 ) -> (
     String, // kept_start
@@ -1432,29 +1434,15 @@ pub fn trim_proof_parts(
         );
     }
 
-    // STOP-THE-BLEED PATCH
-    // TODO fix better
-    let start_txt = start.map(|(t, _, _)| t).unwrap_or("");
-    let hist_txt  = history.map(|(_, t, _, _)| t).unwrap_or("");
-    let root_txt  = root_proof;
-
-    // earliest->latest: start, history, root
-    let mut freeze = FreezeBefore::None;
-
-    if let Some(n) = has_bleed(root_txt) {
-        freeze = FreezeBefore::Root;
-        eprintln!("[DEBUG] stop-the-bleed: found unresolved a_{} in ROOT segment; freezing trimming of start/history/root", n);
-    } else if let Some(n) = has_bleed(hist_txt) {
-        freeze = FreezeBefore::History;
-        eprintln!("[DEBUG] stop-the-bleed: found unresolved a_{} in HISTORY segment; freezing trimming of start/history", n);
-    } else if let Some(n) = has_bleed(start_txt) {
-        freeze = FreezeBefore::Start;
-        eprintln!("[DEBUG] stop-the-bleed: found unresolved a_{} in START segment; freezing trimming of start", n);
-    }
-
-    // helper: keep/trim a segment
-    let keep_named =
-        |name: &str, proof: &str, by: &str, steps_in: usize, segs: &[&str]| -> (String, usize) {
+    // Run trimming once given a freeze level.
+    let run = |freeze: FreezeBefore| -> (String, String, String, usize, usize, usize) {
+        // helper: keep/trim a named segment
+        let keep_named = |name: &str,
+                          proof: &str,
+                          by: &str,
+                          steps_in: usize,
+                          segs: &[&str]|
+         -> (String, usize) {
             // TERMINAL RULE: if nothing comes after this segment, keep it.
             // (root becomes terminal when sub is absent)
             if segs.is_empty() {
@@ -1478,106 +1466,135 @@ pub fn trim_proof_parts(
                     if !proof_uses_lemma(name, segs) {
                         return (String::new(), 0);
                     }
-                    let kept = proof.to_string();
-                    (kept, steps_in)
+                    (proof.to_string(), steps_in)
                 }
-                _ => {
-                    let kept = proof.to_string();
-                    (kept, steps_in)
+                _ => (proof.to_string(), steps_in),
+            }
+        };
+
+        // 1) root depends on sub (if any)
+        let (kept_root, root_steps) = if freeze >= FreezeBefore::Root {
+            (root_proof.to_string(), root_steps_in)
+        } else {
+            keep_named(root_name, root_proof, root_by, root_steps_in, &sub_segs)
+        };
+
+        // 2) history depends on root + sub
+        let (kept_history, history_steps) = match history {
+            None => (String::new(), 0),
+            Some((h_name, h_proof, h_by, h_steps_in)) => {
+                if freeze >= FreezeBefore::History {
+                    let kept = h_proof.to_string();
+                    if kept.trim().is_empty() {
+                        (String::new(), 0)
+                    } else {
+                        (kept, h_steps_in)
+                    }
+                } else {
+                    let mut segs: Vec<&str> = Vec::new();
+                    if !kept_root.trim().is_empty() {
+                        segs.push(&kept_root);
+                    }
+                    segs.extend(sub_segs.iter().copied());
+
+                    let (kept, steps) = keep_named(h_name, h_proof, h_by, h_steps_in, &segs);
+                    if kept.trim().is_empty() {
+                        (String::new(), 0)
+                    } else {
+                        (kept, steps)
+                    }
                 }
             }
         };
 
-    // 1) root depends on sub (if any)
-    let (kept_root, root_steps) = if freeze >= FreezeBefore::Root {
-        // keep untrimmed
-        let kept = root_proof.to_string();
-        let steps = root_steps_in;
-        (kept, steps)
-    } else {
-        keep_named(root_name, root_proof, root_by, root_steps_in, &sub_segs)
-    };
-
-    // 2) history depends on root + sub
-    let (kept_history, history_steps) = match history {
-        None => (String::new(), 0),
-        Some((h_name, h_proof, h_by, h_steps_in)) => {
-            if freeze >= FreezeBefore::History {
-                // keep untrimmed
-                let kept = h_proof.to_string();
-                let steps = h_steps_in;
-                if kept.trim().is_empty() {
-                    (String::new(), 0)
-                } else {
-                    (kept, steps)
-                }
-            } else {
-                let mut segs: Vec<&str> = Vec::new();
-                if !kept_root.trim().is_empty() {
-                    segs.push(&kept_root);
-                }
-                segs.extend(sub_segs.iter().copied());
-
-                let (kept, steps) = keep_named(h_name, h_proof, h_by, h_steps_in, &segs);
-                if kept.trim().is_empty() {
-                    (String::new(), 0)
-                } else {
-                    (kept, steps)
-                }
-            }
-        }
-    };
-
-    // 3) start depends on (history if non-empty) + root + sub
-    let (kept_start, start_steps) = match start {
-        None => (String::new(), 0),
-        Some((start_proof, start_by, start_steps_in)) => {
-            if freeze >= FreezeBefore::Start {
-                // keep untrimmed
-                let kept = start_proof.to_string();
-                let steps = start_steps_in;
-                if kept.trim().is_empty() {
-                    (String::new(), 0)
-                } else {
-                    (kept, steps)
-                }
-            } else {
-                let mut segs: Vec<&str> = Vec::new();
-                if !kept_history.trim().is_empty() {
-                    segs.push(&kept_history);
-                }
-                if !kept_root.trim().is_empty() {
-                    segs.push(&kept_root);
-                }
-                segs.extend(sub_segs.iter().copied());
-
-                let (kept, steps) = match start_by {
-                    "vampire" => {
-                        let trimmed = trim_superposition_block(start_proof, &segs);
-                        let steps = count_superposition_steps(&trimmed);
-                        (trimmed, steps)
+        // 3) start depends on (history if non-empty) + root + sub
+        let (kept_start, start_steps) = match start {
+            None => (String::new(), 0),
+            Some((start_proof, start_by, start_steps_in)) => {
+                if freeze >= FreezeBefore::Start {
+                    let kept = start_proof.to_string();
+                    if kept.trim().is_empty() {
+                        (String::new(), 0)
+                    } else {
+                        (kept, start_steps_in)
                     }
-                    _ => (start_proof.to_string(), start_steps_in),
-                };
-
-                if kept.trim().is_empty() {
-                    (String::new(), 0)
                 } else {
-                    (kept, steps)
+                    let mut segs: Vec<&str> = Vec::new();
+                    if !kept_history.trim().is_empty() {
+                        segs.push(&kept_history);
+                    }
+                    if !kept_root.trim().is_empty() {
+                        segs.push(&kept_root);
+                    }
+                    segs.extend(sub_segs.iter().copied());
+
+                    let (kept, steps) = match start_by {
+                        "vampire" => {
+                            let trimmed = trim_superposition_block(start_proof, &segs);
+                            let steps = count_superposition_steps(&trimmed);
+                            (trimmed, steps)
+                        }
+                        _ => (start_proof.to_string(), start_steps_in),
+                    };
+
+                    if kept.trim().is_empty() {
+                        (String::new(), 0)
+                    } else {
+                        (kept, steps)
+                    }
                 }
             }
-        }
+        };
+
+        (
+            kept_start,
+            kept_history,
+            kept_root,
+            start_steps,
+            history_steps,
+            root_steps,
+        )
     };
 
-    (
-        kept_start,
-        kept_history,
-        kept_root,
-        start_steps,
-        history_steps,
-        root_steps,
-    )
+    // PASS 1: normal trimming
+    let first = run(FreezeBefore::None);
+    let (ref kept_start_1, ref kept_history_1, ref kept_root_1, _, _, _) = first;
+
+    // Decide freeze based on KEPT segments only
+    let mut freeze2 = FreezeBefore::None;
+
+    if let Some(n) = has_bleed(kept_root_1) {
+        freeze2 = FreezeBefore::Root;
+        eprintln!(
+            "[DEBUG] stop-the-bleed: unresolved a_{} in KEPT ROOT; freezing trimming of start/history/root",
+            n
+        );
+    } else if !kept_history_1.trim().is_empty() {
+        if let Some(n) = has_bleed(kept_history_1) {
+            freeze2 = FreezeBefore::History;
+            eprintln!(
+                "[DEBUG] stop-the-bleed: unresolved a_{} in KEPT HISTORY; freezing trimming of start/history",
+                n
+            );
+        }
+    } else if !kept_start_1.trim().is_empty() {
+        if let Some(n) = has_bleed(kept_start_1) {
+            freeze2 = FreezeBefore::Start;
+            eprintln!(
+                "[DEBUG] stop-the-bleed: unresolved a_{} in KEPT START; freezing trimming of start",
+                n
+            );
+        }
+    }
+
+    // PASS 2: re-run only if needed
+    if freeze2 == FreezeBefore::None {
+        first
+    } else {
+        run(freeze2)
+    }
 }
+
 
 #[cfg(test)]
 mod tests {
