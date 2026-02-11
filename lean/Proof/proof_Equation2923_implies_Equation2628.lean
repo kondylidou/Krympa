@@ -19,103 +19,108 @@ theorem Equation_a1_implies_Equation_conjecture0 (G : Type _) [Magma G]
   have lemma_1 (x y z w : G) :
   ((x ◇ (y ◇ z)) ◇ x) = (((w ◇ y) ◇ w) ◇ ((x ◇ (y ◇ z)) ◇ x)) := by
     duper [op_law]
-  
-  have lemma_2 (x y z w v : G) :
-  ((x ◇ y) ◇ x) = (((z ◇ ((w ◇ (y ◇ v)) ◇ w)) ◇ z) ◇ ((x ◇ y) ◇ x)) := by
-    duper [lemma_1, op_law]
-  
+
+  have lemma_2 (x y z w : G) :
+  (((x ◇ y) ◇ ((z ◇ ((x ◇ y) ◇ w)) ◇ z)) ◇ x) = x := by
+    duper [op_law]
+
   have lemma_3 (x y z w v : G) :
-  ((x ◇ y) ◇ x) = ((((z ◇ (y ◇ w)) ◇ z) ◇ ((v ◇ y) ◇ v)) ◇ ((x ◇ y) ◇ x)) := by
-    duper [lemma_2, lemma_1]
-       
+  (((x ◇ (y ◇ z)) ◇ x) ◇ ((w ◇ y) ◇ w)) =
+      (((v ◇ (x ◇ (y ◇ z))) ◇ v) ◇ (((x ◇ (y ◇ z)) ◇ x) ◇ ((w ◇ y) ◇ w))) := by
+    duper [lemma_1]
+
   have lemma_4 (x y : G) :
-  (((x ◇ (x ◇ x)) ◇ x) ◇ ((y ◇ (x ◇ x)) ◇ y)) = ((y ◇ (x ◇ x)) ◇ y) := by
+  ((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) =
+      (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) := by
     calc
-      (((x ◇ (x ◇ x)) ◇ x) ◇ ((y ◇ (x ◇ x)) ◇ y)) =
-        ((((((x ◇ (x ◇ x)) ◇ x) ◇ (((x ◇ (x ◇ x)) ◇ x) ◇ ((x ◇ x) ◇ x))) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((y ◇ (x ◇ x)) ◇ y)) := by
-        duper [op_law]
-      ((((((x ◇ (x ◇ x)) ◇ x) ◇ (((x ◇ (x ◇ x)) ◇ x) ◇ ((x ◇ x) ◇ x))) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((y ◇ (x ◇ x)) ◇ y)) =
-        ((((((x ◇ (x ◇ x)) ◇ x) ◇ ((((x ◇ x) ◇ x) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ x) ◇ x))) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((y ◇ (x ◇ x)) ◇ y)) := by
-        duper [lemma_1]
-      ((((((x ◇ (x ◇ x)) ◇ x) ◇ ((((x ◇ x) ◇ x) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ x) ◇ x))) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((y ◇ (x ◇ x)) ◇ y)) =
-        ((((((((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x))) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((((x ◇ x) ◇ x) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ x) ◇ x))) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((y ◇ (x ◇ x)) ◇ y)) := by
-        duper [lemma_1]
-      ((((((((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x))) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((((x ◇ x) ◇ x) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ x) ◇ x))) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((y ◇ (x ◇ x)) ◇ y)) =
-        (((((((x ◇ x) ◇ x) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ x) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((y ◇ (x ◇ x)) ◇ y)) := by
-        duper [lemma_1]
-      (((((((x ◇ x) ◇ x) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ x) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((y ◇ (x ◇ x)) ◇ y)) =
-        ((((((x ◇ (x ◇ x)) ◇ x) ◇ ((x ◇ x) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((y ◇ (x ◇ x)) ◇ y)) := by
-        duper [lemma_1]
-      ((((((x ◇ (x ◇ x)) ◇ x) ◇ ((x ◇ x) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((y ◇ (x ◇ x)) ◇ y)) =
-        ((y ◇ (x ◇ x)) ◇ y) := by
+      ((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) =
+        ((((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) := by
         duper [lemma_3]
-       
-  have lemma_5 (x : G) :
-  (((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x))) = (x ◇ (x ◇ x)) := by
-    calc
-      (((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x))) =
-        ((((x ◇ (x ◇ x)) ◇ x) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ (x ◇ (x ◇ x))) := by
-        duper [lemma_4]
-      ((((x ◇ (x ◇ x)) ◇ x) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ (x ◇ (x ◇ x))) =
-        (((((x ◇ (x ◇ x)) ◇ x) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ (x ◇ (x ◇ x))) := by
-        duper [lemma_4]
-      (((((x ◇ (x ◇ x)) ◇ x) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ (x ◇ (x ◇ x))) =
-        (x ◇ (x ◇ x)) := by
+      ((((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) =
+        ((((((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) ◇ ((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)))) ◇ (((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) := by
+        duper [lemma_3]
+      ((((((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) ◇ ((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)))) ◇ (((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) =
+        (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) := by
         duper [op_law]
-       
-  have lemma_6 (x : G) :
-  ((x ◇ (x ◇ x)) ◇ (x ◇ (x ◇ x))) = (x ◇ (x ◇ x)) := by
+
+  have lemma_5 (x y : G) :
+  ((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) =
+      ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) := by
     calc
-      ((x ◇ (x ◇ x)) ◇ (x ◇ (x ◇ x))) =
-        ((((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x))) ◇ (x ◇ (x ◇ x))) := by
-        duper [lemma_5]
-      ((((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x))) ◇ (x ◇ (x ◇ x))) =
-        ((((x ◇ (x ◇ x)) ◇ x) ◇ (((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x)))) ◇ (x ◇ (x ◇ x))) := by
-        duper [lemma_5]
-      ((((x ◇ (x ◇ x)) ◇ x) ◇ (((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x)))) ◇ (x ◇ (x ◇ x))) =
-        ((((((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x))) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ (((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x)))) ◇ (x ◇ (x ◇ x))) := by
-        duper [lemma_1]
-      ((((((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x))) ◇ ((x ◇ (x ◇ x)) ◇ x)) ◇ (((x ◇ (x ◇ x)) ◇ x) ◇ (x ◇ (x ◇ x)))) ◇ (x ◇ (x ◇ x))) =
-        (x ◇ (x ◇ x)) := by
+      ((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) =
+        (((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) := by
+        duper [lemma_4]
+      (((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) =
+        ((((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) := by
+        duper [lemma_4]
+      ((((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) ◇ (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y)))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) =
+        ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) := by
         duper [op_law]
-       
+
+  have lemma_6 (x y z w : G) :
+  ((((x ◇ (y ◇ z)) ◇ x) ◇ ((w ◇ y) ◇ w)) ◇ (x ◇ (y ◇ z))) = (x ◇ (y ◇ z)) := by
+    calc
+      ((((x ◇ (y ◇ z)) ◇ x) ◇ ((w ◇ y) ◇ w)) ◇ (x ◇ (y ◇ z))) =
+        ((((x ◇ (y ◇ z)) ◇ x) ◇ ((w ◇ (((x ◇ (y ◇ z)) ◇ x) ◇ y)) ◇ w)) ◇ (x ◇ (y ◇ z))) := by
+        duper [op_law]
+      ((((x ◇ (y ◇ z)) ◇ x) ◇ ((w ◇ (((x ◇ (y ◇ z)) ◇ x) ◇ y)) ◇ w)) ◇ (x ◇ (y ◇ z))) =
+        (x ◇ (y ◇ z)) := by
+        duper [lemma_2]
+
   have lemma_7 (x y : G) :
-  (x ◇ y) = ((x ◇ y) ◇ (x ◇ y)) := by
+  (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) =
+      ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) := by
     calc
-      (x ◇ y) = ((((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y))) ◇ (x ◇ y)) ◇ (x ◇ y)) := by
-        duper [op_law]
-      ((((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y))) ◇ (x ◇ y)) ◇ (x ◇ y)) =
-        (((((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y))) ◇ ((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y)))) ◇ (x ◇ y)) ◇ (x ◇ y)) := by
+      (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) =
+        (((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) := by
+        duper [lemma_5]
+      (((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) =
+        ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) := by
         duper [lemma_6]
-      (((((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y))) ◇ ((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y)))) ◇ (x ◇ y)) ◇ (x ◇ y)) =
-        ((((((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y))) ◇ ((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y)))) ◇ ((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y)))) ◇ (x ◇ y)) ◇ (x ◇ y)) := by
-        duper [lemma_6]
-      ((((((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y))) ◇ ((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y)))) ◇ ((x ◇ y) ◇ ((x ◇ y) ◇ (x ◇ y)))) ◇ (x ◇ y)) ◇ (x ◇ y)) =
-        ((x ◇ y) ◇ (x ◇ y)) := by
-        duper [op_law]
-       
+
   have lemma_8 (x y : G) :
+  (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) =
+      (((x ◇ y) ◇ x) ◇ (x ◇ y)) := by
+    calc
+      (((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) =
+        ((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) := by
+        duper [lemma_7]
+      ((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) =
+        (((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) := by
+        duper [lemma_7]
+      (((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x))) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) =
+        (((x ◇ y) ◇ x) ◇ (x ◇ y)) := by
+        duper [op_law]
+
+  have lemma_9 (x y : G) :
+  ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) =
+      (((x ◇ y) ◇ x) ◇ (x ◇ y)) := by
+    calc
+      ((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) =
+        ((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) := by
+        duper [lemma_8]
+      ((((((x ◇ y) ◇ x) ◇ (x ◇ y)) ◇ ((x ◇ y) ◇ x)) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) ◇ (((x ◇ y) ◇ x) ◇ (x ◇ y))) =
+        (((x ◇ y) ◇ x) ◇ (x ◇ y)) := by
+        duper [lemma_6]
+
+  have lemma_10 (x y : G) :
   ((x ◇ y) ◇ x) = x := by
     calc
       ((x ◇ y) ◇ x) = (((x ◇ y) ◇ (x ◇ y)) ◇ x) := by
-        duper [lemma_7]
+        duper [Lemma_11_b1]
       (((x ◇ y) ◇ (x ◇ y)) ◇ x) = ((((x ◇ y) ◇ (x ◇ y)) ◇ (x ◇ y)) ◇ x) := by
-        duper [lemma_7]
+        duper [Lemma_11_b1]
       ((((x ◇ y) ◇ (x ◇ y)) ◇ (x ◇ y)) ◇ x) = x := by
         duper [op_law]
-  
+
   show _ by
     intros x y z w
     calc
-      x = ((x ◇ ((y ◇ ((z ◇ w) ◇ z)) ◇ x)) ◇ x) := by
-        duper [lemma_8]
-      ((x ◇ ((y ◇ ((z ◇ w) ◇ z)) ◇ x)) ◇ x) =
-        ((((x ◇ ((y ◇ ((z ◇ w) ◇ z)) ◇ x)) ◇ x) ◇ (y ◇ ((z ◇ w) ◇ z))) ◇ ((x ◇ ((y ◇ ((z ◇ w) ◇ z)) ◇ x)) ◇ x)) := by
-        duper [lemma_8]
-      ((((x ◇ ((y ◇ ((z ◇ w) ◇ z)) ◇ x)) ◇ x) ◇ (y ◇ ((z ◇ w) ◇ z))) ◇ ((x ◇ ((y ◇ ((z ◇ w) ◇ z)) ◇ x)) ◇ x)) =
-        ((y ◇ ((z ◇ w) ◇ z)) ◇ ((x ◇ ((y ◇ ((z ◇ w) ◇ z)) ◇ x)) ◇ x)) := by
+      x =
+        ((((y ◇ ((z ◇ w) ◇ ((z ◇ x) ◇ z))) ◇ (x ◇ y)) ◇ (y ◇ ((z ◇ w) ◇ ((z ◇ x) ◇ z)))) ◇ x) := by
         duper [op_law]
-      ((y ◇ ((z ◇ w) ◇ z)) ◇ ((x ◇ ((y ◇ ((z ◇ w) ◇ z)) ◇ x)) ◇ x)) =
-        ((y ◇ ((z ◇ w) ◇ z)) ◇ x) := by
-        duper [lemma_8]
-  
+      ((((y ◇ ((z ◇ w) ◇ ((z ◇ x) ◇ z))) ◇ (x ◇ y)) ◇ (y ◇ ((z ◇ w) ◇ ((z ◇ x) ◇ z)))) ◇ x) =
+        ((y ◇ ((z ◇ w) ◇ ((z ◇ x) ◇ z))) ◇ x) := by
+        duper [lemma_10]
+      ((y ◇ ((z ◇ w) ◇ ((z ◇ x) ◇ z))) ◇ x) = ((y ◇ ((z ◇ w) ◇ z)) ◇ x) := by
+        duper [lemma_10]

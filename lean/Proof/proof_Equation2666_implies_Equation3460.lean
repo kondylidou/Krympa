@@ -28,7 +28,7 @@ theorem Equation_a1_implies_Equation_conjecture0 (G : Type _) [Magma G]
   (((x ◇ x) ◇ y) ◇ y) = x := by
     duper [op_law, lemma_2]
 
-  have lemma_5 (x y z : G) :
+  have lemma_4 (x y z : G) :
   (x ◇ x) = (x ◇ ((x ◇ y) ◇ z)) := by
     calc
       (x ◇ x) =
@@ -59,4 +59,4 @@ theorem Equation_a1_implies_Equation_conjecture0 (G : Type _) [Magma G]
         duper [lemma_3]
 
   show _ by
-    exact lemma_5
+    exact lemma_4
