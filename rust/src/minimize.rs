@@ -1374,11 +1374,10 @@ fn has_bleed(text: &str) -> Option<u32> {
     }
     None
 }
-
 pub fn trim_proof_parts(
-    start: Option<(&str, &str, usize)>,      // (start_text, start_proved_by, start_steps)
+    start: Option<(&str, &str, usize)>, // (start_text, start_proved_by, start_steps)
     history: Option<(&str, &str, &str, usize)>, // (history_name, history_text, history_proved_by, history_steps)
-    root: (&str, &str, &str, usize),         // (root_name, root_text, root_proved_by, root_steps)
+    root: (&str, &str, &str, usize), // (root_name, root_text, root_proved_by, root_steps)
     sub: Option<&str>,
 ) -> (
     String, // kept_start
@@ -1437,40 +1436,36 @@ pub fn trim_proof_parts(
     // Run trimming once given a freeze level.
     let run = |freeze: FreezeBefore| -> (String, String, String, usize, usize, usize) {
         // helper: keep/trim a named segment
-        let keep_named = |name: &str,
-                          proof: &str,
-                          by: &str,
-                          steps_in: usize,
-                          segs: &[&str]|
-         -> (String, usize) {
-            // TERMINAL RULE: if nothing comes after this segment, keep it.
-            // (root becomes terminal when sub is absent)
-            if segs.is_empty() {
-                let kept = proof.to_string();
-                let steps = if by == "vampire" {
-                    count_superposition_steps(&kept)
-                } else {
-                    steps_in
-                };
-                return (kept, steps);
-            }
+        let keep_named =
+            |name: &str, proof: &str, by: &str, steps_in: usize, segs: &[&str]| -> (String, usize) {
+                // TERMINAL RULE: if nothing comes after this segment, keep it.
+                // (root becomes terminal when sub is absent)
+                if segs.is_empty() {
+                    let kept = proof.to_string();
+                    let steps = if by == "vampire" {
+                        count_superposition_steps(&kept)
+                    } else {
+                        steps_in
+                    };
+                    return (kept, steps);
+                }
 
-            match by {
-                "vampire" => {
-                    let trimmed = trim_superposition_block(proof, segs);
-                    let steps = count_superposition_steps(&trimmed);
-                    (trimmed, steps)
-                }
-                "twee" => {
-                    // if this segment isn't referenced later, drop it
-                    if !proof_uses_lemma(name, segs) {
-                        return (String::new(), 0);
+                match by {
+                    "vampire" => {
+                        let trimmed = trim_superposition_block(proof, segs);
+                        let steps = count_superposition_steps(&trimmed);
+                        (trimmed, steps)
                     }
-                    (proof.to_string(), steps_in)
+                    "twee" => {
+                        // if this segment isn't referenced later, drop it
+                        if !proof_uses_lemma(name, segs) {
+                            return (String::new(), 0);
+                        }
+                        (proof.to_string(), steps_in)
+                    }
+                    _ => (proof.to_string(), steps_in),
                 }
-                _ => (proof.to_string(), steps_in),
-            }
-        };
+            };
 
         // 1) root depends on sub (if any)
         let (kept_root, root_steps) = if freeze >= FreezeBefore::Root {
@@ -1560,16 +1555,35 @@ pub fn trim_proof_parts(
     let first = run(FreezeBefore::None);
     let (ref kept_start_1, ref kept_history_1, ref kept_root_1, _, _, _) = first;
 
-    // Decide freeze based on KEPT segments only
+    // Decide freeze based on KEPT segments only (+ SUB, because it's always kept)
     let mut freeze2 = FreezeBefore::None;
 
-    if let Some(n) = has_bleed(kept_root_1) {
-        freeze2 = FreezeBefore::Root;
-        eprintln!(
-            "[DEBUG] stop-the-bleed: unresolved a_{} in KEPT ROOT; freezing trimming of start/history/root",
-            n
-        );
-    } else if !kept_history_1.trim().is_empty() {
+    // if SUB has unresolved a_k:, freeze everything
+    if freeze2 == FreezeBefore::None {
+        if let Some(sub_txt) = sub {
+            if !sub_txt.trim().is_empty() {
+                if let Some(n) = has_bleed(sub_txt) {
+                    freeze2 = FreezeBefore::Root;
+                    eprintln!(
+                        "[DEBUG] stop-the-bleed: unresolved a_{} in SUB; freezing trimming of start/history/root",
+                        n
+                    );
+                }
+            }
+        }
+    }
+
+    if freeze2 == FreezeBefore::None {
+        if let Some(n) = has_bleed(kept_root_1) {
+            freeze2 = FreezeBefore::Root;
+            eprintln!(
+                "[DEBUG] stop-the-bleed: unresolved a_{} in KEPT ROOT; freezing trimming of start/history/root",
+                n
+            );
+        }
+    }
+
+    if freeze2 == FreezeBefore::None && !kept_history_1.trim().is_empty() {
         if let Some(n) = has_bleed(kept_history_1) {
             freeze2 = FreezeBefore::History;
             eprintln!(
@@ -1577,7 +1591,9 @@ pub fn trim_proof_parts(
                 n
             );
         }
-    } else if !kept_start_1.trim().is_empty() {
+    }
+
+    if freeze2 == FreezeBefore::None && !kept_start_1.trim().is_empty() {
         if let Some(n) = has_bleed(kept_start_1) {
             freeze2 = FreezeBefore::Start;
             eprintln!(
@@ -2748,4 +2764,127 @@ RESULT: Theorem (the conjecture is true).
         assert_eq!(root_steps, 44);
         assert_eq!(proof_length_twee(seg3), 1);
     }
+
+    #[test]
+    fn stop_the_bleed_sub_freezes_all_trimming() {
+        // This test checks the "SUB bleed => freeze everything" rule.
+        //
+        // Without the SUB check, `trim_superposition_block` would likely drop the entire root block
+        // because the SUB does not reference any lemma_* by name (only a_6:), so "needed" becomes empty.
+        //
+        // With the SUB check, we should freeze at Root, and keep the root block untrimmed.
+
+        let start = r#"
+    % === Superposition Steps ===
+    % lemma_0001: foo | deps: a_1: blah
+    "#;
+
+        let root = r#"
+    % === Superposition Steps ===
+    % lemma_0002: bar | deps: a_1: blah
+    % lemma_0006: baz | deps: a_6: ! [X0,X1,X2] : op(X0,op(op(X0,X1),X2)) = op(X0,op(op(X0,X0),X0)), lemma_0002
+    "#;
+
+        // SUB contains unresolved a_6: but doesn't cite lemma_0006 by name.
+        let sub = r#"
+    % === Conjecture Proof ===
+    ... uses a_6: ! [X0,X1,X2] : op(X0,op(op(X0,X1),X2)) = op(X0,op(op(X0,X0),X0)) ...
+    "#;
+
+        let (kept_start, kept_history, kept_root, start_steps, hist_steps, root_steps) =
+            trim_proof_parts(
+                Some((start, "vampire", 1)),
+                None,
+                ("lemma_9999", root, "vampire", 2),
+                Some(sub),
+            );
+
+        // History is absent.
+        assert!(kept_history.is_empty());
+        assert_eq!(hist_steps, 0);
+
+        // Because SUB has a_6:, we should freeze trimming and keep the root block intact.
+        assert!(
+            kept_root.contains("% lemma_0006:"),
+            "expected root to be kept untrimmed due to a_6 in sub, but lemma_0006 was removed.\nkept_root:\n{}",
+            kept_root
+        );
+
+        // In freeze mode, our code returns the input root_steps_in (not recomputed).
+        assert_eq!(root_steps, 2);
+
+        // Start isn't necessarily trimmed/kept in any particular way for this test,
+        // but it should still be present (freeze at Root implies start/history/root are not trimmed).
+        assert!(
+            !kept_start.trim().is_empty(),
+            "expected start to be kept (freeze), but it was empty"
+        );
+        assert_eq!(start_steps, 1);
+    }
+
+    #[test]
+    fn stop_the_bleed_root_has_bleed_but_root_not_kept_does_not_freeze() {
+        // Root contains bleed `a_6:` but root is NOT needed (not referenced by sub),
+        // so kept_root should be empty after trimming.
+        // Because root is not kept, we must NOT freeze; therefore START trimming should still happen.
+        //
+        // We make START a vampire superposition block containing lemma_7777, which is not referenced later,
+        // so it should trim to empty iff we did not freeze.
+
+        let start = r#"
+    % === Superposition Steps ===
+    % lemma_7777: s | deps: a_1: ok
+    "#;
+
+        let history = r#"
+    % === Superposition Steps ===
+    % history_lemma_0003: h | deps: a_1: ok
+    "#;
+
+        // Root has bleed `a_6:` but will not be referenced by sub, so should trim away.
+        let root = r#"
+    % === Superposition Steps ===
+    % lemma_0006: baz | deps: a_6: ! [X0] : p(X0), history_lemma_0003
+    "#;
+
+        // SUB references history_lemma_0003, NOT lemma_0006, so root isn't needed.
+        let sub = r#"
+    % === Conjecture Proof ===
+    ... = { by lemma 1 (history_lemma_0003) } ...
+    "#;
+
+        let (kept_start, kept_history, kept_root, start_steps, hist_steps, root_steps) =
+            trim_proof_parts(
+                Some((start, "vampire", 999)), // steps_in doesn't matter; vampire steps are recomputed when trimmed
+                Some(("history_lemma_0003", history, "vampire", 1)),
+                ("lemma_9999", root, "vampire", 123),
+                Some(sub),
+            );
+
+        // Root should be trimmed to empty because sub doesn't reference lemma_0006
+        assert!(
+            kept_root.trim().is_empty(),
+            "expected root to be trimmed to empty (not needed), but got:\n{}",
+            kept_root
+        );
+        assert_eq!(root_steps, 0, "trimmed vampire root should count as 0 steps");
+
+        // History is needed by sub and should remain
+        assert!(
+            kept_history.contains("history_lemma_0003"),
+            "expected history to be kept, but got:\n{}",
+            kept_history
+        );
+        assert!(hist_steps > 0);
+
+        // Critical: since root was not kept, we should NOT freeze;
+        // therefore START should be trimmed normally and dropped (empty).
+        assert!(
+            kept_start.trim().is_empty(),
+            "expected start to be trimmed away (not referenced) and not kept due to freeze, but got:\n{}",
+            kept_start
+        );
+        assert_eq!(start_steps, 0, "trimmed vampire start should count as 0 steps");
+    }
+
 }
