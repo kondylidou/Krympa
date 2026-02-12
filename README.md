@@ -118,13 +118,13 @@ Using a different binary:
 
 ### Utilities
 
-## Summarize benchmark logs
+#### Summarize benchmark logs
 
 ```bash
 python3 ../python/summarize.py ../benchmarks/output_logs
 ```
 
-## Convert proof to Lean
+#### Convert proof to Lean
 
 ```bash
 python3 ../python/tolean.py /path/to/output_proof_file
