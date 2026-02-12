@@ -4,7 +4,7 @@ BENCHMARK_DIR="../benchmarks"
 PYTHON_SCRIPT="../python/generate_input.py"
 RUST_DIR="../rust"
 BENCHMARK_BINARY="./benchmarking_binary"
-KRYMPA_BINARY="./krympa_all"
+KRYMPA_BINARY="./krympa"
 
 # args
 TARGET="$1"
