@@ -1,1 +1,1 @@
-import Proof.Candidate_4
+import Proof.proof

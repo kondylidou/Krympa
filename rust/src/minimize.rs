@@ -1374,6 +1374,9 @@ fn has_bleed(text: &str) -> Option<u32> {
     }
     None
 }
+
+/// Trims unecessary lemmas in proofs based on segments
+/// TODO if start proof is not a superposition block but a Twee proof it doesn't trim it
 pub fn trim_proof_parts(
     start: Option<(&str, &str, usize)>, // (start_text, start_proved_by, start_steps)
     history: Option<(&str, &str, &str, usize)>, // (history_name, history_text, history_proved_by, history_steps)

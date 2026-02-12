@@ -2,6 +2,24 @@ import re
 import sys
 import os
 
+LEMMA_VARIANT_RE = re.compile(
+    r'^(?:lemma|single_lemma|history_lemma|abstract_lemma|conjecture)_(\d+)$'
+)
+
+def canon_lemma_variant(name: str) -> str:
+    """
+    Collapse lemma variants to a single namespace by number:
+      single_lemma_0001 -> lemma_0001
+      history_lemma_0001 -> lemma_0001
+      abstract_lemma_0001 -> lemma_0001
+      conjecture_0001 -> lemma_0001   (IMPORTANT: conjecture0 is special and NOT touched)
+    """
+    name = name.strip()
+    m = LEMMA_VARIANT_RE.match(name)
+    if m:
+        return f"lemma_{m.group(1)}"
+    return name
+
 VAR_NAMES = ["x","y","z","w","v","u","t","s","r","q","p","o","n","m","l","k","j","i","h","g","f","e","d","c","b","a"]
 
 def vars_in_order(expr: str):
@@ -104,7 +122,10 @@ def parse_dependencies_from_proof(proof_lines, lemma_num_map=None):
     for line in proof_lines:
         matches = re.findall(r'\((lemma_\d+|history_lemma_\d+|single_lemma_\d+|a1|a_1)\)', line)
         for m in matches:
-            deps.add("op_law" if m in ("a1","a_1") else m)
+            if m in ("a1", "a_1"):
+                deps.add("op_law")
+            else:
+                deps.add(canon_lemma_variant(m))
 
         # "by lemma 3" should refer to the lemma 3 of THIS proof block
         matches2 = re.findall(r'by lemma (\d+)', line, flags=re.IGNORECASE)
@@ -112,6 +133,8 @@ def parse_dependencies_from_proof(proof_lines, lemma_num_map=None):
             deps.add(lemma_num_map.get(num, f"Lemma_{num}"))
 
     return sorted(deps)
+
+REAL_CONJ = "conjecture0"
 
 def normalize_variables(expr):
     canon_vars = vars_in_order(expr)
@@ -173,13 +196,34 @@ def build_variable_renaming_from_expr(expr):
     canon_vars = vars_in_order(expr)
     return {v: fresh_name(i) for i, v in enumerate(canon_vars)}
 
-def apply_renaming(expr, renaming):
+def apply_renaming(expr, renaming, allowed_vars=None):
+    """
+    Rename variables using `renaming`.
+    If a variable is NOT in `renaming` (e.g. 'X', 'Y', 'V' introduced by prover),
+    then map it to the first variable in `allowed_vars` (binder vars) to avoid
+    generating free variables in Lean.
+    """
+    fallback = None
+    if allowed_vars:
+        fallback = allowed_vars[0]  # "first var in vars set"
+
     def repl(match):
-        v = match.group(0)
-        if v.lower() == "op":
-            return v
-        # if mapped, use mapping; otherwise force lowercase (X -> x)
-        return renaming.get(v.lower(), v.lower())
+        tok = match.group(0)
+        low = tok.lower()
+        if low == "op":
+            return tok
+
+        # normal case: variable was in lemma statement, so it's in renaming
+        if low in renaming:
+            return renaming[low]
+
+        # prover-introduced variable: force it to a binder var (no free vars)
+        if fallback is not None:
+            return fallback
+
+        # last resort: lowercase it (keeps behavior if no binders exist)
+        return low
+
     return re.sub(r"[A-Za-z]\w*", repl, expr)
 
 def format_calc_step(lhs, rhs, dep, indent="        ", max_len=80):
@@ -242,7 +286,7 @@ def format_side(expr, indent="      ", max_len=80):
     # Join with newline + indent
     return ("\n" + indent).join(lines)
 
-def build_calc_block(proof_lines, renaming, lemma_num_map):
+def build_calc_block(proof_lines, renaming, lemma_num_map, allowed_vars):
     """
     Builds Lean calc block from TPTP proof lines.
     Each step may have:
@@ -287,8 +331,17 @@ def build_calc_block(proof_lines, renaming, lemma_num_map):
                     # fallback: just take first word and translate if possible
                     dep = name_mapping.get(line.split()[0], line.split()[0])
 
-            lhs_raw = apply_renaming(proof_lines[i - 1], renaming)
-            rhs_raw = apply_renaming(proof_lines[i + 1], renaming)
+            dep_raw = dep
+            dep = canon_lemma_variant(dep_raw)
+
+            # prefer proved lemma name if it exists
+            dep = name_mapping.get(dep, name_mapping.get(dep_raw, dep))
+
+            # only if not mapped to a lemma, fall back to axiom mapping
+            dep = axiom_name_map.get(dep, dep)
+
+            lhs_raw = apply_renaming(proof_lines[i - 1], renaming, allowed_vars)
+            rhs_raw = apply_renaming(proof_lines[i + 1], renaming, allowed_vars)
 
             lhs, _ = parse_term(lhs_raw)
             rhs, _ = parse_term(rhs_raw)
@@ -297,47 +350,86 @@ def build_calc_block(proof_lines, renaming, lemma_num_map):
             # lines.append(f"{lhs} = {rhs} := by\n        duper [{dep}]")
             #lines.append(f"_ = {rhs_norm} := by\n        duper [{dep}]")
 
-    return "\n      ".join(lines)
-    
+    return lines
 
 # Lean lemma with dependencies (works for lemmas and conjecture)
 def lean_lemma(name, expr, deps_from_proof=[], proof_lines=None, lemma_num_map=None):
     expr_core = strip_forall(expr)
+
+    # variables that are allowed to appear in the Lean statement for this lemma
     renaming = build_variable_renaming_from_expr(expr_core)
     expr_norm = apply_renaming(expr_core, renaming)
+
     lhs, rhs = parse_equation_tptp(expr_norm)
+
     vars = [renaming[v] for v in vars_in_order(expr_core)]
     var_list = " ".join(vars)
 
-    #body = lhs if rhs is None else f"{lhs} = {rhs}"
     body = format_lemma_body(lhs, rhs, indent="      ", max_len=80)
 
+    # LEMMA WITH PROOF LINES: build calc, but collapse single-step calc to "by duper [dep]"
     if name.startswith("lemma_") and proof_lines:
-        calc_block = build_calc_block(proof_lines, renaming, lemma_num_map or {})
-        return f"""     
+        # IMPORTANT: keep vars (allowed vars) as the 4th argument
+        calc_lines = build_calc_block(
+            proof_lines,
+            renaming,
+            lemma_num_map or {},
+            vars
+        )
+
+        # If calc has exactly one step, don't emit a calc-block at all.
+        if len(calc_lines) == 1:
+            m = re.search(r"duper\s*\[\s*([^\]]+)\s*\]", calc_lines[0])
+            dep = m.group(1).strip() if m else "*"
+            return f"""
+  have {name} ({var_list} : G) :
+  {body} := by
+    duper [{dep}]
+"""
+
+        calc_block = "\n      ".join(calc_lines)
+        return f"""
   have {name} ({var_list} : G) :
   {body} := by
     calc
       {calc_block}
-  """
+"""
 
-    if name.startswith("conjecture") and proof_lines:
-        calc_block = build_calc_block(proof_lines, renaming, lemma_num_map or {})
+    # CONJECTURE WITH PROOF LINES
+    if name == REAL_CONJ and proof_lines:
+        calc_lines = build_calc_block(
+            proof_lines,
+            renaming,
+            lemma_num_map or {},
+            vars
+        )
+
         intros = " ".join(vars)
+
+        if len(calc_lines) == 1:
+            m = re.search(r"duper\s*\[\s*([^\]]+)\s*\]", calc_lines[0])
+            dep = m.group(1).strip() if m else "*"
+            return f"""
+  show _ by
+    intros {intros}
+    duper [{dep}]
+"""
+
+        calc_block = "\n      ".join(calc_lines)
         return f"""
   show _ by
     intros {intros}
     calc
       {calc_block}
-  """
+"""
 
-    else:
-        deps_str = f"[{', '.join(deps_from_proof)}]" if deps_from_proof else "[*]"
-        return f"""
+    # FALLBACK: no proof lines -> regular duper with deps
+    deps_str = f"[{', '.join(deps_from_proof)}]" if deps_from_proof else "[*]"
+    return f"""
   have {name} ({var_list} : G) :
   {body} := by
     duper {deps_str}
-  """
+"""
 
 # Main program
 if len(sys.argv) != 2:
@@ -373,8 +465,9 @@ with open(input_file) as f:
         # Inline axioms like: Axiom 2 (a1): op(X, ...)
         m = re.match(r"Axiom\s+\d+\s+\(([^)]+)\):\s*(.*)", stripped)
         if m:
-            ax_name = m.group(1)
+            ax_name_raw = m.group(1).strip()
             ax_expr = m.group(2).rstrip(".")
+            ax_name = ax_name_raw if ax_name_raw == "a1" else canon_lemma_variant(ax_name_raw)
             inline_axioms[ax_name] = ax_expr
             continue
 
@@ -386,13 +479,15 @@ with open(input_file) as f:
             continue
 
         # Lemmas
-        if stripped.startswith("% lemma_") or stripped.startswith("% history_lemma_") or stripped.startswith("% single_lemma_"):
+        if stripped.startswith("% lemma_") or stripped.startswith("% history_lemma_") or stripped.startswith("% single_lemma_") or stripped.startswith("% abstract_lemma_"):
             parts = stripped.split("|")
             body = parts[0]
             deps_part = parts[1] if len(parts) > 1 else ""
             m = re.match(r"%\s*(\S+):\s*(.*)", body)
             if m:
-                name, expr = m.group(1), m.group(2)
+                name_raw, expr = m.group(1), m.group(2)
+                # only conjecture0 is special; everything else canonicalize
+                name = name_raw if name_raw == REAL_CONJ else canon_lemma_variant(name_raw)
                 deps = []
                 if "deps:" in deps_part:
                     deps_str = deps_part.split("deps:", 1)[1]
@@ -407,10 +502,14 @@ with open(input_file) as f:
                     # normalize + de-dup (preserve order)
                     seen = set()
                     for d in dep_names:
-                        d = "op_law" if d in ("a1", "a_1") else d
+                        if d in ("a1", "a_1"):
+                            d = "op_law"
+                        else:
+                            d = canon_lemma_variant(d)
                         if d not in seen:
                             deps.append(d)
                             seen.add(d)
+
                 lemmas[name] = (expr, deps)
             continue
 
@@ -432,9 +531,12 @@ with open(input_file) as f:
                 given_name = m.group(2)
 
                 if given_name:
-                    current_lemmaname = given_name
+                    # IMPORTANT: only "conjecture0" is the real conjecture
+                    if given_name.startswith("conjecture") and given_name != "conjecture0":
+                        current_lemmaname = canon_lemma_variant(given_name)   # conjecture_0001 -> lemma_0001
+                    else:
+                        current_lemmaname = canon_lemma_variant(given_name)   # single/history/abstract -> lemma_XXXX
                 else:
-                    # make it unique per proof block
                     current_lemmaname = f"Lemma_{number}_b{proof_block_id}"
 
                 # record the mapping so "by lemma 3" resolves correctly in this block
@@ -451,6 +553,10 @@ with open(input_file) as f:
 
                 # Initialize lemma if not 'a1' (hypothesis)
                 if ("a1" not in current_lemmaname.lower()) and ("a_1" not in current_lemmaname.lower()):
+                    canon_goal = current_lemmaname if current_lemmaname == REAL_CONJ else canon_lemma_variant(current_lemmaname)
+                    current_lemmaname = canon_goal
+                    lemma_num_map[number] = current_lemmaname
+
                     lemmas[current_lemmaname] = (lemmaexpr, [])
                 continue
 
@@ -459,10 +565,12 @@ with open(input_file) as f:
                 if stripped and not stripped.startswith("Goal") and not stripped.startswith("Lemma") and not stripped.startswith("RESULT"):
                     current_proof_lines.append(stripped)
                     # detect usage of inline axioms or lemmas
-                    matches = re.findall(r'\((lemma_\d+|history_lemma_\d+|single_lemma_\d+|a1|a_1)\)', stripped)
+                    matches = re.findall(r'\((lemma_\d+|history_lemma_\d+|single_lemma_\d+|abstract_lemma_\d+|a1|a_1)\)', stripped)
                     for ax in matches:
-                        used_inline_axioms.add(ax)
-
+                        if ax in ("a1", "a_1"):
+                            used_inline_axioms.add(ax)
+                        else:
+                            used_inline_axioms.add(canon_lemma_variant(ax))
 
             # Finalize current lemma if next Goal/Lemma or RESULT
             if re.match(r'(?:Goal|Lemma)\s+\d+', stripped) or stripped.startswith("RESULT"):
@@ -509,13 +617,15 @@ if axiom is None:
 axiom_counter = 1
 axiom_name_map = {}  # original inline name -> axiomN
 for ax in sorted(used_inline_axioms):
-    # Skip 'a1' if you treat it specially
     if ax == "a1":
         continue
-    # If this axiom is already a lemma, skip it
-    if ax in lemmas:
+
+    ax_canon = canon_lemma_variant(ax)
+    if ax_canon in lemmas:
+        # proved as a lemma => do NOT emit as an axiom
         continue
-    axiom_name_map[ax] = f"axiom{axiom_counter}"
+
+    axiom_name_map[ax_canon] = f"axiom{axiom_counter}"
     axiom_counter += 1
 
 # Normalize lemma names
@@ -524,7 +634,7 @@ name_mapping = {}
 counter = 1
 
 for old_name in lemmas.keys():
-    if old_name.startswith("conjecture"):
+    if old_name == REAL_CONJ:
         new_name = old_name
     else:
         new_name = f"lemma_{counter}"
@@ -533,7 +643,7 @@ for old_name in lemmas.keys():
     normalized_lemmas[new_name] = lemmas[old_name]
 
 lemmas = normalized_lemmas
-has_conj_lemma = any(old.startswith("conjecture") for old in name_mapping.keys())
+has_conj_lemma = any(old == REAL_CONJ for old in name_mapping.keys())
 last_lemma_name = list(lemmas.keys())[-1] if lemmas else None
 
 # Normalize dependencies in lemmas
@@ -623,6 +733,8 @@ if (not has_conj_lemma) and last_lemma_name:
 lean_output = f"""import Mathlib.Tactic.NthRewrite
 import Duper
 open Lean Grind
+
+set_option linter.style.longLine false
 
 class Magma (α : Type _) where
   op : α → α → α
