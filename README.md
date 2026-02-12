@@ -81,7 +81,7 @@ This runs benchmarking for: `../benchmarks/Proofs7.lean`
 First generate the corresponding inputs:
 
 ```bash
-python ../python/generate_input.py ../benchmarks/Proofs11.lean
+python3 ../python/generate_input.py ../benchmarks/Proofs11.lean
 ```
 
 Then run:
@@ -121,19 +121,19 @@ Using a different binary:
 ## Summarize benchmark logs
 
 ```bash
-python ../python/summarize.py ../benchmarks/output_logs
+python3 ../python/summarize.py ../benchmarks/output_logs
 ```
 
 ## Convert proof to Lean
 
 ```bash
-python ../python/tolean.py /path/to/output_proof_file
+python3 ../python/tolean.py /path/to/output_proof_file
 ```
 
 Example:
 
 ```bash
-python ../python/tolean.py ../benchmarks/output/proof_Equation650_implies_Equation448.out
+python3 ../python/tolean.py ../benchmarks/output/proof_Equation650_implies_Equation448.out
 ```
 
 ---
