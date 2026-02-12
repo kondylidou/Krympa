@@ -94,24 +94,11 @@ Then run:
 
 ## Running With a Specific Krympa Binary
 
-`run_one` accepts an optional binary argument.
-
-Default:
-
-```bash
-./run_one <input-file>
-```
-
-Example:
-
-```bash
-./run_one ../benchmarks/input11/Equation650_implies_Equation448.p
-```
-
-Using a different binary:
+`run` and `run_one` accept an optional binary argument.
 
 ```bash
 ./run_one <input-file> ./krympa_bs
+./run <timeout> ./krympa_bs
 ```
 
 ---
