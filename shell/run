@@ -4,11 +4,14 @@ BENCHMARK_DIR="../benchmarks"
 PYTHON_SCRIPT="../python/generate_input.py"
 RUST_DIR="../rust"
 BENCHMARK_BINARY="./benchmarking_binary"
-KRYMPA_BINARY="./krympa"
+
+# default krympa binary (can be overridden by arg 3)
+KRYMPA_BINARY_DEFAULT="./krympa"
 
 # args
 TARGET="$1"
 TIMEOUT_SECS=${2:-2700}
+KRYMPA_BINARY="${3:-$KRYMPA_BINARY_DEFAULT}"
 
 mkdir -p "$BENCHMARK_DIR/output_logs"
 ORIG_DIR=$(pwd)

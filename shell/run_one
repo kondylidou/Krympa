@@ -1,26 +1,25 @@
 #!/usr/bin/env bash
-
 set -e
 
-if [ $# -ne 1 ]; then
-  echo "Usage: $0 <input-file>"
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+  echo "Usage: $0 <input-file> [krympa-binary]"
   exit 1
 fi
 
 INPUT="$1"
+KRYMPA_BINARY="${2:-./krympa}"
 
-# Move into the Rust project directory
 cd ../rust || {
   echo "Error: could not cd into ../rust"
   exit 1
 }
 
-if [ ! -f Cargo.toml ]; then
-  echo "Error: ../rust is not a Cargo project (Cargo.toml not found)."
+if [ ! -x "$KRYMPA_BINARY" ]; then
+  echo "Error: binary '$KRYMPA_BINARY' not found or not executable."
   exit 1
 fi
 
-cargo run --bin krympa run_vampire "$INPUT"
-cargo run --bin krympa collect "$INPUT"
-cargo run --bin krympa shorten "$INPUT"
-cargo run --bin krympa minimize "$INPUT"
+"$KRYMPA_BINARY" run_vampire "$INPUT"
+"$KRYMPA_BINARY" collect "$INPUT"
+"$KRYMPA_BINARY" shorten "$INPUT"
+"$KRYMPA_BINARY" minimize "$INPUT"

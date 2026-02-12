@@ -9,9 +9,33 @@ evaluation.
 
 ## Requirements
 
-- Rust (stable toolchain) with cargo
-- OCaml with dune
-- A Unix-like environment (Linux or macOS recommended)
+* Rust (stable toolchain) with cargo
+* OCaml with dune
+* A Unix-like environment (Linux or macOS recommended)
+
+---
+
+## Available Binaries
+
+The repository provides multiple Krympa binaries for different proof settings:
+
+* `./krympa` — base tool
+* `./krympa_bs` — big-step + small-step problems
+* `./krympa_sa` — small-step + abstracted problems
+* `./krympa_ba` — big-step + abstracted problems
+
+All binaries expose the same CLI interface:
+
+```
+krympa <command> <input-file>
+```
+
+Commands executed in the pipeline:
+
+* `run_vampire`
+* `collect`
+* `shorten`
+* `minimize`
 
 ---
 
@@ -23,66 +47,96 @@ All execution is performed from the `shell` directory:
 cd shell
 ```
 
-### Run the Full Benchmark Suite
+---
 
-To run the complete benchmarking pipeline:
+## Run the Full Benchmark Suite
 
 ```bash
 ./run <timeout>
 ```
 
-Where <timeout> specifies the per-problem timeout (in seconds) used during the
-benchmarking process. This will run the tool on the full benchmark set and
-collect proof-minimization results.
+Example:
+
+```bash
+./run 2700
+```
+
+This runs the benchmarking pipeline on the full benchmark set.
 
 ---
 
-### Run a Single Benchmark File
-
-Run a single file by number (e.g., Proofs7.lean):
+## Run a Single Benchmark Folder
 
 ```bash
 ./run 7 <timeout>
 ```
 
----
-
-### Run on a Single Problem
-
-To run the tool on a single input file:
+Example:
 
 ```bash
-./run_one <path-to-problem-file>
+./run 7 1200
 ```
 
-Before running this command, the input files must be generated. From the
-repository root, navigate to the `python` directory and run:
+This runs benchmarking for:
+
+```
+benchmarks/Proofs7.lean
+```
+
+---
+
+## Run on a Single Problem
+
+First generate the corresponding inputs:
 
 ```bash
 cd python
-python generate_input.py <path-to-benchmark-file>
+python generate_input.py ../benchmarks/Proofs11.lean
+```
+
+Then run:
+
+```bash
+cd ../shell
+./run_one ../benchmarks/input11/Equation650_implies_Equation448.p
+```
+
+---
+
+## Running With a Specific Krympa Binary
+
+`run_one` accepts an optional binary argument.
+
+Default:
+
+```bash
+./run_one <input-file>
 ```
 
 Example:
 
 ```bash
-cd python
-python generate_input.py ../benchmarks/Proofs1.lean
-
-cd ../shell
 ./run_one ../benchmarks/input11/Equation650_implies_Equation448.p
 ```
 
-This mode is useful for debugging or inspecting individual minimized proofs.
+Using a different binary:
+
+```bash
+./run_one <input-file> ./krympa_bs
+```
+
+Example:
+
+```bash
+./run_one ../benchmarks/input11/Equation650_implies_Equation448.p ./krympa_sa
+```
 
 ---
 
 ## Summary Script
 
 A Python script `summarize.py` is included in the `python` directory to quickly
-summarize the benchmark logs.
-
-### Usage
+summarize benchmark logs.
 
 ```bash
 python summarize.py /path/to/logs
@@ -92,27 +146,27 @@ python summarize.py /path/to/logs
 
 ## Lean Translation Script
 
-A Python script `tolean.py` is included in the `python` directory to
-automatically generate a **Lean translation** of the minimized proof.
-
-### Usage
+The script `tolean.py` converts minimized proofs into Lean files.
 
 ```bash
-python tolean.py /path/to/input_proof_file
+cd python
+python tolean.py /path/to/output_proof_file
+```
+
+Example:
+
+```bash
+python tolean.py ../benchmarks/output/proof_Equation650_implies_Equation448.out
 ```
 
 ---
 
 ## Notes
 
-- The `run` script performs full benchmarking and may take a long time to
-  complete depending on the chosen timeout and benchmark size.
-- Benchmarking is currently executed sequentially. Parallel execution has not
-  yet been implemented and is a planned optimization.
-- The tool assumes the binaries are named and located exactly as described
-  above.
-- Output files (logs, minimized proofs, etc) are written to directories created
-  by the scripts.
+* The `run` script performs full benchmarking and may take significant time.
+* Benchmark execution is currently sequential.
+* Output logs and minimized proofs are written automatically.
+* All Krympa binaries are interchangeable in the pipeline.
 
 ---
 
@@ -125,4 +179,3 @@ If you want to propose changes, fixes, or new features:
 3. All contributions will be reviewed before merging.
 
 Direct forks or redistribution of modified versions are not allowed.
-
