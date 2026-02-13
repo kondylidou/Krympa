@@ -32,6 +32,14 @@ fi
 mkdir -p "$BENCHMARK_DIR/output_logs"
 ORIG_DIR=$(pwd)
 
+echo "======================================"
+echo "Krympa benchmark run starting"
+echo "Timeout per benchmark : ${TIMEOUT_SECS}s"
+echo "Krympa binary         : ${KRYMPA_BINARY}"
+echo "Logs directory        : ${BENCHMARK_DIR}/output_logs"
+echo "======================================"
+echo
+
 run_one() {
     proofs_file="$1"
     base=$(basename "$proofs_file" .lean)
@@ -48,13 +56,15 @@ run_one() {
     fi
 
     log_file="$BENCHMARK_DIR/output_logs/${base}.log"
-    echo "Running benchmarking for $input_folder (timeout=${TIMEOUT_SECS}s, binary=${KRYMPA_BINARY})..."
+    echo "Running benchmarking for $base (timeout=${TIMEOUT_SECS}s)..."
 
     cd "$RUST_DIR" || exit 1
     "$BENCHMARK_BINARY" "$input_folder" "$TIMEOUT_SECS" "$KRYMPA_BINARY" > "$log_file" 2>&1
     cd "$ORIG_DIR" || exit 1
 
     echo "Finished benchmarking for $base"
+    echo "Log written to $log_file"
+    echo
 }
 
 for proofs_file in "$BENCHMARK_DIR"/Proofs*.lean; do
@@ -62,3 +72,4 @@ for proofs_file in "$BENCHMARK_DIR"/Proofs*.lean; do
 done
 
 echo "All jobs completed."
+echo "Detailed logs are available in: ${BENCHMARK_DIR}/output_logs"

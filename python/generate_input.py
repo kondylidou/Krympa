@@ -131,14 +131,11 @@ def lean_expr_to_tptp(expr: str):
 
     return f"({lhs} = {rhs})", list(var_map.values())
 
-# Main
-print("Indexing equations...")
 EQUATION_INDEX = build_equation_index()
-print(f"Indexed {len(EQUATION_INDEX)} equations")
-
 proofs_text = PROOFS_FILE.read_text()
 theorems = THEOREM_RE.findall(proofs_text)
-print(f"Found {len(theorems)} theorems")
+
+print(f"Generating TPTP from {PROOFS_FILE.name} → {OUTPUT_DIR} ({len(theorems)} problems)")
 
 written = 0
 skipped = 0
@@ -148,7 +145,7 @@ for ax_name, conj_name in theorems:
     conj_num = int(conj_name.replace("Equation", ""))
 
     if ax_num not in EQUATION_INDEX or conj_num not in EQUATION_INDEX:
-        print(f"Skipping {ax_name}_implies_{conj_name}: missing equation")
+        # print(f"Skipping {ax_name}_implies_{conj_name}: missing equation")
         skipped += 1
         continue
 
@@ -176,6 +173,4 @@ fof(conjecture0, conjecture,
     out_file.write_text(tptp_text)
     written += 1
 
-print("\nDone.")
-print(f"Written: {written}")
-print(f"Skipped: {skipped}")
+print(f"Done. Written: {written}, Skipped: {skipped}")

@@ -66,6 +66,21 @@ Example:
 
 This runs the benchmarking pipeline on the full benchmark set.
 
+Each `Proofs*.lean` file is converted into a corresponding benchmark folder
+(e.g. `benchmarks/input7/`), which contains multiple individual benchmark
+problems. The timeout is applied **to each individual benchmark problem**, not
+to the entire folder or the full benchmark suite. Problems are processed
+sequentially.
+
+The console output shows only high-level progress information. Detailed logs for
+each benchmark folder are written to:
+
+```
+../benchmarks/output_logs/
+```
+
+Each `Proofs*.lean` file produces a corresponding log file in that directory.
+
 ---
 
 
