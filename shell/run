@@ -5,13 +5,29 @@ PYTHON_SCRIPT="../python/generate_input.py"
 RUST_DIR="../rust"
 BENCHMARK_BINARY="./benchmarking_binary"
 
-# default krympa binary (can be overridden by arg 3)
+# default krympa binary
 KRYMPA_BINARY_DEFAULT="./krympa"
 
-# args
-TARGET="$1"
-TIMEOUT_SECS=${2:-2700}
-KRYMPA_BINARY="${3:-$KRYMPA_BINARY_DEFAULT}"
+# defaults
+TIMEOUT_SECS=2700
+KRYMPA_BINARY="$KRYMPA_BINARY_DEFAULT"
+
+# argument parsing
+if [ $# -ge 1 ]; then
+    if [[ "$1" =~ ^[0-9]+$ ]]; then
+        TIMEOUT_SECS="$1"
+        KRYMPA_BINARY="${2:-$KRYMPA_BINARY_DEFAULT}"
+    else
+        KRYMPA_BINARY="$1"
+        TIMEOUT_SECS="${2:-2700}"
+    fi
+fi
+
+if [ $# -gt 2 ]; then
+    echo "Usage: $0 [timeout_secs] [krympa_binary]"
+    echo "   or: $0 [krympa_binary]"
+    exit 1
+fi
 
 mkdir -p "$BENCHMARK_DIR/output_logs"
 ORIG_DIR=$(pwd)
@@ -32,7 +48,7 @@ run_one() {
     fi
 
     log_file="$BENCHMARK_DIR/output_logs/${base}.log"
-    echo "Running benchmarking for $input_folder (timeout=${TIMEOUT_SECS}s)..."
+    echo "Running benchmarking for $input_folder (timeout=${TIMEOUT_SECS}s, binary=${KRYMPA_BINARY})..."
 
     cd "$RUST_DIR" || exit 1
     "$BENCHMARK_BINARY" "$input_folder" "$TIMEOUT_SECS" "$KRYMPA_BINARY" > "$log_file" 2>&1
@@ -41,27 +57,8 @@ run_one() {
     echo "Finished benchmarking for $base"
 }
 
-# Run ALL (default)
-if [ -z "$TARGET" ] || [ "$TARGET" = "all" ]; then
-    for proofs_file in "$BENCHMARK_DIR"/Proofs*.lean; do
-        run_one "$proofs_file"
-    done
+for proofs_file in "$BENCHMARK_DIR"/Proofs*.lean; do
+    run_one "$proofs_file"
+done
 
-    echo "All jobs completed."
-    exit 0
-fi
-
-# Run ONE Proofs file
-if [[ "$TARGET" =~ ^[0-9]+$ ]]; then
-    TARGET="Proofs$TARGET"
-fi
-
-proofs_file="$BENCHMARK_DIR/${TARGET}.lean"
-
-if [ ! -f "$proofs_file" ]; then
-    echo "File not found: $proofs_file"
-    exit 1
-fi
-
-run_one "$proofs_file"
-echo "Done."
+echo "All jobs completed."

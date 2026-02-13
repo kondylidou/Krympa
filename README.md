@@ -68,21 +68,6 @@ This runs the benchmarking pipeline on the full benchmark set.
 
 ---
 
-## Run a Single Benchmark Folder
-
-```bash
-./run <N> <timeout>
-```
-
-Example:
-
-```bash
-./run 7 1200
-```
-
-This runs benchmarking for: `../benchmarks/Proofs7.lean`
-
----
 
 ## Run on a Single Problem
 
@@ -105,8 +90,8 @@ Then run:
 `run` and `run_one` accept an optional binary argument.
 
 ```bash
-./run_one <input-file> ./krympa_bs
-./run <timeout> ./krympa_bs
+./run_one <input-file> <krympa-binary>
+./run <timeout> <krympa-binary>
 ```
 
 ---
