@@ -30,6 +30,8 @@ if [ $# -gt 2 ]; then
 fi
 
 mkdir -p "$BENCHMARK_DIR/output_logs"
+# clean existing logs
+rm -f "$BENCHMARK_DIR/output_logs"/*
 ORIG_DIR=$(pwd)
 
 echo "======================================"

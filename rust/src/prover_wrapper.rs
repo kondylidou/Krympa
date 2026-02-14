@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 use wait_timeout::ChildExt;
+use rayon::prelude::*;
 
 fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
     let mut child = match std::process::Command::new(exe_path)
@@ -19,7 +20,7 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
         }
     };
 
-    let timeout = Duration::from_secs(10);
+    let timeout = Duration::from_secs(7);
     match child.wait_timeout(timeout).unwrap() {
         Some(status) => {
             let output = child.wait_with_output().unwrap();
@@ -156,7 +157,6 @@ pub fn prove_lemmas(
     provers: &[&str],
     out_dir_path: &str,
 ) -> HashMap<u32, (String, String, String)> {
-    let mut results = HashMap::new();
     let out_dir = Path::new(out_dir_path);
     if out_dir.exists() {
         fs::remove_dir_all(out_dir).unwrap();
@@ -190,88 +190,98 @@ pub fn prove_lemmas(
     let mut sorted_nums: Vec<u32> = groups.keys().cloned().collect();
     sorted_nums.sort();
 
-    for n in sorted_nums {
-        println!("\n[INFO] Proving lemma {}", n);
-        let files = &groups[&n];
-
-        // collect all successful proofs for this group
-        let mut all_proofs: Vec<(String, String, usize, String)> = Vec::new(); // (prover, proof, len, filename)
-
-        for lemma_file in files {
-            let file_stem = Path::new(lemma_file).file_stem().unwrap().to_string_lossy();
-            let egg_file = egg_dir.join(format!("{}_egg.proof", file_stem));
-            let vampire_file = vampire_dir.join(format!("{}_vampire.proof", file_stem));
-            let twee_file = twee_dir.join(format!("{}_twee.proof", file_stem));
-
-            for (prover, proof) in
-                try_provers(lemma_file, provers, &egg_file, &vampire_file, &twee_file)
-            {
-                let szs_status = proof
-                    .lines()
-                    .find(|l| l.contains("RESULT:") || l.contains("SZS status"))
-                    .unwrap_or("")
-                    .to_lowercase(); // normalize to lowercase
-
-                let len = if szs_status.contains("countersatisfiable")
-                    || szs_status.contains("counter-satisfiable")
-                    || szs_status.contains("counter_satisfiable")
-                    || szs_status.contains("satisfiable") && !szs_status.contains("unsatisfiable")
-                    || szs_status.contains("unknown")
-                {
-                    1000 // sentinel for non-theorem / countersat / unknown
-                         // TODO we can use them. But for now we just want shortest
-                         // theorem proofs. Later we can see how we prove the
-                         // conjecture from the satisfiable ones.
-                } else {
-                    proof_length(&prover, &proof)
-                };
-
-                //let len = proof_length(&prover, &proof);
-                println!("[INFO] {} proof length: {} lines", prover, len);
-                all_proofs.push((prover, proof, len, file_stem.to_string()));
-            }
-        }
-
-        // pick the shortest proof across all modes and provers
-        if let Some((best_prover, best_proof, best_len, best_file)) =
-            all_proofs.into_iter().min_by(|a, b| {
-                // Compare lengths first
-                if a.2 != b.2 {
-                    a.2.cmp(&b.2)
-                } else {
-                    // Tie-breaker: prefer "twee" over "vampire" over others
-                    let order = |p: &String| {
-                        if p == "twee" {
-                            0
-                        } else if p == "vampire" {
-                            1
-                        } else {
-                            2
-                        }
-                    };
-                    order(&a.0).cmp(&order(&b.0))
-                }
-            })
-        {
-            let final_path = out_dir.join(format!("{}_{}.proof", best_file, best_prover));
-            if let Err(e) = fs::write(&final_path, &best_proof) {
-                eprintln!("[ERROR] Failed to save shortest proof: {}", e);
-            } else {
-                println!("[INFO] Saved shortest proof to '{}'", final_path.display());
-            }
-
+    // PARALLEL: each lemma index `n` runs on its own rayon worker thread
+    sorted_nums
+        .par_iter()
+        .filter_map(|&n| {
+            println!("\n[INFO] Proving lemma {}", n);
             println!(
-                "[INFO] Shortest proof for lemma {} found in '{}' by '{}' with {} lines",
-                n, best_file, best_prover, best_len
+                "[DEBUG] lemma {} running on thread {:?}",
+                n,
+                std::thread::current().id()
             );
 
-            results.insert(n, (best_file, best_prover, best_proof));
-        } else {
-            println!("[WARN] No successful proof for group {}", n);
-        }
-    }
+            let files = &groups[&n];
 
-    results
+            // collect all successful proofs for this group
+            let mut all_proofs: Vec<(String, String, usize, String)> = Vec::new(); // (prover, proof, len, filename)
+
+            for lemma_file in files {
+                let file_stem = Path::new(lemma_file).file_stem().unwrap().to_string_lossy();
+                let egg_file = egg_dir.join(format!("{}_egg.proof", file_stem));
+                let vampire_file = vampire_dir.join(format!("{}_vampire.proof", file_stem));
+                let twee_file = twee_dir.join(format!("{}_twee.proof", file_stem));
+
+                for (prover, proof) in
+                    try_provers(lemma_file, provers, &egg_file, &vampire_file, &twee_file)
+                {
+                    let szs_status = proof
+                        .lines()
+                        .find(|l| l.contains("RESULT:") || l.contains("SZS status"))
+                        .unwrap_or("")
+                        .to_lowercase(); // normalize to lowercase
+
+                    let len = if szs_status.contains("countersatisfiable")
+                        || szs_status.contains("counter-satisfiable")
+                        || szs_status.contains("counter_satisfiable")
+                        || (szs_status.contains("satisfiable")
+                            && !szs_status.contains("unsatisfiable"))
+                        || szs_status.contains("unknown")
+                    {
+                        1000 // sentinel for non-theorem / countersat / unknown
+                             // TODO we can use them. But for now we just want shortest
+                             // theorem proofs. Later we can see how we prove the
+                             // conjecture from the satisfiable ones.
+                    } else {
+                        proof_length(&prover, &proof)
+                    };
+
+                    //let len = proof_length(&prover, &proof);
+                    println!("[INFO] {} proof length: {} lines", prover, len);
+                    all_proofs.push((prover, proof, len, file_stem.to_string()));
+                }
+            }
+
+            // pick the shortest proof across all modes and provers
+            if let Some((best_prover, best_proof, best_len, best_file)) =
+                all_proofs.into_iter().min_by(|a, b| {
+                    // compare lengths first
+                    if a.2 != b.2 {
+                        a.2.cmp(&b.2)
+                    } else {
+                        // Tie-breaker: prefer "twee" over "vampire" over others
+                        let order = |p: &String| {
+                            if p == "twee" {
+                                0
+                            } else if p == "vampire" {
+                                1
+                            } else {
+                                2
+                            }
+                        };
+                        order(&a.0).cmp(&order(&b.0))
+                    }
+                })
+            {
+                let final_path = out_dir.join(format!("{}_{}.proof", best_file, best_prover));
+                if let Err(e) = fs::write(&final_path, &best_proof) {
+                    eprintln!("[ERROR] Failed to save shortest proof: {}", e);
+                } else {
+                    println!("[INFO] Saved shortest proof to '{}'", final_path.display());
+                }
+
+                println!(
+                    "[INFO] Shortest proof for lemma {} found in '{}' by '{}' with {} lines",
+                    n, best_file, best_prover, best_len
+                );
+
+                Some((n, (best_file, best_prover, best_proof)))
+            } else {
+                println!("[WARN] No successful proof for group {}", n);
+                None
+            }
+        })
+        .collect()
 }
 
 fn try_provers(

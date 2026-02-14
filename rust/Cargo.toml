@@ -12,6 +12,7 @@ egg-sc-tptp = { path = "egg-sc-tptp" }
 regex = "1.10"
 egg = "0.7"
 itertools = "0.10"
+rayon = "1"
 
 [workspace]
 members = ["egg-sc-tptp"]
