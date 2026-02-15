@@ -72,7 +72,7 @@ fn proof_turnaround() {
 
     let steps_map = parse_vampire_proof(proof_text);
     _debug_print_parsed_proof(&steps_map);
-    let final_proof = eq_proof_procedure(&proof_text);
+    let final_proof = eq_proof_procedure(proof_text);
     println!("\n[TEST] Final proof");
     println!("{}", final_proof);
 }
@@ -93,7 +93,7 @@ fn test_mixed_quantifiers_contrapositive() {
     let turned = turn_proof_around(&steps);
     println!("\n[TEST] Turned proof steps");
     for (idx, step) in &turned {
-        println!("  {}: {}", idx, step.formula.to_string());
+        println!("  {}: {}", idx, step.formula);
     }
 
     // Check that the contrapositive + Skolem-to-variable + quantifier flattening worked
@@ -229,7 +229,7 @@ fn proof_turnaround_dif() {
 
     let steps_map = parse_vampire_proof(proof_text);
     _debug_print_parsed_proof(&steps_map);
-    let final_proof = eq_proof_procedure(&proof_text);
+    let final_proof = eq_proof_procedure(proof_text);
     println!("\n[TEST] Final proof");
     println!("{}", final_proof);
 }
