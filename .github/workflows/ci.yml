@@ -24,11 +24,25 @@ jobs:
         with:
           workspaces: "rust -> target"
 
+      - name: Install OCaml + dune (via opam)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ocaml ocaml-findlib opam m4 pkg-config
+          opam init -a --disable-sandboxing
+          eval "$(opam env)"
+          opam install -y dune
+
       - name: Format check
-        run: cargo fmt --all -- --check
+        run: |
+          eval "$(opam env)"
+          cargo fmt --all -- --check
 
       - name: Lint (clippy)
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: |
+          eval "$(opam env)"
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Tests
-        run: cargo test --workspace --all-targets --all-features
+        run: |
+          eval "$(opam env)"
+          cargo test --workspace --all-targets --all-features
