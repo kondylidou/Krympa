@@ -1,5 +1,5 @@
-use krympa::{core, minimize, run_vamp};
 use krympa::utils::extract_suffix;
+use krympa::{core, minimize, run_vamp};
 use std::env;
 
 fn main() {

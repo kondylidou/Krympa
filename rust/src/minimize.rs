@@ -170,11 +170,9 @@ pub fn try_minimize(
                 );
 
                 if root_lemma.starts_with("history_lemma_") {
-                  // TODO this is a bug in the dag
-                  println!(
-                      "   [BUG] No dependencies found — skipping"
-                  );
-                  continue;
+                    // TODO this is a bug in the dag
+                    println!("   [BUG] No dependencies found — skipping");
+                    continue;
                 }
 
                 // vector to collect new Vampire lemmas (names + formulas)
@@ -1438,36 +1436,40 @@ pub fn trim_proof_parts(
     // Run trimming once given a freeze level.
     let run = |freeze: FreezeBefore| -> (String, String, String, usize, usize, usize) {
         // helper: keep/trim a named segment
-        let keep_named =
-            |name: &str, proof: &str, by: &str, steps_in: usize, segs: &[&str]| -> (String, usize) {
-                // TERMINAL RULE: if nothing comes after this segment, keep it.
-                // (root becomes terminal when sub is absent)
-                if segs.is_empty() {
-                    let kept = proof.to_string();
-                    let steps = if by == "vampire" {
-                        count_superposition_steps(&kept)
-                    } else {
-                        steps_in
-                    };
-                    return (kept, steps);
-                }
+        let keep_named = |name: &str,
+                          proof: &str,
+                          by: &str,
+                          steps_in: usize,
+                          segs: &[&str]|
+         -> (String, usize) {
+            // TERMINAL RULE: if nothing comes after this segment, keep it.
+            // (root becomes terminal when sub is absent)
+            if segs.is_empty() {
+                let kept = proof.to_string();
+                let steps = if by == "vampire" {
+                    count_superposition_steps(&kept)
+                } else {
+                    steps_in
+                };
+                return (kept, steps);
+            }
 
-                match by {
-                    "vampire" => {
-                        let trimmed = trim_superposition_block(proof, segs);
-                        let steps = count_superposition_steps(&trimmed);
-                        (trimmed, steps)
-                    }
-                    "twee" => {
-                        // if this segment isn't referenced later, drop it
-                        if !proof_uses_lemma(name, segs) {
-                            return (String::new(), 0);
-                        }
-                        (proof.to_string(), steps_in)
-                    }
-                    _ => (proof.to_string(), steps_in),
+            match by {
+                "vampire" => {
+                    let trimmed = trim_superposition_block(proof, segs);
+                    let steps = count_superposition_steps(&trimmed);
+                    (trimmed, steps)
                 }
-            };
+                "twee" => {
+                    // if this segment isn't referenced later, drop it
+                    if !proof_uses_lemma(name, segs) {
+                        return (String::new(), 0);
+                    }
+                    (proof.to_string(), steps_in)
+                }
+                _ => (proof.to_string(), steps_in),
+            }
+        };
 
         // 1) root depends on sub (if any)
         let (kept_root, root_steps) = if freeze >= FreezeBefore::Root {
@@ -1612,7 +1614,6 @@ pub fn trim_proof_parts(
         run(freeze2)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -2869,7 +2870,10 @@ RESULT: Theorem (the conjecture is true).
             "expected root to be trimmed to empty (not needed), but got:\n{}",
             kept_root
         );
-        assert_eq!(root_steps, 0, "trimmed vampire root should count as 0 steps");
+        assert_eq!(
+            root_steps, 0,
+            "trimmed vampire root should count as 0 steps"
+        );
 
         // History is needed by sub and should remain
         assert!(
@@ -2886,7 +2890,9 @@ RESULT: Theorem (the conjecture is true).
             "expected start to be trimmed away (not referenced) and not kept due to freeze, but got:\n{}",
             kept_start
         );
-        assert_eq!(start_steps, 0, "trimmed vampire start should count as 0 steps");
+        assert_eq!(
+            start_steps, 0,
+            "trimmed vampire start should count as 0 steps"
+        );
     }
-
 }

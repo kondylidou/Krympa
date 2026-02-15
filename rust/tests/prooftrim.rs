@@ -1,8 +1,8 @@
+use krympa::minimize::count_superposition_steps;
 use krympa::minimize::trim_proof_parts;
+use krympa::minimize::trim_superposition_block;
 use krympa::prover_wrapper::proof_length_twee;
 use krympa::prover_wrapper::proof_length_vampire;
-use krympa::minimize::count_superposition_steps;
-use krympa::minimize::trim_superposition_block;
 
 /// Exact regression: later proof mentions only `lemma_0059` (and
 /// `history_lemma_0058`), but the superposition block must keep the whole
@@ -883,18 +883,17 @@ RESULT: Theorem (the conjecture is true).
 "#;
     // Use trim_proof_parts: block is the "start" vampire block, seg1 is the
     // "root" vampire block, seg3 is sub-proof.
-    let (kept_start, kept_hist, kept_root, start_steps, hist_steps, root_steps) =
-        trim_proof_parts(
-            Some((block, "vampire", count_superposition_steps(block))),
-            None,
-            (
-                "history_lemma_0151",
-                seg1,
-                "vampire",
-                count_superposition_steps(seg1),
-            ),
-            Some(seg3),
-        );
+    let (kept_start, kept_hist, kept_root, start_steps, hist_steps, root_steps) = trim_proof_parts(
+        Some((block, "vampire", count_superposition_steps(block))),
+        None,
+        (
+            "history_lemma_0151",
+            seg1,
+            "vampire",
+            count_superposition_steps(seg1),
+        ),
+        Some(seg3),
+    );
 
     // history is None -> empty string + 0 steps
     assert!(kept_hist.trim().is_empty());
@@ -978,18 +977,17 @@ RESULT: Theorem (the conjecture is true).
 "#;
     // Use trim_proof_parts: block is the "start" vampire block, seg1 is the
     // "root" vampire block, seg3 is sub-proof.
-    let (kept_start, kept_hist, kept_root, start_steps, hist_steps, root_steps) =
-        trim_proof_parts(
-            Some((block, "vampire", count_superposition_steps(block))),
-            None,
-            (
-                "history_lemma_0151",
-                seg1,
-                "vampire",
-                count_superposition_steps(seg1),
-            ),
-            Some(seg3),
-        );
+    let (kept_start, kept_hist, kept_root, start_steps, hist_steps, root_steps) = trim_proof_parts(
+        Some((block, "vampire", count_superposition_steps(block))),
+        None,
+        (
+            "history_lemma_0151",
+            seg1,
+            "vampire",
+            count_superposition_steps(seg1),
+        ),
+        Some(seg3),
+    );
 
     // history is None -> empty string + 0 steps
     assert!(kept_hist.trim().is_empty());
@@ -1116,18 +1114,17 @@ RESULT: Theorem (the conjecture is true).
 "#;
     // Use trim_proof_parts: block is the "start" vampire block, seg1 is the
     // "root" vampire block, seg3 is sub-proof.
-    let (kept_start, kept_hist, kept_root, _start_steps, hist_steps, root_steps) =
-        trim_proof_parts(
-            Some((block, "vampire", count_superposition_steps(block))),
-            None,
-            (
-                "history_lemma_0151",
-                seg2,
-                "vampire",
-                proof_length_vampire(seg2),
-            ),
-            Some(seg3),
-        );
+    let (kept_start, kept_hist, kept_root, _start_steps, hist_steps, root_steps) = trim_proof_parts(
+        Some((block, "vampire", count_superposition_steps(block))),
+        None,
+        (
+            "history_lemma_0151",
+            seg2,
+            "vampire",
+            proof_length_vampire(seg2),
+        ),
+        Some(seg3),
+    );
 
     // history is None -> empty string + 0 steps
     assert!(kept_hist.trim().is_empty());
@@ -1264,7 +1261,10 @@ fn stop_the_bleed_but_not_kept() {
         "expected root to be trimmed to empty (not needed), but got:\n{}",
         kept_root
     );
-    assert_eq!(root_steps, 0, "trimmed vampire root should count as 0 steps");
+    assert_eq!(
+        root_steps, 0,
+        "trimmed vampire root should count as 0 steps"
+    );
 
     // History is needed by sub and should remain
     assert!(
@@ -1281,5 +1281,8 @@ fn stop_the_bleed_but_not_kept() {
         "expected start to be trimmed away (not referenced) and not kept due to freeze, but got:\n{}",
         kept_start
     );
-    assert_eq!(start_steps, 0, "trimmed vampire start should count as 0 steps");
+    assert_eq!(
+        start_steps, 0,
+        "trimmed vampire start should count as 0 steps"
+    );
 }

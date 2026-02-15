@@ -1,10 +1,10 @@
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
 use wait_timeout::ChildExt;
-use rayon::prelude::*;
 
 fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
     let mut child = match std::process::Command::new(exe_path)

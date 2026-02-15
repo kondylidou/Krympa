@@ -1,10 +1,10 @@
+use crate::prover_wrapper::proof_length;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 use wait_timeout::ChildExt;
-use crate::prover_wrapper::proof_length;
 
 #[derive(Debug)]
 pub struct BenchmarkResult {

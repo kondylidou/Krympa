@@ -1,11 +1,10 @@
-use krympa::superpose::prepend_superposition_steps;
 use krympa::superpose::parse_vampire_proof;
+use krympa::superpose::prepend_superposition_steps;
 use krympa::superpose::VampStep;
-use std::fs;
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-
 
 fn write_tmp(content: &str) -> String {
     let mut path: PathBuf = std::env::temp_dir();
@@ -255,4 +254,3 @@ fn test_real_vampire_uses_axiom_names_for_backtracked_inputs() {
         "expected step 20 deps to include lemma_* and history_lemma_0139 (not a_17). got:\n{annotated}"
     );
 }
-
