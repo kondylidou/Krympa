@@ -1,15 +1,6 @@
-mod alpha_match;
-mod core;
-mod dag;
-mod minimize;
-mod proof_turnaround;
-mod prover_wrapper;
-mod run_vamp;
-mod superpose;
-mod utils;
-
+use krympa::{core, minimize, run_vamp};
+use krympa::utils::extract_suffix;
 use std::env;
-use std::path::Path;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -88,19 +79,5 @@ fn main() {
             "Unknown command '{}'. Use 'collect', 'shorten', 'group', or 'minimize'",
             args[1]
         ),
-    }
-}
-
-pub fn extract_suffix(path: &str) -> String {
-    let stem = Path::new(path)
-        .file_stem()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
-
-    if let Some(stripped) = stem.strip_prefix("input_problem_") {
-        stripped.to_string()
-    } else {
-        stem // fallback: whole stem
     }
 }

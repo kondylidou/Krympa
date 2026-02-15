@@ -548,3 +548,17 @@ pub fn strip_prover_suffix(lemma_name: &str) -> String {
     }
     lemma_name.to_string()
 }
+
+pub fn extract_suffix(path: &str) -> String {
+    let stem = Path::new(path)
+        .file_stem()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+
+    if let Some(stripped) = stem.strip_prefix("input_problem_") {
+        stripped.to_string()
+    } else {
+        stem // fallback: whole stem
+    }
+}

@@ -1,4 +1,4 @@
-use krympa::run;
+use krympa::bench_run::run;
 use std::env;
 
 fn main() {

@@ -1,6 +1,5 @@
 use crate::alpha_match::formulas_match;
 use crate::dag::*;
-use crate::extract_suffix;
 use crate::prover_wrapper::*;
 use crate::run_vamp::run_vampire;
 use crate::superpose::*;
