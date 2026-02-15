@@ -7,6 +7,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+
     steps:
       - uses: actions/checkout@v4
 
@@ -17,13 +21,14 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "rust -> target"
 
       - name: Format check
         run: cargo fmt --all -- --check
 
       - name: Lint (clippy)
-        run: cargo clippy --workspace --all-targets --all-features
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Tests
         run: cargo test --workspace --all-targets --all-features
-
