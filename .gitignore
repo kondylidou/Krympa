@@ -33,7 +33,6 @@ lean/.lake/
 *.vproof
 *.tweeout
 *.cvc5out
-*.eggout
 
 # === Logs and Temps ===
 *.log

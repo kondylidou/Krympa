@@ -4,9 +4,11 @@ use regex::Regex;
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+type DependencyGraph = BTreeMap<String, BTreeSet<String>>;
+type FormulaMap = BTreeMap<String, String>;
 
 /// Parse DAG from file
-pub fn load_dag(dag_file: &str) -> BTreeMap<String, BTreeSet<String>> {
+pub fn load_dag(dag_file: &str) -> DependencyGraph {
     let content = fs::read_to_string(dag_file).expect("Failed to read DAG file");
     let re = Regex::new(r"^\s*(\S+)\s*->\s*\{([^}]*)\}").unwrap();
     let mut dag = BTreeMap::new();
@@ -27,10 +29,7 @@ pub fn load_dag(dag_file: &str) -> BTreeMap<String, BTreeSet<String>> {
 }
 
 /// Write DAG to file
-pub fn write_dag(
-    dag_file: &str,
-    dag: &BTreeMap<String, BTreeSet<String>>,
-) -> Result<(), std::io::Error> {
+pub fn write_dag(dag_file: &str, dag: &DependencyGraph) -> Result<(), std::io::Error> {
     let mut output = String::new();
     for (parent, children) in dag.iter() {
         let children_str = children
@@ -48,7 +47,7 @@ pub fn write_dag(
 pub fn build_dag(
     root_lemma: &str,
     precomputed: &PrecomputedLemmas,
-) -> Result<(BTreeMap<String, BTreeSet<String>>, BTreeMap<String, String>), String> {
+) -> Result<(DependencyGraph, FormulaMap), String> {
     let PrecomputedLemmas {
         all_lemmas,
         all_twee,
@@ -56,7 +55,7 @@ pub fn build_dag(
     } = precomputed;
 
     // build DAG
-    let mut dag: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut dag: DependencyGraph = BTreeMap::new();
     let mut duplicates: Vec<(String, String)> = Vec::new();
     let mut queue: VecDeque<String> = VecDeque::new();
     let mut seen: BTreeSet<String> = BTreeSet::new();

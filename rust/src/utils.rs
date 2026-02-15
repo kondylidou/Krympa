@@ -315,7 +315,7 @@ pub fn load_lemma(lemmas_dir: &str, lemma_name: &str) -> Result<String, String> 
         return Err(format!("[ERROR] Unknown lemma type for {}", lemma_name));
     };
 
-    // strip prover suffix (_twee, _vampire, _egg)
+    // strip prover suffix (_twee, _vampire)
     let file_lemma_name = strip_prover_suffix(&file_lemma_name);
 
     // construct file path
@@ -367,10 +367,9 @@ pub fn extract_tptp_formula_body(file_path: &str, lemma: &str) -> Option<String>
                 }
                 formula_lines.push(body.trim().to_string());
             } else {
-                while let Some(formula_line) = lines_iter.next() {
+                for formula_line in lines_iter.by_ref() {
                     let trimmed = formula_line.trim();
-                    if trimmed.ends_with(").") {
-                        let body = &trimmed[..trimmed.len() - 2]; // remove ")."
+                    if let Some(body) = trimmed.strip_suffix(").") {
                         formula_lines.push(body.to_string());
                         break;
                     } else {
@@ -538,9 +537,9 @@ pub fn load_all_dependency_proofs(
     Ok(result)
 }
 
-/// Strips the prover suffix (_twee, _vampire, _egg) from a lemma name if present
+/// Strips the prover suffix (_twee, _vampire) from a lemma name if present
 pub fn strip_prover_suffix(lemma_name: &str) -> String {
-    let suffixes = ["_twee", "_vampire", "_egg"];
+    let suffixes = ["_twee", "_vampire"];
     for suf in &suffixes {
         if lemma_name.ends_with(suf) {
             return lemma_name.trim_end_matches(suf).to_string();

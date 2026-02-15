@@ -18,7 +18,7 @@ fn main() {
                 // extract suffix from input file
                 let suffix = extract_suffix(input_file);
                 let output_file = format!("../output/vampire_proof_{}.out", suffix);
-                core::collect(&input_file, &output_file, suffix);
+                core::collect(input_file, &output_file, suffix);
             }
         }
         "shorten" => {
@@ -57,7 +57,7 @@ fn main() {
                 let output_file = format!("../output/vampire_proof_{}.out", suffix);
 
                 // call minimize with input file and suffixed summary
-                match minimize::try_minimize(&input_file, &output_file, &summary_file) {
+                match minimize::try_minimize(input_file, &output_file, &summary_file) {
                     Ok(msg) => println!("{}", msg),
                     Err(err) => eprintln!("Error: {}", err),
                 }

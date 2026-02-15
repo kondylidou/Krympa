@@ -66,23 +66,12 @@ fn twee_path() -> String {
         .to_string()
 }
 
-fn egg_path() -> String {
-    env::current_dir()
-        .unwrap()
-        .join("target/debug/egg-sc-tptp")
-        .to_str()
-        .unwrap()
-        .to_string()
-}
-
 pub fn run_vampire(file: &str) -> Option<String> {
     run_external_prover(&vampire_path(), &["--input_syntax", "tptp", file])
 }
+
 pub fn run_twee(file: &str) -> Option<String> {
     run_external_prover(&twee_path(), &["--quiet", file])
-}
-fn run_egg(input: &str, output: &str) -> Option<String> {
-    run_external_prover(&egg_path(), &[input, output])
 }
 
 /// Count Vampire proof steps, ignoring input/negated conjecture lines
@@ -118,16 +107,6 @@ pub fn proof_length_vampire(proof: &str) -> usize {
     count
 }
 
-fn proof_length_egg(proof: &str) -> usize {
-    proof
-        .lines()
-        .filter(|l| {
-            let line = l.trim_start();
-            line.starts_with("fof(") && line.contains(", plain") && line.contains("inference(")
-        })
-        .count()
-}
-
 pub fn proof_length_twee(proof: &str) -> usize {
     let mut in_proof = false;
     proof
@@ -146,7 +125,6 @@ pub fn proof_length_twee(proof: &str) -> usize {
 pub fn proof_length(prover: &str, proof: &str) -> usize {
     match prover {
         "vampire" => proof_length_vampire(proof),
-        "egg" => proof_length_egg(proof),
         "twee" => proof_length_twee(proof),
         _ => proof.lines().count(),
     }
@@ -163,10 +141,8 @@ pub fn prove_lemmas(
     }
     fs::create_dir_all(out_dir).unwrap();
 
-    let egg_dir = out_dir.join("egg_tmp");
     let vampire_dir = out_dir.join("vampire_tmp");
     let twee_dir = out_dir.join("twee_tmp");
-    fs::create_dir_all(&egg_dir).unwrap();
     fs::create_dir_all(&vampire_dir).unwrap();
     fs::create_dir_all(&twee_dir).unwrap();
 
@@ -208,13 +184,10 @@ pub fn prove_lemmas(
 
             for lemma_file in files {
                 let file_stem = Path::new(lemma_file).file_stem().unwrap().to_string_lossy();
-                let egg_file = egg_dir.join(format!("{}_egg.proof", file_stem));
                 let vampire_file = vampire_dir.join(format!("{}_vampire.proof", file_stem));
                 let twee_file = twee_dir.join(format!("{}_twee.proof", file_stem));
 
-                for (prover, proof) in
-                    try_provers(lemma_file, provers, &egg_file, &vampire_file, &twee_file)
-                {
+                for (prover, proof) in try_provers(lemma_file, provers, &vampire_file, &twee_file) {
                     let szs_status = proof
                         .lines()
                         .find(|l| l.contains("RESULT:") || l.contains("SZS status"))
@@ -287,7 +260,6 @@ pub fn prove_lemmas(
 fn try_provers(
     lemma_file: &str,
     provers: &[&str],
-    egg_file: &Path,
     vampire_file: &Path,
     twee_file: &Path,
 ) -> Vec<(String, String)> {
@@ -295,7 +267,6 @@ fn try_provers(
 
     for &prover in provers {
         let output_file = match prover {
-            "egg" => egg_file,
             "vampire" => vampire_file,
             "twee" => twee_file,
             _ => {
@@ -307,19 +278,6 @@ fn try_provers(
         println!("[RUN] Trying prover '{}' on '{}'", prover, lemma_file);
 
         let proof_content = match prover {
-            "egg" => {
-                if run_egg(lemma_file, &output_file.to_string_lossy()).is_none() {
-                    println!("[INFO] Egg failed for '{}'", lemma_file);
-                    continue;
-                }
-                match fs::read_to_string(output_file) {
-                    Ok(c) => c,
-                    Err(_) => {
-                        println!("[INFO] Egg failed to produce proof for '{}'", lemma_file);
-                        continue;
-                    }
-                }
-            }
             "vampire" => match run_vampire(lemma_file) {
                 Some(c) => c,
                 None => {
@@ -342,23 +300,6 @@ fn try_provers(
                 "[ERROR] Failed to save proof for prover '{}': {}",
                 prover, e
             );
-        }
-
-        if prover != "egg" {
-            let szs = proof_content
-                .lines()
-                .find(|l| l.contains("SZS status") || l.contains("RESULT:"))
-                .unwrap_or("")
-                .to_lowercase();
-
-            if szs.contains("theorem") || szs.contains("unsatisfiable") {
-                println!("[INFO] '{}' proved theorem for '{}'", prover, lemma_file);
-            } else {
-                println!(
-                    "[INFO] '{}' returned non-theorem status for '{}': {}",
-                    prover, lemma_file, szs
-                );
-            }
         }
 
         successes.push((prover.to_string(), proof_content));

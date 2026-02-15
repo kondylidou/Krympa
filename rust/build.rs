@@ -33,10 +33,8 @@ fn main() {
     }
 
     // Copy the executable
-    fs::copy(&built_path, &dest_path).expect(&format!(
-        "Failed to copy OCaml executable from {}",
-        built_path
-    ));
+    fs::copy(&built_path, &dest_path)
+        .unwrap_or_else(|_| panic!("Failed to copy OCaml executable from {}", built_path));
 
     println!("cargo:rerun-if-changed={}/lib", ocaml_dir);
 }

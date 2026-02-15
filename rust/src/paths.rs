@@ -1,4 +1,3 @@
-// src/paths.rs
 use std::path::{Path, PathBuf};
 use std::fs;
 

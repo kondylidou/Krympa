@@ -35,8 +35,8 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
         fs::create_dir_all(&mode_dir).expect("Failed to create mode directory");
 
         // run OCaml parser to extract lemmas for the given mode
-        run_ocaml_parser(&proof_file, mode)
-            .expect(&format!("Failed to extract lemmas for mode '{}'", mode));
+        run_ocaml_parser(proof_file, mode)
+            .unwrap_or_else(|_| panic!("Failed to extract lemmas for mode '{}'", mode));
 
         // move extracted lemma files to mode directory
         for entry in fs::read_dir(&lemmas_dir).expect("Failed to read lemmas directory") {
@@ -85,14 +85,13 @@ pub fn shorten_proofs(summary_file: &str) {
 
     let lemmas_dir = "../lemmas".to_string();
     let proofs_dir = "../proofs".to_string();
-    let tmp_dirs = vec![
+    let tmp_dirs = [
         ("vampire", "../proofs/vampire_tmp".to_string()),
         ("twee", "../proofs/twee_tmp".to_string()),
-        ("egg", "../proofs/egg_tmp".to_string()),
     ];
 
     let summary_data: HashMap<u32, (String, String, String)> = serde_json::from_str(
-        &fs::read_to_string(&summary_file).expect("Failed to read summary.json"),
+        &fs::read_to_string(summary_file).expect("Failed to read summary.json"),
     )
     .expect("Failed to parse summary.json");
 
@@ -161,7 +160,7 @@ pub fn shorten_proofs(summary_file: &str) {
         .map(|n| format!("{}/history/history_lemma_{:04}.p", lemmas_dir, n))
         .collect();
 
-    let provers = ["vampire", "twee", "egg"];
+    let provers = ["vampire", "twee"];
     fs::create_dir_all("../tmp").expect("Failed to create ../tmp directory");
     let updated_results = prove_lemmas(&updated_files, &provers, "../tmp"); // tmp root
 
@@ -208,7 +207,7 @@ pub fn structural_groups(summary_file: &str) {
 
     // load summary.json
     let summary_data: HashMap<u32, (String, String, String)> = serde_json::from_str(
-        &fs::read_to_string(&summary_file).expect("Failed to read summary.json"),
+        &fs::read_to_string(summary_file).expect("Failed to read summary.json"),
     )
     .expect("Failed to parse summary.json");
 
@@ -297,8 +296,7 @@ fn run_ocaml_parser(proof_file: &str, mode: &str) -> Result<(), String> {
 }
 
 fn normalize_axiom(s: &str) -> String {
-    s.replace(' ', "")
-        .replace('\n', "")
+    s.replace([' ', '\n'], "")
         .replace("X0", "X")
         .replace("X1", "X")
         .replace("X2", "X")
