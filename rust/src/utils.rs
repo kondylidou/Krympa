@@ -198,6 +198,8 @@ pub fn extract_twee_lemmas(twee_output: &str) -> Vec<(String, String)> {
     let lemma_re = Regex::new(r"(?s)Lemma\s+(\d+):\s*(.*?)Proof:").unwrap();
     let mut result = Vec::new();
 
+    // detect variables (all uppercase words)
+    let var_re = Regex::new(r"\b([A-Z][0-9]*)\b").unwrap();
     for cap in lemma_re.captures_iter(twee_output) {
         let index: usize = cap[1].parse().unwrap();
         let body = cap[2].trim();
@@ -213,8 +215,6 @@ pub fn extract_twee_lemmas(twee_output: &str) -> Vec<(String, String)> {
             formula_line.pop();
         }
 
-        // Detect variables (all uppercase words)
-        let var_re = Regex::new(r"\b([A-Z][0-9]*)\b").unwrap();
         let mut vars: BTreeSet<String> = BTreeSet::new();
         for cap_var in var_re.captures_iter(&formula_line) {
             vars.insert(cap_var[1].to_string());

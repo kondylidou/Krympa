@@ -24,10 +24,10 @@ jobs:
         with:
           workspaces: "rust -> target"
 
-      - name: Install OCaml + dune (via opam)
+      - name: Install OCaml + opam + dune
         run: |
           sudo apt-get update
-          sudo apt-get install -y ocaml ocaml-findlib opam m4 pkg-config
+          sudo apt-get install -y opam m4 pkg-config ocaml ocaml-findlib
           opam init -a --disable-sandboxing
           eval "$(opam env)"
           opam install -y dune

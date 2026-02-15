@@ -55,6 +55,8 @@ pub fn try_minimize(
     let mut accepted = 0;
     let max_candidates = 5;
 
+    // skip lemmas containing Skolem constants
+    let skolem_re = Regex::new(r"\bsK\d+\b").unwrap();
     while accepted < max_candidates && offset < max_key {
         let key = (max_key - offset).to_string();
         offset += 1;
@@ -70,8 +72,6 @@ pub fn try_minimize(
 
         let root_lemma = entry[0].as_str().ok_or("Bad summary.json format")?;
 
-        // skip lemmas containing Skolem constants
-        let skolem_re = Regex::new(r"\bsK\d+\b").unwrap();
         let root_formula = load_lemma(&lemmas_dir, root_lemma)
             .map_err(|_| format!("Missing lemma {}", root_lemma))?;
 

@@ -120,6 +120,7 @@ pub fn shorten_proofs(summary_file: &str) {
 
     println!("[INFO] History files to update: {:?}", history_to_update);
 
+    let block_re = Regex::new(r"(?s)(fof\(lemma_(\d{4}),\s*lemma\s*,.*?\)\s*\.)").unwrap();
     // replace history lemmas with abstract formulas
     for &history_file_num in &history_to_update {
         let history_file = format!(
@@ -129,7 +130,6 @@ pub fn shorten_proofs(summary_file: &str) {
         let mut content = fs::read_to_string(&history_file)
             .unwrap_or_else(|_| panic!("Failed to read {}", history_file));
 
-        let block_re = Regex::new(r"(?s)(fof\(lemma_(\d{4}),\s*lemma\s*,.*?\)\s*\.)").unwrap();
         let mut replaced_any = false;
 
         content = block_re
@@ -274,8 +274,6 @@ pub fn structural_groups(summary_file: &str) {
         output_groups_file
     );
 }
-
-/// --- Helper Functions ---
 
 fn run_ocaml_parser(proof_file: &str, mode: &str) -> Result<(), String> {
     let parser_path = "ocaml_install/tptp_parser".to_string();
