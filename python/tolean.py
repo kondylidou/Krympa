@@ -3,15 +3,15 @@ import sys
 import os
 
 LEMMA_VARIANT_RE = re.compile(
-    r'^(?:lemma|single_lemma|history_lemma|abstract_lemma|conjecture)_(\d+)$'
+    r'^(?:lemma|big_step_lemma|small_step_lemma|abstracted_lemma|conjecture)_(\d+)$'
 )
 
 def canon_lemma_variant(name: str) -> str:
     """
     Collapse lemma variants to a single namespace by number:
-      single_lemma_0001 -> lemma_0001
-      history_lemma_0001 -> lemma_0001
-      abstract_lemma_0001 -> lemma_0001
+      big_step_lemma_0001 -> lemma_0001
+      small_step_lemma_0001 -> lemma_0001
+      abstracted_lemma_0001 -> lemma_0001
       conjecture_0001 -> lemma_0001   (IMPORTANT: conjecture0 is special and NOT touched)
     """
     name = name.strip()
@@ -120,7 +120,7 @@ def parse_dependencies_from_proof(proof_lines, lemma_num_map=None):
     lemma_num_map = lemma_num_map or {}
 
     for line in proof_lines:
-        matches = re.findall(r'\((lemma_\d+|history_lemma_\d+|single_lemma_\d+|a1|a_1)\)', line)
+        matches = re.findall(r'\((lemma_\d+|small_step_lemma_\d+|big_step_lemma_\d+|abstracted_lemma_\d+|a1|a_1)\)', line)
         for m in matches:
             if m in ("a1", "a_1"):
                 deps.add("op_law")
@@ -309,7 +309,7 @@ def build_calc_block(proof_lines, renaming, lemma_num_map, allowed_vars):
         m = re.match(r"=\s*\{\s*by\s+(\S+).*?\}", line)
         if m:
             # Determine dependency (only the first reference)
-            refs = re.findall(r"(lemma_\d+|history_lemma_\d+|single_lemma_\d+|a1|a_1)", line)
+            refs = re.findall(r"(lemma_\d+|small_step_lemma_\d+|big_step_lemma_\d+|abstracted_lemma_\d+|a1|a_1)", line)
             dep = None
             if refs:
                 r = refs[0]
@@ -346,7 +346,8 @@ def build_calc_block(proof_lines, renaming, lemma_num_map, allowed_vars):
             lhs, _ = parse_term(lhs_raw)
             rhs, _ = parse_term(rhs_raw)
 
-            lines.append(format_calc_step(lhs, rhs, dep))
+            lhs_for_step = lhs if not lines else "_"
+            lines.append(format_calc_step(lhs_for_step, rhs, dep))
             # lines.append(f"{lhs} = {rhs} := by\n        duper [{dep}]")
             #lines.append(f"_ = {rhs_norm} := by\n        duper [{dep}]")
 
@@ -479,7 +480,7 @@ with open(input_file) as f:
             continue
 
         # Lemmas
-        if stripped.startswith("% lemma_") or stripped.startswith("% history_lemma_") or stripped.startswith("% single_lemma_") or stripped.startswith("% abstract_lemma_"):
+        if stripped.startswith("% lemma_") or stripped.startswith("% small_step_lemma_") or stripped.startswith("% big_step_lemma_") or stripped.startswith("% abstracted_lemma_"):
             parts = stripped.split("|")
             body = parts[0]
             deps_part = parts[1] if len(parts) > 1 else ""
@@ -496,8 +497,8 @@ with open(input_file) as f:
                     # 1) names that appear as "name:"
                     dep_names = re.findall(r'([A-Za-z_]\w*)\s*:', deps_str)
 
-                    # 2) also grab bare lemma/history_lemma tokens that might appear without ':'
-                    dep_names += re.findall(r'\b(lemma_\d+|history_lemma_\d+|single_lemma_\d+)\b', deps_str)
+                    # 2) also grab bare lemma/small_step_lemma tokens that might appear without ':'
+                    dep_names += re.findall(r'\b(lemma_\d+|small_step_lemma_\d+|big_step_lemma_\d+|abstracted_lemma_\d+)\b', deps_str)
 
                     # normalize + de-dup (preserve order)
                     seen = set()
@@ -535,7 +536,7 @@ with open(input_file) as f:
                     if given_name.startswith("conjecture") and given_name != "conjecture0":
                         current_lemmaname = canon_lemma_variant(given_name)   # conjecture_0001 -> lemma_0001
                     else:
-                        current_lemmaname = canon_lemma_variant(given_name)   # single/history/abstract -> lemma_XXXX
+                        current_lemmaname = canon_lemma_variant(given_name)   # big_step/small_step/abstracted -> lemma_XXXX
                 else:
                     current_lemmaname = f"Lemma_{number}_b{proof_block_id}"
 
@@ -565,7 +566,7 @@ with open(input_file) as f:
                 if stripped and not stripped.startswith("Goal") and not stripped.startswith("Lemma") and not stripped.startswith("RESULT"):
                     current_proof_lines.append(stripped)
                     # detect usage of inline axioms or lemmas
-                    matches = re.findall(r'\((lemma_\d+|history_lemma_\d+|single_lemma_\d+|abstract_lemma_\d+|a1|a_1)\)', stripped)
+                    matches = re.findall(r'\((lemma_\d+|small_step_lemma_\d+|big_step_lemma_\d+|abstracted_lemma_\d+|a1|a_1)\)', stripped)
                     for ax in matches:
                         if ax in ("a1", "a_1"):
                             used_inline_axioms.add(ax)

@@ -81,9 +81,9 @@ let axioms_to_fof axioms =
     (fun i ax -> fof_entry (sprintf "a%d" (i + 1)) "axiom" ax)
     axioms
 
-(* ==================== single mode ==================== *)
+(* ==================== big-step mode ==================== *)
 
-let generate_fof_file idx axioms lemma =
+let generate_fof_file_big_step idx axioms lemma =
   let axiom_fofs = axioms_to_fof axioms in
   let formula =
     fof_entry (sprintf "conjecture_%04d" idx) "conjecture" lemma
@@ -97,19 +97,19 @@ let generate_fof_file idx axioms lemma =
   fprintf oc "%s\n" content;
   close_out oc
 
-let generate_all_files_single axioms lemmas =
+let generate_all_files_big_step axioms lemmas =
   List.iteri
     (fun i lemma ->
-      try generate_fof_file (i + 1) axioms lemma
+      try generate_fof_file_big_step (i + 1) axioms lemma
       with exn ->
         eprintf
           "[DEBUG] Failed to write big_step_lemma_%04d.p: %s\n%!"
           (i + 1) (Printexc.to_string exn))
     lemmas
 
-(* ==================== history mode ==================== *)
+(* ==================== small-step mode ==================== *)
 
-let generate_fof_file_with_history idx axioms lemmas =
+let generate_fof_file_small_step idx axioms lemmas =
   let axiom_fofs = axioms_to_fof axioms in
   let lemma_fofs =
     List.mapi
@@ -129,17 +129,17 @@ let generate_fof_file_with_history idx axioms lemmas =
   fprintf oc "%s\n" content;
   close_out oc
 
-let generate_all_files_history axioms lemmas =
+let generate_all_files_small_step axioms lemmas =
   List.iteri
     (fun i _ ->
-      try generate_fof_file_with_history i axioms lemmas
+      try generate_fof_file_small_step i axioms lemmas
       with exn ->
         eprintf
           "[DEBUG] Failed to write small_step_lemma_%04d.p: %s\n%!"
           (i + 1) (Printexc.to_string exn))
     lemmas
 
-(* ==================== abstract mode ==================== *)
+(* ==================== abstracted mode ==================== *)
 
 (* Replace a single repeated flat op(x,y) term consistently with Y0 *)
 let abstract_formula_single_term formula =
@@ -181,7 +181,7 @@ let fof_entry_abstract name role formula =
     "fof(%s, %s,\n    %s\n      (%s)\n)."
     name role quant norm_formula
 
-let generate_fof_file_abstract idx axioms lemma =
+let generate_fof_file_abstracted idx axioms lemma =
   let axiom_fofs = axioms_to_fof axioms in
   let formula =
     fof_entry_abstract
@@ -197,10 +197,10 @@ let generate_fof_file_abstract idx axioms lemma =
   fprintf oc "%s\n" content;
   close_out oc
 
-let generate_all_files_abstract axioms lemmas =
+let generate_all_files_abstracted axioms lemmas =
   List.iteri
     (fun i lemma ->
-      try generate_fof_file_abstract (i + 1) axioms lemma
+      try generate_fof_file_abstracted (i + 1) axioms lemma
       with exn ->
         eprintf
           "[DEBUG] Failed to write abstracted_lemma_%04d.p: %s\n%!"
