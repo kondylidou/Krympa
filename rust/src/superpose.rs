@@ -9,6 +9,14 @@ type AllSteps = BTreeMap<usize, VampStep>; // all steps (vamp -> step)
 type InputFormulas = BTreeMap<usize, String>; // input_formulas (vamp -> formula)
 type RelevantSteps = BTreeMap<usize, VampStep>; // only relevant (vamp -> step)
 
+fn is_small_step_lemma(name: &str) -> bool {
+    name.starts_with("small_step_lemma_") || name.starts_with("history_lemma_")
+}
+
+fn is_big_step_lemma(name: &str) -> bool {
+    name.starts_with("big_step_lemma_") || name.starts_with("single_lemma_")
+}
+
 /// A single Vampire step (keyed by Vampire index).
 #[derive(Debug, Clone)]
 pub struct VampStep {
@@ -198,7 +206,7 @@ pub fn superposition_steps(
     let mut force_super = false;
 
     // build dependency lemma list from DAG
-    let mut deps: Vec<String> = if lemma.starts_with("history_") {
+    let mut deps: Vec<String> = if is_small_step_lemma(lemma) {
         // for a history lemma, get its children in the DAG
         let children = match dag.get(lemma) {
             Some(c) => c,
@@ -211,7 +219,7 @@ pub fn superposition_steps(
         // filter to only single children, if any exist
         let mut single_children: Vec<String> = children
             .iter()
-            .filter(|c| c.starts_with("single_"))
+            .filter(|c| is_big_step_lemma(c))
             .cloned()
             .collect();
 
@@ -226,7 +234,7 @@ pub fn superposition_steps(
                 .get(lemma)
                 .into_iter()
                 .flat_map(|v| v.iter())
-                .filter(|c| c.starts_with("history_"))
+                .filter(|c| is_small_step_lemma(c))
                 .cloned()
                 .collect();
 
@@ -387,7 +395,9 @@ pub fn extend_with_superposition_steps(
 
 /// Find the lemma indices already present in dependencies
 fn used_lemma_numbers(axioms: &Vec<(String, String)>) -> BTreeSet<usize> {
-    let re = Regex::new(r"(?:history_|single_|abstract_)?lemma_(\d+)").unwrap();
+    let re =
+        Regex::new(r"(?:small_step_|big_step_|abstracted_|history_|single_|abstract_)?lemma_(\d+)")
+            .unwrap();
     let mut used = BTreeSet::new();
 
     for (name, _) in axioms {

@@ -154,15 +154,24 @@ pub fn append_as_axiom(file_path: &str, formula: &str, lemma_name: &str) {
         .expect("Failed to append axiom");
 }
 
-/// Determine the actual lemma variant (history, single, abstract) by checking the proofs folder
-/// Returns the full filename including prover suffix, e.g. "history_lemma_0047_twee.proof"
+/// Determine the actual lemma variant by checking the proofs folder.
+/// Supports new names (small_step/big_step/abstracted) and legacy names
+/// (history/single/abstract).
+/// Returns the full filename including prover suffix.
 pub fn select_actual_lemma(proofs_dir: &str, lemma_name: &str) -> Option<String> {
     // built-in axioms and conjectures just return the name
     if lemma_name.starts_with('a') || lemma_name.starts_with("conjecture_") {
         return Some(lemma_name.to_string());
     }
 
-    let variants = ["history", "single", "abstract"];
+    let variants = [
+        "small_step",
+        "big_step",
+        "abstracted",
+        "history",
+        "single",
+        "abstract",
+    ];
     let suffixes = ["_twee.proof", "_vampire.proof"];
 
     for var in &variants {
@@ -298,36 +307,92 @@ pub fn parse_used_lemmas(
     Ok(used)
 }
 
-/// Load a specific lemma (single, abstract, history) and extract its formula body.
-/// If lemma_name starts with "lemma_", treat it as "single_lemma_" for searching.
+/// Load a specific lemma and extract its formula body.
+/// Supports new names (small_step/big_step/abstracted) and legacy names.
+/// If lemma_name starts with "lemma_", treat it as "big_step_lemma_" for searching.
 pub fn load_lemma(lemmas_dir: &str, lemma_name: &str) -> Result<String, String> {
-    // determine subdirectory and possibly rename lemma for file search
-    let (subdir, file_lemma_name) = if lemma_name.starts_with("single_lemma_") {
-        ("single", lemma_name.to_string())
+    let lemma_name = strip_prover_suffix(lemma_name);
+
+    // ordered lookup candidates: new naming first, then legacy naming
+    let candidates: Vec<(String, String)> = if lemma_name.starts_with("big_step_lemma_") {
+        vec![
+            ("big-step".to_string(), lemma_name.to_string()),
+            (
+                "single".to_string(),
+                lemma_name.replacen("big_step_", "single_", 1),
+            ),
+        ]
+    } else if lemma_name.starts_with("small_step_lemma_") {
+        vec![
+            ("small-step".to_string(), lemma_name.to_string()),
+            (
+                "history".to_string(),
+                lemma_name.replacen("small_step_", "history_", 1),
+            ),
+        ]
+    } else if lemma_name.starts_with("abstracted_lemma_") {
+        vec![
+            ("abstracted".to_string(), lemma_name.to_string()),
+            (
+                "abstract".to_string(),
+                lemma_name.replacen("abstracted_", "abstract_", 1),
+            ),
+        ]
+    } else if lemma_name.starts_with("single_lemma_") {
+        vec![
+            (
+                "big-step".to_string(),
+                lemma_name.replacen("single_", "big_step_", 1),
+            ),
+            ("single".to_string(), lemma_name.to_string()),
+        ]
     } else if lemma_name.starts_with("history_lemma_") {
-        ("history", lemma_name.to_string())
+        vec![
+            (
+                "small-step".to_string(),
+                lemma_name.replacen("history_", "small_step_", 1),
+            ),
+            ("history".to_string(), lemma_name.to_string()),
+        ]
     } else if lemma_name.starts_with("abstract_lemma_") {
-        ("abstract", lemma_name.to_string())
+        vec![
+            (
+                "abstracted".to_string(),
+                lemma_name.replacen("abstract_", "abstracted_", 1),
+            ),
+            ("abstract".to_string(), lemma_name.to_string()),
+        ]
     } else if lemma_name.starts_with("lemma_") {
-        // treat as single lemma
-        ("single", lemma_name.replacen("lemma_", "single_lemma_", 1))
+        vec![
+            (
+                "big-step".to_string(),
+                lemma_name.replacen("lemma_", "big_step_lemma_", 1),
+            ),
+            (
+                "single".to_string(),
+                lemma_name.replacen("lemma_", "single_lemma_", 1),
+            ),
+        ]
     } else {
         return Err(format!("[ERROR] Unknown lemma type for {}", lemma_name));
     };
 
-    // strip prover suffix (_twee, _vampire)
-    let file_lemma_name = strip_prover_suffix(&file_lemma_name);
-
-    // construct file path
-    let file_path = Path::new(lemmas_dir)
-        .join(subdir)
-        .join(format!("{}.p", file_lemma_name));
-    if !file_path.exists() {
-        return Err(format!(
-            "[ERROR] File not found for lemma {} at {:?}",
-            file_lemma_name, file_path
-        ));
+    let mut resolved: Option<(std::path::PathBuf, String)> = None;
+    for (subdir, file_lemma_name) in candidates {
+        let file_path = Path::new(lemmas_dir)
+            .join(subdir)
+            .join(format!("{}.p", file_lemma_name));
+        if file_path.exists() {
+            resolved = Some((file_path, file_lemma_name));
+            break;
+        }
     }
+    let (file_path, file_lemma_name) = resolved.ok_or_else(|| {
+        format!(
+            "[ERROR] File not found for lemma {} under {}",
+            lemma_name, lemmas_dir
+        )
+    })?;
 
     let file_path_str = file_path
         .to_str()
@@ -335,6 +400,9 @@ pub fn load_lemma(lemmas_dir: &str, lemma_name: &str) -> Result<String, String> 
 
     // determine internal TPTP name
     let internal_name = file_lemma_name
+        .replace("big_step_lemma_", "conjecture_")
+        .replace("small_step_lemma_", "conjecture_")
+        .replace("abstracted_lemma_", "conjecture_")
         .replace("single_lemma_", "conjecture_")
         .replace("history_lemma_", "conjecture_")
         .replace("abstract_lemma_", "conjecture_");

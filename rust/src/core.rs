@@ -9,8 +9,8 @@ use std::path::Path;
 /// Produces `summary.json` for use in Phase 2.
 pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
     crate::klog_info!("[INFO] Phase 1: Collection");
-    crate::klog_info!("[INFO] Input: {}", input_file);
-    crate::klog_info!("[INFO] Output: {}", proof_file);
+    crate::klog_debug!("[DEBUG] Input: {}", input_file);
+    crate::klog_debug!("[DEBUG] Output: {}", proof_file);
 
     let lemmas_dir = "../lemmas".to_string();
 
@@ -24,7 +24,7 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
         crate::klog_debug!("[DEBUG] Cleaned lemmas directory.");
     }
 
-    let modes = ["single", "history", "abstract"];
+    let modes = ["big-step", "small-step", "abstracted"];
     let mut all_lemma_files = Vec::new();
 
     for mode in &modes {
@@ -76,10 +76,10 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
     );
 }
 
-/// Phase 2: Shorten history proofs by replacing history lemmas with abstract lemmas
+/// Phase 2: Shorten small-step proofs by replacing departure lemmas with abstracted lemmas
 /// and rerunning provers on updated files.
 pub fn shorten_proofs(summary_file: &str) {
-    crate::klog_info!("[INFO] Phase 2: Shorten history proofs");
+    crate::klog_info!("[INFO] Phase 2: Shorten small-step proofs");
 
     let lemmas_dir = "../lemmas".to_string();
     let proofs_dir = "../proofs".to_string();
@@ -96,8 +96,8 @@ pub fn shorten_proofs(summary_file: &str) {
     // map abstract lemma number -> formula
     let mut abstract_map: HashMap<u32, String> = HashMap::new();
     for (&n, (mode, _, _)) in &summary_data {
-        if mode.starts_with("abstract") {
-            let lemma_name = format!("abstract_lemma_{:04}", n);
+        if mode.starts_with("abstracted") || mode.starts_with("abstract") {
+            let lemma_name = format!("abstracted_lemma_{:04}", n);
             let formula = match load_lemma(&lemmas_dir, &lemma_name) {
                 Ok(f) => f,
                 Err(err) => {
@@ -112,22 +112,31 @@ pub fn shorten_proofs(summary_file: &str) {
 
     let history_to_update: Vec<u32> = summary_data
         .iter()
-        .filter(|(_, (mode, _, _))| mode.starts_with("history"))
+        .filter(|(_, (mode, _, _))| mode.starts_with("small_step") || mode.starts_with("history"))
         .map(|(n, _)| *n)
         .collect();
 
     crate::klog_info!(
-        "[INFO] History files to update: {}",
+        "[INFO] Small-step files to update: {}",
         history_to_update.len()
     );
 
     let block_re = Regex::new(r"(?s)(fof\(lemma_(\d{4}),\s*lemma\s*,.*?\)\s*\.)").unwrap();
     // replace history lemmas with abstract formulas
     for &history_file_num in &history_to_update {
-        let history_file = format!(
+        let history_file_new = format!(
+            "{}/small-step/small_step_lemma_{:04}.p",
+            lemmas_dir, history_file_num
+        );
+        let history_file_old = format!(
             "{}/history/history_lemma_{:04}.p",
             lemmas_dir, history_file_num
         );
+        let history_file = if Path::new(&history_file_new).exists() {
+            history_file_new
+        } else {
+            history_file_old
+        };
         let mut content = fs::read_to_string(&history_file)
             .unwrap_or_else(|_| panic!("Failed to read {}", history_file));
 
@@ -159,17 +168,28 @@ pub fn shorten_proofs(summary_file: &str) {
     // rerun provers on updated history files
     let updated_files: Vec<String> = history_to_update
         .iter()
-        .map(|n| format!("{}/history/history_lemma_{:04}.p", lemmas_dir, n))
+        .map(|n| {
+            let new_path = format!("{}/small-step/small_step_lemma_{:04}.p", lemmas_dir, n);
+            let old_path = format!("{}/history/history_lemma_{:04}.p", lemmas_dir, n);
+            if Path::new(&new_path).exists() {
+                new_path
+            } else {
+                old_path
+            }
+        })
         .collect();
 
     let provers = ["vampire", "twee"];
     fs::create_dir_all("../tmp").expect("Failed to create ../tmp directory");
     let updated_results = prove_lemmas(&updated_files, &provers, "../tmp"); // tmp root
 
-    crate::klog_info!("[INFO] Updated history proofs: {}", updated_results.len());
+    crate::klog_info!(
+        "[INFO] Updated small-step proofs: {}",
+        updated_results.len()
+    );
     for (n, (mode, prover, proof)) in &updated_results {
         crate::klog_debug!(
-            "[DEBUG] history_lemma_{:04} (mode: {}): '{}' with {} steps",
+            "[DEBUG] small_step_lemma_{:04} (mode: {}): '{}' with {} steps",
             n,
             mode,
             prover,
@@ -185,13 +205,13 @@ pub fn shorten_proofs(summary_file: &str) {
 
         // tmp folder filename
         let proof_file_tmp =
-            Path::new(tmp_dir).join(format!("history_lemma_{:04}_{}.proof", n, prover));
+            Path::new(tmp_dir).join(format!("small_step_lemma_{:04}_{}.proof", n, prover));
         fs::write(&proof_file_tmp, proof)
             .unwrap_or_else(|_| panic!("Failed to write proof file {}", proof_file_tmp.display()));
 
         // main proofs folder filename (same naming convention)
         let proof_file_main =
-            Path::new(&proofs_dir).join(format!("history_lemma_{:04}_{}.proof", n, prover));
+            Path::new(&proofs_dir).join(format!("small_step_lemma_{:04}_{}.proof", n, prover));
         fs::write(&proof_file_main, proof)
             .unwrap_or_else(|_| panic!("Failed to write proof file {}", proof_file_main.display()));
     }

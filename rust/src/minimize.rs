@@ -20,6 +20,47 @@ type RootEval = (
     String, // lemmas_text
 );
 
+fn format_active_roots(active: &BTreeSet<String>) -> String {
+    if active.is_empty() {
+        "none".to_string()
+    } else {
+        active.iter().cloned().collect::<Vec<_>>().join(", ")
+    }
+}
+
+fn is_small_step_lemma(name: &str) -> bool {
+    name.starts_with("small_step_lemma_") || name.starts_with("history_lemma_")
+}
+
+fn is_big_step_lemma(name: &str) -> bool {
+    name.starts_with("big_step_lemma_") || name.starts_with("single_lemma_")
+}
+
+fn is_abstracted_lemma(name: &str) -> bool {
+    name.starts_with("abstracted_lemma_") || name.starts_with("abstract_lemma_")
+}
+
+struct ActiveRootGuard<'a> {
+    root: String,
+    active_roots: &'a std::sync::Mutex<BTreeSet<String>>,
+    total_roots: usize,
+}
+
+impl Drop for ActiveRootGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.active_roots.lock() {
+            active.remove(&self.root);
+            crate::klog_info!(
+                "[INFO] Arrival lemma finished: {} | active {}/{}: {}",
+                self.root,
+                active.len(),
+                self.total_roots,
+                format_active_roots(&active)
+            );
+        }
+    }
+}
+
 /// Tries several candidate root lemmas and picks the best
 pub fn try_minimize(
     input_file: &str,
@@ -98,11 +139,12 @@ pub fn try_minimize(
     }
     let selected_root_names = selected_roots
         .iter()
-        .map(|(name, _)| name.as_str())
+        .map(|(name, _)| name.clone())
         .collect::<Vec<_>>()
         .join(", ");
+    let active_roots = std::sync::Mutex::new(BTreeSet::<String>::new());
     crate::klog_info!(
-        "[INFO] Evaluating {} root candidates in parallel: {}",
+        "[INFO] Evaluating {} arrival candidates in parallel: {}",
         selected_roots.len(),
         selected_root_names
     );
@@ -110,6 +152,24 @@ pub fn try_minimize(
     selected_roots
         .par_iter()
         .try_for_each(|(root_lemma, root_formula)| -> Result<(), String> {
+            {
+                let mut active = active_roots
+                    .lock()
+                    .map_err(|_| "Failed to lock active_roots".to_string())?;
+                active.insert(root_lemma.clone());
+                crate::klog_info!(
+                    "[INFO] Arrival lemma started: {} | active {}/{}: {}",
+                    root_lemma,
+                    active.len(),
+                    selected_roots.len(),
+                    format_active_roots(&active)
+                );
+            }
+            let _active_guard = ActiveRootGuard {
+                root: root_lemma.clone(),
+                active_roots: &active_roots,
+                total_roots: selected_roots.len(),
+            };
             crate::klog_debug!("[DEBUG] Root lemma {}", root_lemma);
 
         // build the minimal dag
@@ -135,7 +195,7 @@ pub fn try_minimize(
         let mut local_best: Option<(usize, Option<String>, String)> = None;
         let mut candidates: Vec<String> = dag
             .keys()
-            .filter(|k| k.starts_with("history_"))
+            .filter(|k| is_small_step_lemma(k))
             .filter(|k| k.rsplit('_').next().unwrap() < root_index_str)
             .cloned()
             .collect();
@@ -159,8 +219,7 @@ pub fn try_minimize(
             candidates.extend(
                 dag.keys()
                     .filter(|k| {
-                        (k.starts_with("single_lemma_") || k.starts_with("abstract_lemma_"))
-                            && k != &root_lemma
+                        (is_big_step_lemma(k) || is_abstracted_lemma(k)) && k != &root_lemma
                     })
                     .cloned(),
             );
@@ -177,7 +236,7 @@ pub fn try_minimize(
                 }
 
                 let root_deps = dag.get(root_lemma).cloned().unwrap_or_default();
-                let has_history_dependency = root_deps.iter().any(|d| d.starts_with("history_"));
+                let has_history_dependency = root_deps.iter().any(|d| is_small_step_lemma(d));
 
                 // if this arises this is a bug in the DAG. so when the
                 // duplicate is in itself. When we have cyclic dependencies.
@@ -193,7 +252,7 @@ pub fn try_minimize(
                     "   [INFO] No history or single lemmas found — falling back to root-only proof"
                 );
 
-                if root_lemma.starts_with("history_lemma_") {
+                if is_small_step_lemma(root_lemma) {
                     // TODO this is a bug in the dag
                     crate::klog_warn!("   [BUG] No dependencies found — skipping");
                     return Ok(());
@@ -299,8 +358,8 @@ pub fn try_minimize(
                     let mut steps_total = 0;
 
                     // check whether candidate is single or abstract
-                    let is_single = candidate.starts_with("single_lemma_");
-                    let is_abstract = candidate.starts_with("abstract_lemma_");
+                    let is_single = is_big_step_lemma(candidate);
+                    let is_abstract = is_abstracted_lemma(candidate);
 
                     // if we are falling back to single lemmas the superposition logic or indirect
                     // dependency proving logic will prove this directly. This means we will have
@@ -980,14 +1039,22 @@ pub fn try_minimize(
     if let Some((_, steps, root, n_history, annotated_proof, dag_text, lemmas_text)) = &global_best
     {
         crate::klog_info!("[RESULT] Best combination found:");
-        crate::klog_info!("[RESULT] Root lemma: {}", root);
-        crate::klog_info!("[RESULT] History lemma: {}", n_history);
+        crate::klog_info!("[RESULT] Arrival lemma: {}", root);
+        crate::klog_info!(
+            "[RESULT] Departure lemma: {}",
+            if n_history.is_empty() {
+                "none"
+            } else {
+                n_history
+            }
+        );
         crate::klog_info!("[RESULT] Total steps: {}", steps);
         let vampire_steps = match fs::read_to_string(vampire_file) {
             Ok(content) => proof_length("vampire", &content),
             Err(_) => 0,
         };
         crate::klog_info!("[RESULT] Initial proof steps: {}", vampire_steps);
+        crate::klog_info!("[RESULT] Minimized proof output: {}", proof_with_suffix);
 
         fs::write(dag_with_suffix.clone(), dag_text).map_err(|e| e.to_string())?;
         fs::write(lemmas_with_suffix.clone(), lemmas_text).map_err(|e| e.to_string())?;
@@ -1137,7 +1204,7 @@ pub fn prove_lemma(
 }
 
 fn is_single_or_abstract(name: &str) -> bool {
-    name.starts_with("single_lemma_") || name.starts_with("abstract_lemma_")
+    is_big_step_lemma(name) || is_abstracted_lemma(name)
 }
 
 /// Fallback: load an existing proof from proofs_dir (any variant),
@@ -1216,8 +1283,8 @@ fn fallback_proof(
 
 /// Returns true iff any proof segment uses the lemma.
 /// Accepts any input variant like:
-///   history_lemma_0060 / single_lemma_0060 / abstract_lemma_0060 / lemma_0060
-///
+///   small_step_lemma_0060 / big_step_lemma_0060 / abstracted_lemma_0060 / lemma_0060
+///   
 /// By default we count:
 ///   - Axiom headers:  "Axiom k (lemma_0060):"
 ///   - deps mentions:  "deps: ... lemma_0060 ..." (with or without a trailing ':')
@@ -1232,6 +1299,9 @@ pub fn proof_uses_lemma(lemma_any_variant: &str, segments: &[&str]) -> bool {
 
     // allow all variants
     let variants = [
+        format!("small_step_lemma_{}", num),
+        format!("big_step_lemma_{}", num),
+        format!("abstracted_lemma_{}", num),
         format!("history_lemma_{}", num),
         format!("single_lemma_{}", num),
         format!("abstract_lemma_{}", num),

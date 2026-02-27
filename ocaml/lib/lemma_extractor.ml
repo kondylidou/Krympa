@@ -92,7 +92,7 @@ let generate_fof_file idx axioms lemma =
   let output_dir = "../lemmas" in
   if not (file_exists output_dir && is_directory output_dir) then
     mkdir output_dir 0o755;
-  let filename = sprintf "%s/single_lemma_%04d.p" output_dir idx in
+  let filename = sprintf "%s/big_step_lemma_%04d.p" output_dir idx in
   let oc = open_out filename in
   fprintf oc "%s\n" content;
   close_out oc
@@ -103,7 +103,7 @@ let generate_all_files_single axioms lemmas =
       try generate_fof_file (i + 1) axioms lemma
       with exn ->
         eprintf
-          "[DEBUG] Failed to write single_lemma_%04d.p: %s\n%!"
+          "[DEBUG] Failed to write big_step_lemma_%04d.p: %s\n%!"
           (i + 1) (Printexc.to_string exn))
     lemmas
 
@@ -124,7 +124,7 @@ let generate_fof_file_with_history idx axioms lemmas =
   let output_dir = "../lemmas" in
   if not (file_exists output_dir && is_directory output_dir) then
     mkdir output_dir 0o755;
-  let filename = sprintf "%s/history_lemma_%04d.p" output_dir (idx + 1) in
+  let filename = sprintf "%s/small_step_lemma_%04d.p" output_dir (idx + 1) in
   let oc = open_out filename in
   fprintf oc "%s\n" content;
   close_out oc
@@ -135,7 +135,7 @@ let generate_all_files_history axioms lemmas =
       try generate_fof_file_with_history i axioms lemmas
       with exn ->
         eprintf
-          "[DEBUG] Failed to write history_lemma_%04d.p: %s\n%!"
+          "[DEBUG] Failed to write small_step_lemma_%04d.p: %s\n%!"
           (i + 1) (Printexc.to_string exn))
     lemmas
 
@@ -192,7 +192,7 @@ let generate_fof_file_abstract idx axioms lemma =
   let output_dir = "../lemmas" in
   if not (file_exists output_dir && is_directory output_dir) then
     mkdir output_dir 0o755;
-  let filename = sprintf "%s/abstract_lemma_%04d.p" output_dir idx in
+  let filename = sprintf "%s/abstracted_lemma_%04d.p" output_dir idx in
   let oc = open_out filename in
   fprintf oc "%s\n" content;
   close_out oc
@@ -203,6 +203,6 @@ let generate_all_files_abstract axioms lemmas =
       try generate_fof_file_abstract (i + 1) axioms lemma
       with exn ->
         eprintf
-          "[DEBUG] Failed to write abstract_lemma_%04d.p: %s\n%!"
+          "[DEBUG] Failed to write abstracted_lemma_%04d.p: %s\n%!"
           (i + 1) (Printexc.to_string exn))
     lemmas

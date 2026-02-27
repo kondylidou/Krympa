@@ -4,14 +4,20 @@ open Ocaml
 let () =
   if Array.length Sys.argv < 3 then begin
     prerr_endline "Usage: main <vampire_proof_file> <mode>";
-    prerr_endline "  mode = single    -> axioms + lemma_i";
-    prerr_endline "  mode = history   -> axioms + lemmas 1..(i-1) + lemma_i";
-    prerr_endline "  mode = abstract  -> axioms + lemma_i with nested op(...) replaced by variables";
+    prerr_endline "  mode = big-step   (alias: single)    -> axioms + lemma_i";
+    prerr_endline "  mode = small-step (alias: history)   -> axioms + lemmas 1..(i-1) + lemma_i";
+    prerr_endline "  mode = abstracted (alias: abstract)  -> axioms + lemma_i with nested op(...) replaced by variables";
     exit 1
   end;
 
   let filename = Sys.argv.(1) in
-  let mode = Sys.argv.(2) in
+  let mode =
+    match Sys.argv.(2) with
+    | "single" | "big-step" -> "single"
+    | "history" | "small-step" -> "history"
+    | "abstract" | "abstracted" -> "abstract"
+    | other -> other
+  in
 
   let (axioms, lemmas) =
     Tptp_parser.read_axioms_and_lemmas_from_file filename
@@ -26,20 +32,20 @@ let () =
   match mode with
   | "single" ->
       Lemma_extractor.generate_all_files_single axioms lemmas;
-      printf "[INFO] Generated %d TPTP single-mode .p files in the lemmas directory.\n%!"
+      printf "[INFO] Generated %d TPTP big-step (single) .p files in the lemmas directory.\n%!"
         (List.length lemmas)
 
   | "history" ->
       Lemma_extractor.generate_all_files_history axioms lemmas;
-      printf "[INFO] Generated %d TPTP history-mode .p files in the lemmas directory.\n%!"
+      printf "[INFO] Generated %d TPTP small-step (history) .p files in the lemmas directory.\n%!"
         (List.length lemmas)
 
   | "abstract" ->
       Lemma_extractor.generate_all_files_abstract axioms lemmas;
-      printf "[INFO] Generated %d TPTP abstract-mode .p files in the lemmas directory.\n%!"
+      printf "[INFO] Generated %d TPTP abstracted (abstract) .p files in the lemmas directory.\n%!"
         (List.length lemmas)
 
   | _ ->
-      eprintf "[ERROR] Unknown mode: %s (expected 'single', 'history', or 'abstract')\n%!"
+      eprintf "[ERROR] Unknown mode: %s (expected 'big-step'/'single', 'small-step'/'history', or 'abstracted'/'abstract')\n%!"
         mode;
       exit 1

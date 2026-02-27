@@ -19,10 +19,10 @@ pub fn run_vampire_only(input: &str, output: &str) {
         fs::create_dir_all(parent).expect("Failed to create output directory");
     }
 
-    crate::klog_debug!("[INFO] Running Vampire...");
+    crate::klog_info!("[INFO] Phase 0: Running Vampire and redirecting proof.");
+    crate::klog_info!("[INFO] Input: {}", input_path.display());
+    crate::klog_info!("[INFO] Output: {}", output_path.display());
     run_vampire(input_path.to_str().unwrap(), output_path.to_str().unwrap());
-
-    crate::klog_debug!("[INFO] Vampire proof saved to {}", output_path.display());
 }
 
 /// Helper: actually runs the Vampire binary
