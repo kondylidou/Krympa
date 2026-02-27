@@ -168,8 +168,8 @@ pub fn try_minimize(
             // this is the second case: the root itself is single/abstract
             if candidates.is_empty() {
                 let conjecture = extract_conjecture_from_file(input_file)?;
-                if formulas_match(&root_formula, &conjecture)
-                    || formulas_match(&conjecture, &root_formula)
+                if formulas_match(root_formula, &conjecture)
+                    || formulas_match(&conjecture, root_formula)
                 {
                     crate::klog_debug!("[DEBUG] Main theorem is root {} — skipping", root_lemma);
                     // don't re prove the main theorem
@@ -230,7 +230,7 @@ pub fn try_minimize(
                 // handle Vampire-specific prepending
                 let (root_proof_steps, _root_proved_by) = if prover == "vampire" {
                     if let Some((superposition_steps, input_formulas, all_steps)) =
-                        extract_superposition_steps(path, &root_formula)
+                        extract_superposition_steps(path, root_formula)
                     {
                         // prepend only the relevant Vampire steps and get the renaming
                         let (proof, renaming) = prepend_superposition_steps(
@@ -434,8 +434,8 @@ pub fn try_minimize(
                         };
 
                         let conjecture = extract_conjecture_from_file(input_file)?;
-                        if formulas_match(&root_formula, &conjecture)
-                            || formulas_match(&conjecture, &root_formula)
+                        if formulas_match(root_formula, &conjecture)
+                            || formulas_match(&conjecture, root_formula)
                         {
                             crate::klog_debug!(
                                 "[DEBUG] Main theorem is root {} — skipping",
@@ -537,8 +537,8 @@ pub fn try_minimize(
                             };
 
                             let conjecture = extract_conjecture_from_file(input_file)?;
-                            if formulas_match(&root_formula, &conjecture)
-                                || formulas_match(&conjecture, &root_formula)
+                            if formulas_match(root_formula, &conjecture)
+                                || formulas_match(&conjecture, root_formula)
                             {
                                 crate::klog_debug!(
                                     "   [INFO] Main theorem is root {} — skipping",
@@ -806,8 +806,8 @@ pub fn try_minimize(
                     );
 
                     let conjecture = extract_conjecture_from_file(input_file)?;
-                    if formulas_match(&root_formula, &conjecture)
-                        || formulas_match(&conjecture, &root_formula)
+                    if formulas_match(root_formula, &conjecture)
+                        || formulas_match(&conjecture, root_formula)
                     {
                         // in this case here if root is the main theorem and we also have proved history
                         // we remain with start and root
@@ -850,8 +850,8 @@ pub fn try_minimize(
                     }
                 } else {
                     let conjecture = extract_conjecture_from_file(input_file)?;
-                    if formulas_match(&root_formula, &conjecture)
-                        || formulas_match(&conjecture, &root_formula)
+                    if formulas_match(root_formula, &conjecture)
+                        || formulas_match(&conjecture, root_formula)
                     {
                         crate::klog_debug!(
                             "[DEBUG] Main theorem is root {} — skipping",

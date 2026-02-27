@@ -13,7 +13,7 @@ fn parse_level(s: &str) -> Level {
         "error" => Level::Error,
         "warn" | "warning" => Level::Warn,
         "debug" => Level::Debug,
-        "info" | _ => Level::Info,
+        _ => Level::Info,
     }
 }
 
