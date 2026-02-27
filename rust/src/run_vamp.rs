@@ -7,7 +7,7 @@ use std::process::Command;
 pub fn run_vampire_only(input: &str, output: &str) {
     let input_path = Path::new(input);
     if !input_path.exists() {
-        eprintln!(
+        crate::klog_error!(
             "[ERROR] Input file does not exist: {}",
             input_path.display()
         );
@@ -19,10 +19,10 @@ pub fn run_vampire_only(input: &str, output: &str) {
         fs::create_dir_all(parent).expect("Failed to create output directory");
     }
 
-    println!("[INFO] Running Vampire...");
+    crate::klog_debug!("[INFO] Running Vampire...");
     run_vampire(input_path.to_str().unwrap(), output_path.to_str().unwrap());
 
-    println!("[INFO] Vampire proof saved to {}", output_path.display());
+    crate::klog_debug!("[INFO] Vampire proof saved to {}", output_path.display());
 }
 
 /// Helper: actually runs the Vampire binary
@@ -44,5 +44,5 @@ pub fn run_vampire(input_file: &str, output_file: &str) {
     // Write transformed proof
     fs::write(output_file, transformed_output).expect("Failed to write transformed Vampire output");
 
-    println!("Vampire proof written to {}", output_file);
+    crate::klog_debug!("[DEBUG] Vampire proof written to {}", output_file);
 }

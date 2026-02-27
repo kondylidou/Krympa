@@ -4,10 +4,21 @@ use crate::prover_wrapper::*;
 use crate::run_vamp::run_vampire;
 use crate::superpose::*;
 use crate::utils::*;
+use rayon::prelude::*;
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+
+type RootEval = (
+    usize,  // lemma_count
+    usize,  // steps_total
+    String, // root_lemma
+    String, // best_history
+    String, // annotated_proof
+    String, // dag_text
+    String, // lemmas_text
+);
 
 /// Tries several candidate root lemmas and picks the best
 pub fn try_minimize(
@@ -38,15 +49,7 @@ pub fn try_minimize(
         .max()
         .ok_or("summary.json is empty")?;
 
-    let mut global_best: Option<(
-        usize,  // lemma_count
-        usize,  // steps_total
-        String, // root_lemma
-        String, // best_history
-        String, // annotated_proof
-        String, // dag_text
-        String, // lemmas_text
-    )> = None;
+    let global_best = std::sync::Mutex::new(None::<RootEval>);
 
     // precompute lemmas
     let precomputed = precompute_lemmas(&proofs_dir, &lemmas_dir, &twee_proofs_dir)?;
@@ -55,8 +58,9 @@ pub fn try_minimize(
     let mut accepted = 0;
     let max_candidates = 5;
 
-    // skip lemmas containing Skolem constants
+    // select root candidates first (serial), then evaluate them in parallel.
     let skolem_re = Regex::new(r"\bsK\d+\b").unwrap();
+    let mut selected_roots: Vec<(String, String)> = Vec::new();
     while accepted < max_candidates && offset < max_key {
         let key = (max_key - offset).to_string();
         offset += 1;
@@ -70,15 +74,19 @@ pub fn try_minimize(
             }
         };
 
-        let root_lemma = entry[0].as_str().ok_or("Bad summary.json format")?;
+        let root_lemma = entry[0]
+            .as_str()
+            .ok_or("Bad summary.json format")?
+            .to_string();
 
-        let root_formula = load_lemma(&lemmas_dir, root_lemma)
+        let root_formula = load_lemma(&lemmas_dir, &root_lemma)
             .map_err(|_| format!("Missing lemma {}", root_lemma))?;
 
         if skolem_re.is_match(&root_formula) {
-            println!(
+            crate::klog_debug!(
                 "[DEBUG] Skipping root lemma {} due to Skolem constants in formula: {}",
-                root_lemma, root_formula
+                root_lemma,
+                root_formula
             );
             // skipping lemma because it contains Skolem constants
             continue;
@@ -86,15 +94,31 @@ pub fn try_minimize(
 
         // valid root lemma
         accepted += 1;
+        selected_roots.push((root_lemma, root_formula));
+    }
+    let selected_root_names = selected_roots
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    crate::klog_info!(
+        "[INFO] Evaluating {} root candidates in parallel: {}",
+        selected_roots.len(),
+        selected_root_names
+    );
 
-        println!("\n[INFO] Root lemma {}", root_lemma);
+    selected_roots
+        .par_iter()
+        .try_for_each(|(root_lemma, root_formula)| -> Result<(), String> {
+            crate::klog_debug!("[DEBUG] Root lemma {}", root_lemma);
 
         // build the minimal dag
         let (dag, lemmas) = build_dag(root_lemma, &precomputed)?;
-        let dag_file = "../output/tmp_dag.txt";
-        write_dag(dag_file, &dag).map_err(|e| e.to_string())?;
+        let root_slug = root_lemma.replace('/', "_");
+        let dag_file = format!("../output/tmp_dag_{}.txt", root_slug);
+        write_dag(&dag_file, &dag).map_err(|e| e.to_string())?;
 
-        let lemmas_out_path = "../output/tmp_lemmas.p";
+        let lemmas_out_path = format!("../output/tmp_lemmas_{}.p", root_slug);
         let mut lemmas_txt = String::new();
         for (lemma_name, formula) in &lemmas {
             lemmas_txt.push_str(&format!(
@@ -102,7 +126,7 @@ pub fn try_minimize(
                 lemma_name, formula
             ));
         }
-        fs::write(lemmas_out_path, lemmas_txt)
+        fs::write(&lemmas_out_path, &lemmas_txt)
             .map_err(|e| format!("Failed to write {}: {}", lemmas_out_path, e))?;
 
         // collect all history candidates which appear before the root
@@ -147,9 +171,9 @@ pub fn try_minimize(
                 if formulas_match(&root_formula, &conjecture)
                     || formulas_match(&conjecture, &root_formula)
                 {
-                    println!("   [INFO] Main theorem is root {} — skipping", root_lemma);
+                    crate::klog_debug!("[DEBUG] Main theorem is root {} — skipping", root_lemma);
                     // don't re prove the main theorem
-                    continue;
+                    return Ok(());
                 }
 
                 let root_deps = dag.get(root_lemma).cloned().unwrap_or_default();
@@ -159,20 +183,20 @@ pub fn try_minimize(
                 // duplicate is in itself. When we have cyclic dependencies.
                 // this is a patch
                 if candidates.is_empty() && has_history_dependency {
-                    println!(
+                    crate::klog_warn!(
                         "   [BUG] Root {} depends on history {:?} — refusing root-only proof",
                         root_lemma, root_deps
                     );
-                    continue; // skipping this now
+                    return Ok(()); // skipping this now
                 }
-                println!(
+                crate::klog_debug!(
                     "   [INFO] No history or single lemmas found — falling back to root-only proof"
                 );
 
                 if root_lemma.starts_with("history_lemma_") {
                     // TODO this is a bug in the dag
-                    println!("   [BUG] No dependencies found — skipping");
-                    continue;
+                    crate::klog_warn!("   [BUG] No dependencies found — skipping");
+                    return Ok(());
                 }
 
                 // vector to collect new Vampire lemmas (names + formulas)
@@ -244,7 +268,7 @@ pub fn try_minimize(
                 )?
                 else {
                     // no proof -> skip this candidate
-                    continue;
+                    return Ok(());
                 };
 
                 let annotated_proof = format!(
@@ -259,13 +283,13 @@ pub fn try_minimize(
             } else {
                 // basically here we are trying to prove the root from its single or abstract dependecies.
                 // this is the first case: the root depends on single/abstract lemmas
-                println!(
+                crate::klog_debug!(
                     "   [INFO] No history lemmas found — falling back to {} single lemmas",
                     candidates.len()
                 );
 
                 for candidate in &candidates {
-                    println!(
+                    crate::klog_debug!(
                         "   [INFO] Trying single/abstract candidate {} of {}",
                         candidate,
                         candidates.len()
@@ -286,7 +310,7 @@ pub fn try_minimize(
                         // get the lemma derived by superposition directly from Vampire proof
                         // in this case we are just proving the single lemma directly
                         let maybe_superposition =
-                            superposition_steps(dag_file, vampire_file, &lemmas_dir, candidate);
+                            superposition_steps(&dag_file, vampire_file, &lemmas_dir, candidate);
                         // in dependencies we will get itself (the single lemma)
                         // in this case we can ignore proved_history
                         let (dependencies, superposition_steps, _, input_formulas, all_steps) =
@@ -413,7 +437,10 @@ pub fn try_minimize(
                         if formulas_match(&root_formula, &conjecture)
                             || formulas_match(&conjecture, &root_formula)
                         {
-                            println!("   [INFO] Main theorem is root {} — skipping", root_lemma);
+                            crate::klog_debug!(
+                                "[DEBUG] Main theorem is root {} — skipping",
+                                root_lemma
+                            );
                             let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
                                 trim_proof_parts(
                                     Some((&start_proof, &start_proved_by, start_proof_steps)),
@@ -467,7 +494,7 @@ pub fn try_minimize(
                             let abstract_formula = match load_lemma(&lemmas_dir, candidate) {
                                 Ok(f) => f,
                                 Err(err) => {
-                                    eprintln!(
+                                    crate::klog_warn!(
                                         "     [WARN] Cannot load {}: {}. Skipping.",
                                         candidate, err
                                     );
@@ -513,7 +540,7 @@ pub fn try_minimize(
                             if formulas_match(&root_formula, &conjecture)
                                 || formulas_match(&conjecture, &root_formula)
                             {
-                                println!(
+                                crate::klog_debug!(
                                     "   [INFO] Main theorem is root {} — skipping",
                                     root_lemma
                                 );
@@ -544,7 +571,7 @@ pub fn try_minimize(
                             // 8. Compute total steps
                             steps_total = kept_abstract_steps + kept_root_steps + sub_proof_steps;
                         } else {
-                            println!(
+                            crate::klog_warn!(
                                 "   [WARN] Abstract lemma {} proof file does not exist, skipping",
                                 candidate
                             );
@@ -571,13 +598,13 @@ pub fn try_minimize(
             // loop over all history candidates
             for n_history_lemma in &candidates {
                 if n_history_lemma == root_lemma {
-                    println!(
+                    crate::klog_debug!(
                         "[INFO] Skipping history {} because it is the root lemma",
                         n_history_lemma
                     );
                     continue;
                 }
-                println!(
+                crate::klog_debug!(
                     "   [INFO] Trying history candidate {} of {}",
                     n_history_lemma,
                     candidates.len()
@@ -586,7 +613,7 @@ pub fn try_minimize(
                 // 1. Get superposition steps
                 // get the lemma derived by superposition directly from Vampire proof
                 let maybe_superposition =
-                    superposition_steps(dag_file, vampire_file, &lemmas_dir, n_history_lemma);
+                    superposition_steps(&dag_file, vampire_file, &lemmas_dir, n_history_lemma);
 
                 let (dependencies, superposition_steps, proved_history, input_formulas, all_steps) =
                     match maybe_superposition {
@@ -610,7 +637,7 @@ pub fn try_minimize(
 
                 // check if it's already proven
                 if dependencies.contains(n_history_lemma) {
-                    println!(
+                    crate::klog_debug!(
                         "[INFO] Skipping {} because it's already proven via superposition/dependencies",
                         n_history_lemma
                     );
@@ -773,7 +800,7 @@ pub fn try_minimize(
                 let annotated_proof;
                 let steps_total;
                 if !prove_history {
-                    println!(
+                    crate::klog_debug!(
                         "   [INFO] History lemma {} already proved — skipping",
                         n_history_lemma
                     );
@@ -784,7 +811,10 @@ pub fn try_minimize(
                     {
                         // in this case here if root is the main theorem and we also have proved history
                         // we remain with start and root
-                        println!("   [INFO] Main theorem is root {} — skipping", root_lemma);
+                        crate::klog_debug!(
+                            "[DEBUG] Main theorem is root {} — skipping",
+                            root_lemma
+                        );
 
                         let (kept_start, _, kept_root, kept_start_steps, _, kept_root_steps) =
                             trim_proof_parts(
@@ -823,7 +853,10 @@ pub fn try_minimize(
                     if formulas_match(&root_formula, &conjecture)
                         || formulas_match(&conjecture, &root_formula)
                     {
-                        println!("   [INFO] Main theorem is root {} — skipping", root_lemma);
+                        crate::klog_debug!(
+                            "[DEBUG] Main theorem is root {} — skipping",
+                            root_lemma
+                        );
 
                         let (
                             kept_start,
@@ -898,7 +931,7 @@ pub fn try_minimize(
                     }
                 };
 
-                println!(
+                crate::klog_debug!(
                     "   [INFO] Candidate root {} with history {} requires {} total steps with {} initial superposition steps",
                     root_lemma, n_history_lemma, steps_total, start_proof_steps
                 );
@@ -906,51 +939,55 @@ pub fn try_minimize(
         }
         // update global_best
         if let Some((steps_total, best_history, annotated_proof)) = local_best {
-            let dag_text = fs::read_to_string("../output/tmp_dag.txt")
-                .map_err(|e| format!("Failed to read tmp_dag.txt: {}", e))?;
+            let candidate: RootEval = (
+                lemma_count,
+                steps_total,
+                root_lemma.to_string(),
+                best_history.unwrap_or_default(),
+                annotated_proof,
+                fs::read_to_string(&dag_file)
+                    .map_err(|e| format!("Failed to read {}: {}", dag_file, e))?,
+                fs::read_to_string(&lemmas_out_path)
+                    .map_err(|e| format!("Failed to read {}: {}", lemmas_out_path, e))?,
+            );
 
-            let lemmas_text = fs::read_to_string("../output/tmp_lemmas.p")
-                .map_err(|e| format!("Failed to read tmp_lemmas.p: {}", e))?;
+            let mut best_guard = global_best
+                .lock()
+                .map_err(|_| "Failed to lock global_best".to_string())?;
 
-            global_best = match global_best {
-                None => Some((
-                    lemma_count,
-                    steps_total,
-                    root_lemma.to_string(),
-                    best_history.unwrap_or_default(), // <- unwrap Option<String>,
-                    annotated_proof,
-                    dag_text,
-                    lemmas_text,
-                )),
+            match &*best_guard {
+                None => {
+                    *best_guard = Some(candidate);
+                }
                 Some((b_lemmas, b_steps, _, _, _, _, _)) => {
-                    if steps_total < b_steps || (steps_total == b_steps && lemma_count < b_lemmas) {
-                        Some((
-                            lemma_count,
-                            steps_total,
-                            root_lemma.to_string(),
-                            best_history.unwrap_or_default(), // <- unwrap Option<String>,
-                            annotated_proof,
-                            dag_text,
-                            lemmas_text,
-                        ))
-                    } else {
-                        global_best
+                    if candidate.1 < *b_steps || (candidate.1 == *b_steps && candidate.0 < *b_lemmas)
+                    {
+                        *best_guard = Some(candidate);
                     }
                 }
-            };
+            }
         }
-    }
+
+            let _ = fs::remove_file(&dag_file);
+            let _ = fs::remove_file(&lemmas_out_path);
+            Ok(())
+        })?;
+
+    let global_best = global_best
+        .into_inner()
+        .map_err(|_| "Failed to unwrap global_best".to_string())?;
+
     if let Some((_, steps, root, n_history, annotated_proof, dag_text, lemmas_text)) = &global_best
     {
-        println!("\n[RESULT] Best combination found:");
-        println!("[RESULT] Root lemma: {}", root);
-        println!("[RESULT] History lemma: {}", n_history);
-        println!("[RESULT] Total steps: {}", steps);
+        crate::klog_info!("[RESULT] Best combination found:");
+        crate::klog_info!("[RESULT] Root lemma: {}", root);
+        crate::klog_info!("[RESULT] History lemma: {}", n_history);
+        crate::klog_info!("[RESULT] Total steps: {}", steps);
         let vampire_steps = match fs::read_to_string(vampire_file) {
             Ok(content) => proof_length("vampire", &content),
             Err(_) => 0,
         };
-        println!("[RESULT] Initial proof steps: {}", vampire_steps);
+        crate::klog_info!("[RESULT] Initial proof steps: {}", vampire_steps);
 
         fs::write(dag_with_suffix.clone(), dag_text).map_err(|e| e.to_string())?;
         fs::write(lemmas_with_suffix.clone(), lemmas_text).map_err(|e| e.to_string())?;
@@ -958,10 +995,6 @@ pub fn try_minimize(
     } else {
         return Err("No valid root/history candidate combination found.".into());
     }
-
-    // cleanup temporary files
-    let _ = fs::remove_file("../output/tmp_dag.txt");
-    let _ = fs::remove_file("../output/tmp_lemmas.p");
 
     Ok("Minimization complete".into())
 }
@@ -1568,7 +1601,7 @@ pub fn trim_proof_parts(
             if !sub_txt.trim().is_empty() {
                 if let Some(n) = has_bleed(sub_txt) {
                     freeze2 = FreezeBefore::Root;
-                    eprintln!(
+                    crate::klog_debug!(
                         "[DEBUG] stop-the-bleed: unresolved a_{} in SUB; freezing trimming of start/history/root",
                         n
                     );
@@ -1580,7 +1613,7 @@ pub fn trim_proof_parts(
     if freeze2 == FreezeBefore::None {
         if let Some(n) = has_bleed(kept_root_1) {
             freeze2 = FreezeBefore::Root;
-            eprintln!(
+            crate::klog_debug!(
                 "[DEBUG] stop-the-bleed: unresolved a_{} in KEPT ROOT; freezing trimming of start/history/root",
                 n
             );
@@ -1590,7 +1623,7 @@ pub fn trim_proof_parts(
     if freeze2 == FreezeBefore::None && !kept_history_1.trim().is_empty() {
         if let Some(n) = has_bleed(kept_history_1) {
             freeze2 = FreezeBefore::History;
-            eprintln!(
+            crate::klog_debug!(
                 "[DEBUG] stop-the-bleed: unresolved a_{} in KEPT HISTORY; freezing trimming of start/history",
                 n
             );
@@ -1600,7 +1633,7 @@ pub fn trim_proof_parts(
     if freeze2 == FreezeBefore::None && !kept_start_1.trim().is_empty() {
         if let Some(n) = has_bleed(kept_start_1) {
             freeze2 = FreezeBefore::Start;
-            eprintln!(
+            crate::klog_debug!(
                 "[DEBUG] stop-the-bleed: unresolved a_{} in KEPT START; freezing trimming of start",
                 n
             );

@@ -1,6 +1,7 @@
 pub mod alpha_match;
 pub mod core;
 pub mod dag;
+pub mod logging;
 pub mod minimize;
 pub mod proof_turnaround;
 pub mod prover_wrapper;

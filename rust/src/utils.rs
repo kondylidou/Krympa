@@ -264,7 +264,7 @@ pub fn parse_used_lemmas(
                     let dep_formula = load_lemma(lemmas_dir, &clean)?;
                     used.push((clean, dep_formula));
                 } else {
-                    println!("[WARN] No proof file found for {}", name);
+                    crate::klog_warn!("[WARN] No proof file found for {}", name);
                 }
                 continue;
             }
@@ -288,7 +288,7 @@ pub fn parse_used_lemmas(
                     let dep_formula = load_lemma(lemmas_dir, &clean)?;
                     used.push((clean, dep_formula));
                 } else {
-                    println!("[WARN] No proof file found for {}", name);
+                    crate::klog_warn!("[WARN] No proof file found for {}", name);
                 }
             }
         }
@@ -490,9 +490,23 @@ pub fn create_tmp_copy(input_file: &str) -> Result<String, String> {
 
     let input_path = Path::new(input_file);
 
-    let file_name = input_path.file_name().ok_or("Invalid input filename")?;
+    let file_stem = input_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or("Invalid input filename")?;
+    let ext = input_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("p");
 
-    let tmp_path: PathBuf = tmp_dir.join(file_name);
+    // Include process id + high-resolution timestamp so concurrent minimization attempts
+    // do not overwrite each other's temporary copies.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Clock error: {}", e))?
+        .as_nanos();
+    let unique_name = format!("{}_{}_{}.{}", file_stem, std::process::id(), nanos, ext);
+    let tmp_path: PathBuf = tmp_dir.join(unique_name);
 
     fs::copy(input_path, &tmp_path).map_err(|e| format!("Failed to copy temp input: {}", e))?;
 

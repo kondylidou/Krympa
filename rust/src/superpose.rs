@@ -183,9 +183,10 @@ pub fn superposition_steps(
     let (all_steps, input_formulas, relevant_set) = match parse_vampire_proof(vampire_file) {
         Ok(x) => x,
         Err(err) => {
-            eprintln!(
+            crate::klog_warn!(
                 "  [WARN] Cannot parse vampire proof {}: {}",
-                vampire_file, err
+                vampire_file,
+                err
             );
             return None;
         }
@@ -202,7 +203,7 @@ pub fn superposition_steps(
         let children = match dag.get(lemma) {
             Some(c) => c,
             None => {
-                eprintln!("   [WARN] No children for lemma {}", lemma);
+                crate::klog_warn!("   [WARN] No children for lemma {}", lemma);
                 return None;
             }
         };
@@ -215,7 +216,7 @@ pub fn superposition_steps(
             .collect();
 
         if single_children.is_empty() {
-            println!(
+            crate::klog_debug!(
                 "   [WARN] history lemma {} has no single lemma children; checking history children.",
                 lemma
             );
@@ -237,7 +238,7 @@ pub fn superposition_steps(
 
             if non_parent_history_children.is_empty() {
                 // no non-parent history children -> prove history itself
-                println!(
+                crate::klog_debug!(
                     "   [WARN] No non-parent history children found for {}; proving history directly.",
                     lemma
                 );
@@ -266,7 +267,7 @@ pub fn superposition_steps(
         let dep_formula = match load_lemma(lemmas_dir, dep) {
             Ok(f) => f,
             Err(err) => {
-                eprintln!("     [WARN] Cannot load {}: {}. Skipping.", dep, err);
+                crate::klog_warn!("     [WARN] Cannot load {}: {}. Skipping.", dep, err);
                 continue;
             }
         };
@@ -331,9 +332,10 @@ pub fn extract_superposition_steps(
     let (all_steps, input_formulas, relevant_set) = match parse_vampire_proof(vampire_file) {
         Ok(x) => x,
         Err(err) => {
-            eprintln!(
+            crate::klog_warn!(
                 "  [WARN] Cannot parse Vampire proof {}: {}",
-                vampire_file, err
+                vampire_file,
+                err
             );
             return None;
         }
@@ -371,7 +373,7 @@ pub fn extend_with_superposition_steps(
 ) {
     for (vnum, step) in relevant_steps {
         let Some(name) = renaming.get(vnum) else {
-            eprintln!("[WARN] Missing renaming for vamp {}", vnum);
+            crate::klog_warn!("[WARN] Missing renaming for vamp {}", vnum);
             continue;
         };
 

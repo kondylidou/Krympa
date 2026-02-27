@@ -15,7 +15,7 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
     {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[ERROR] Failed to start process '{}': {}", exe_path, e);
+            crate::klog_error!("[ERROR] Failed to start process '{}': {}", exe_path, e);
             return None;
         }
     };
@@ -27,17 +27,18 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
             if status.success() {
                 Some(String::from_utf8_lossy(&output.stdout).to_string())
             } else {
-                eprintln!(
+                crate::klog_debug!(
                     "[ERROR] Prover '{}' exited with error: {:?}",
-                    exe_path, status
+                    exe_path,
+                    status
                 );
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                eprintln!("[ERROR] Stderr: {}", stderr);
+                crate::klog_debug!("[DEBUG] Stderr: {}", stderr);
                 None
             }
         }
         None => {
-            eprintln!(
+            crate::klog_debug!(
                 "[TIMEOUT] Prover '{}' exceeded {} seconds",
                 exe_path,
                 timeout.as_secs()
@@ -170,8 +171,8 @@ pub fn prove_lemmas(
     sorted_nums
         .par_iter()
         .filter_map(|&n| {
-            println!("\n[INFO] Proving lemma {}", n);
-            println!(
+            crate::klog_debug!("[DEBUG] Proving lemma {}", n);
+            crate::klog_debug!(
                 "[DEBUG] lemma {} running on thread {:?}",
                 n,
                 std::thread::current().id()
@@ -210,7 +211,7 @@ pub fn prove_lemmas(
                     };
 
                     //let len = proof_length(&prover, &proof);
-                    println!("[INFO] {} proof length: {} lines", prover, len);
+                    crate::klog_debug!("[DEBUG] {} proof length: {} lines", prover, len);
                     all_proofs.push((prover, proof, len, file_stem.to_string()));
                 }
             }
@@ -238,19 +239,25 @@ pub fn prove_lemmas(
             {
                 let final_path = out_dir.join(format!("{}_{}.proof", best_file, best_prover));
                 if let Err(e) = fs::write(&final_path, &best_proof) {
-                    eprintln!("[ERROR] Failed to save shortest proof: {}", e);
+                    crate::klog_error!("[ERROR] Failed to save shortest proof: {}", e);
                 } else {
-                    println!("[INFO] Saved shortest proof to '{}'", final_path.display());
+                    crate::klog_debug!(
+                        "[DEBUG] Saved shortest proof to '{}'",
+                        final_path.display()
+                    );
                 }
 
-                println!(
-                    "[INFO] Shortest proof for lemma {} found in '{}' by '{}' with {} lines",
-                    n, best_file, best_prover, best_len
+                crate::klog_debug!(
+                    "[DEBUG] Shortest proof for lemma {} found in '{}' by '{}' with {} lines",
+                    n,
+                    best_file,
+                    best_prover,
+                    best_len
                 );
 
                 Some((n, (best_file, best_prover, best_proof)))
             } else {
-                println!("[WARN] No successful proof for group {}", n);
+                crate::klog_warn!("[WARN] No successful proof for group {}", n);
                 None
             }
         })
@@ -270,25 +277,25 @@ fn try_provers(
             "vampire" => vampire_file,
             "twee" => twee_file,
             _ => {
-                eprintln!("[ERROR] Unknown prover '{}'", prover);
+                crate::klog_error!("[ERROR] Unknown prover '{}'", prover);
                 continue;
             }
         };
 
-        println!("[RUN] Trying prover '{}' on '{}'", prover, lemma_file);
+        crate::klog_debug!("[RUN] Trying prover '{}' on '{}'", prover, lemma_file);
 
         let proof_content = match prover {
             "vampire" => match run_vampire(lemma_file) {
                 Some(c) => c,
                 None => {
-                    println!("[INFO] Vampire failed for '{}'", lemma_file);
+                    crate::klog_debug!("[DEBUG] Vampire failed for '{}'", lemma_file);
                     continue;
                 }
             },
             "twee" => match run_twee(lemma_file) {
                 Some(c) => c,
                 None => {
-                    println!("[INFO] Twee failed for '{}'", lemma_file);
+                    crate::klog_debug!("[DEBUG] Twee failed for '{}'", lemma_file);
                     continue;
                 }
             },
@@ -296,9 +303,10 @@ fn try_provers(
         };
 
         if let Err(e) = fs::write(output_file, &proof_content) {
-            eprintln!(
+            crate::klog_error!(
                 "[ERROR] Failed to save proof for prover '{}': {}",
-                prover, e
+                prover,
+                e
             );
         }
 

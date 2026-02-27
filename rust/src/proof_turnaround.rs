@@ -861,9 +861,9 @@ pub fn eq_proof_procedure(proof_text: &str) -> String {
 /* ------------------ DEBUG ------------------ */
 
 pub fn _debug_print_parsed_proof(steps: &BTreeMap<usize, SuperpositionStep>) {
-    println!("\n[DEBUG] Parsed Vampire proof");
+    crate::klog_debug!("[DEBUG] Parsed Vampire proof");
     for (idx, step) in steps {
-        println!(
+        crate::klog_debug!(
             "{:>4}. formula = {:?}, deps = {:?}, is_neg = {:?}, rule = {:?}",
             idx,
             step.formula.to_string(),
@@ -872,7 +872,7 @@ pub fn _debug_print_parsed_proof(steps: &BTreeMap<usize, SuperpositionStep>) {
             step.rule
         );
     }
-    println!("-------------------------------");
+    crate::klog_debug!("-------------------------------");
 }
 
 /// Format a proof (BTreeMap<usize, SuperpositionStep>) as Vampire-style text
