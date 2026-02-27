@@ -76,7 +76,7 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
     );
 }
 
-/// Phase 2: Shorten small-step proofs by replacing departure lemmas with abstracted lemmas
+/// Phase 2: Shorten history proofs by replacing history lemmas with abstract lemmas
 /// and rerunning provers on updated files.
 pub fn shorten_proofs(summary_file: &str) {
     crate::klog_info!("[INFO] Phase 2: Shorten small-step proofs");
