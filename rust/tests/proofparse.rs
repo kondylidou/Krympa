@@ -213,7 +213,7 @@ fn test_real_vampire_uses_axiom_names_for_backtracked_inputs() {
             input_formulas.get(&5).unwrap().clone(), // input step 5
         ),
         (
-            "history_lemma_0139".to_string(),
+            "small_step_lemma_0139".to_string(),
             input_formulas.get(&7).unwrap().clone(), // input step 7
         ),
     ];
@@ -226,9 +226,9 @@ fn test_real_vampire_uses_axiom_names_for_backtracked_inputs() {
         annotated.lines().any(|l| {
             l.contains("op(X0,X3) = op(op(X3,op(op(X2,X1),X0)),X0)")
                 && l.contains("lemma_0002")
-                && l.contains("history_lemma_0139")
+                && l.contains("small_step_lemma_0139")
         }),
-        "expected step 18 deps to resolve to lemma_0002 and history_lemma_0139. got:\n{annotated}"
+        "expected step 18 deps to resolve to lemma_0002 and small_step_lemma_0139. got:\n{annotated}"
     );
 
     // Must NOT show intermediate non-input deps (15,17) as inputs
@@ -243,14 +243,14 @@ fn test_real_vampire_uses_axiom_names_for_backtracked_inputs() {
         "should resolve to named axioms, not a_5/a_7. got:\n{annotated}"
     );
 
-    // Step 20 depends on step 18 + (17 -> 7), so it should contain a lemma_... and history_lemma_0139
+    // Step 20 depends on step 18 + (17 -> 7), so it should contain a lemma_... and small_step_lemma_0139
     assert!(
         annotated.lines().any(|l| {
             l.contains("op(X0,X3) = op(op(X3,op(X1,X0)),X0)")
                 && l.contains("lemma_") // dependency on the renamed step 18
-                && l.contains("history_lemma_0139")
+                && l.contains("small_step_lemma_0139")
                 && !l.contains("a_17")
         }),
-        "expected step 20 deps to include lemma_* and history_lemma_0139 (not a_17). got:\n{annotated}"
+        "expected step 20 deps to include lemma_* and small_step_lemma_0139 (not a_17). got:\n{annotated}"
     );
 }

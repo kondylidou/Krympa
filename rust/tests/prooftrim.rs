@@ -5,7 +5,7 @@ use krympa::prover_wrapper::proof_length_twee;
 use krympa::prover_wrapper::proof_length_vampire;
 
 /// Exact regression: later proof mentions only `lemma_0059` (and
-/// `history_lemma_0058`), but the superposition block must keep the whole
+/// `small_step_lemma_0058`), but the superposition block must keep the whole
 /// dependency chain: lemma_0059 -> lemma_0055 -> (lemma_0053, lemma_0054)
 #[test]
 fn trim_keeps_dependency_chain() {
@@ -15,12 +15,12 @@ fn trim_keeps_dependency_chain() {
 % lemma_0055: op(X19,op(X18,X19)) = op(op(X19,op(X18,X19)),op(op(X20,op(X18,X20)),op(op(X17,X18),X18))) | deps: lemma_0053: op(X19,op(X18,X19)) = op(op(X19,op(X18,X19)),op(op(op(X20,op(X18,X20)),op(X21,op(op(op(X17,X18),X18),X21))),op(op(X17,X18),X18))), lemma_0054: op(X212,op(X211,X212)) = op(op(X212,op(X211,X212)),op(X213,op(op(op(X210,X211),X211),X213)))
 % lemma_0056: op(X143,op(X141,X143)) = op(op(X143,op(X141,X143)),op(op(X144,op(X141,X144)),op(op(X142,op(X141,X142)),op(op(X140,X141),X141)))) | deps: lemma_0016: op(X10,op(X8,X10)) = op(op(X10,op(X8,X10)),op(op(X9,op(X8,X9)),op(X6,op(op(X7,X8),X6)))), lemma_0052: op(op(X14,X13),X13) = op(op(op(X14,X13),X13),op(X15,op(X13,X15)))
 % lemma_0059: op(X143,op(X141,X143)) = op(op(X143,op(X141,X143)),op(X144,op(X141,X144))) | deps: lemma_0056: op(X143,op(X141,X143)) = op(op(X143,op(X141,X143)),op(op(X144,op(X141,X144)),op(op(X142,op(X141,X142)),op(op(X140,X141),X141)))), lemma_0055: op(X19,op(X18,X19)) = op(op(X19,op(X18,X19)),op(op(X20,op(X18,X20)),op(op(X17,X18),X18)))
-% history_lemma_0058: op(X143,op(X141,X143)) = op(op(X143,op(X141,X143)),op(X144,op(X141,X144))) | deps: lemma_0056: op(X143,op(X141,X143)) = op(op(X143,op(X141,X143)),op(op(X144,op(X141,X144)),op(op(X142,op(X141,X142)),op(op(X140,X141),X141)))), lemma_0055: op(X19,op(X18,X19)) = op(op(X19,op(X18,X19)),op(op(X20,op(X18,X20)),op(op(X17,X18),X18)))
+% small_step_lemma_0058: op(X143,op(X141,X143)) = op(op(X143,op(X141,X143)),op(X144,op(X141,X144))) | deps: lemma_0056: op(X143,op(X141,X143)) = op(op(X143,op(X141,X143)),op(op(X144,op(X141,X144)),op(op(X142,op(X141,X142)),op(op(X140,X141),X141)))), lemma_0055: op(X19,op(X18,X19)) = op(op(X19,op(X18,X19)),op(op(X20,op(X18,X20)),op(op(X17,X18),X18)))
 "#;
 
     let seg1 = r#"The conjecture is true! Here is a proof.
 
-Axiom 1 (history_lemma_0058): op(X, op(op(Y, op(op(Z, Y), Y)), X)) = X.
+Axiom 1 (small_step_lemma_0058): op(X, op(op(Y, op(op(Z, Y), Y)), X)) = X.
 Axiom 2 (lemma_0059): op(X, op(Y, X)) = op(op(X, op(Y, X)), op(Z, op(Y, Z))).
 "#;
 
@@ -34,7 +34,7 @@ Axiom 2 (lemma_0059): op(X, op(Y, X)) = op(op(X, op(Y, X)), op(Z, op(Y, Z))).
 
     // used
     assert!(trimmed.contains("% lemma_0059:"));
-    assert!(trimmed.contains("% history_lemma_0058:"));
+    assert!(trimmed.contains("% small_step_lemma_0058:"));
 
     // dependency chain that must be kept even if not mentioned later
     assert!(trimmed.contains("% lemma_0056:"));
@@ -57,16 +57,16 @@ fn trim_keeps_internal_dep() {
 % lemma_0067: op(op(X12,op(op(X13,X8),X12)),X8) = op(op(op(X12,op(op(X13,X8),X12)),X8),op(X9,op(op(X7,X8),X9))) | deps: lemma_0066: op(op(X12,op(op(X13,X8),X12)),X8) = op(op(op(X12,op(op(X13,X8),X12)),X8),op(op(X9,op(op(X7,X8),X9)),op(X6,op(op(X7,X8),X6)))), lemma_0059: op(X143,op(X141,X143)) = op(op(X143,op(X141,X143)),op(X144,op(X141,X144)))
 % lemma_0068: op(op(X3,X0),X4) = op(op(op(X3,X0),X4),op(op(X1,op(op(X2,X0),X1)),X0)) | deps: lemma_0008: op(op(X3,X0),X4) = op(op(op(X3,X0),X4),op(op(op(X1,op(op(X2,X0),X1)),X0),op(X4,op(op(X3,X0),X4)))), lemma_0067: op(op(X12,op(op(X13,X8),X12)),X8) = op(op(op(X12,op(op(X13,X8),X12)),X8),op(X9,op(op(X7,X8),X9)))
 % lemma_0074: op(op(X3,X0),X4) = op(op(X3,X0),X4) | deps: lemma_0068: op(op(X3,X0),X4) = op(op(op(X3,X0),X4),op(op(X1,op(op(X2,X0),X1)),X0)), lemma_0008: op(op(X3,X0),X4) = op(op(op(X3,X0),X4),op(op(op(X1,op(op(X2,X0),X1)),X0),op(X4,op(op(X3,X0),X4))))
-% history_lemma_0058: op(X1052,op(op(X1050,op(op(X1051,X1050),X1050)),X1052)) = X1052 | deps: lemma_0074: op(X1052,op(op(op(X1050,op(op(X1051,X1050),X1050)),X1052),op(op(X1055,op(op(X1056,X1052),X1055)),X1052))) = X1052, lemma_0070: op(op(X1364,op(op(X1365,X1364),X1364)),X1366) = op(op(op(X1364,op(op(X1365,X1364),X1364)),X1366),op(op(X1367,op(op(X1368,X1366),X1367)),X1366))
+% small_step_lemma_0058: op(X1052,op(op(X1050,op(op(X1051,X1050),X1050)),X1052)) = X1052 | deps: lemma_0074: op(X1052,op(op(op(X1050,op(op(X1051,X1050),X1050)),X1052),op(op(X1055,op(op(X1056,X1052),X1055)),X1052))) = X1052, lemma_0070: op(op(X1364,op(op(X1365,X1364),X1364)),X1366) = op(op(op(X1364,op(op(X1365,X1364),X1364)),X1366),op(op(X1367,op(op(X1368,X1366),X1367)),X1366))
 "#;
 
-    // 3 later segments; only segment 1 mentions history_lemma_0058 /
+    // 3 later segments; only segment 1 mentions small_step_lemma_0058 /
     // lemma_0059 (axioms). But the superposition liness above show that
-    // history_lemma_0058 depends (eventually) on lemma_0068, which depends on
+    // small_step_lemma_0058 depends (eventually) on lemma_0068, which depends on
     // lemma_0067, which depends on lemma_0066.
     let seg1 = r#"The conjecture is true! Here is a proof.
 
-Axiom 1 (history_lemma_0058): op(X, op(op(Y, op(op(Z, Y), Y)), X)) = X.
+Axiom 1 (small_step_lemma_0058): op(X, op(op(Y, op(op(Z, Y), Y)), X)) = X.
 Axiom 2 (lemma_0059): op(X, op(Y, X)) = op(op(X, op(Y, X)), op(Z, op(Y, Z))).
 "#;
 
@@ -75,8 +75,8 @@ Axiom 2 (lemma_0059): op(X, op(Y, X)) = op(op(X, op(Y, X)), op(Z, op(Y, Z))).
 
     let trimmed = trim_superposition_block(block, &[seg1, seg2, seg3]);
 
-    // because later proof uses history_lemma_0058 (axiom), we keep it
-    assert!(trimmed.contains("% history_lemma_0058:"));
+    // because later proof uses small_step_lemma_0058 (axiom), we keep it
+    assert!(trimmed.contains("% small_step_lemma_0058:"));
 
     // and we must keep the internal chain that leads to it
     assert!(trimmed.contains("% lemma_0068:"));
@@ -128,7 +128,7 @@ op(X, op(op(Y, op(W, op(op(V, Y), W))), X))
 = { by axiom 1 (a1) R->L }
 op(X, op(Y, X))
 
-Goal 1 (history_lemma_0061): x0 = op(x0, x1).
+Goal 1 (small_step_lemma_0061): x0 = op(x0, x1).
 Proof:
 x0
 = { by axiom 3 (lemma_0002) R->L }
@@ -548,7 +548,7 @@ op(X, op(op(Y, Z), op(op(W, X), op(Y, Z))))
 = { by axiom 1 (a1) R->L }
 X
 
-Goal 1 (history_lemma_0061): x0 = op(x0, x1).
+Goal 1 (small_step_lemma_0061): x0 = op(x0, x1).
 Proof:
 x0
 = { by lemma 22 R->L }
@@ -584,12 +584,12 @@ RESULT: Theorem (the conjecture is true).
 RESULT: Theorem (the conjecture is true).
 The conjecture is true! Here is a proof.
 
-Axiom 1 (history_lemma_0061): X = op(X, Y).
+Axiom 1 (small_step_lemma_0061): X = op(X, Y).
 
 Goal 1 (conjecture0): x0 = op(x0, op(x1, op(x2, op(x0, x2)))).
 Proof:
 x0
-= { by axiom 1 (history_lemma_0061) }
+= { by axiom 1 (small_step_lemma_0061) }
 op(x0, op(x1, op(x2, op(x0, x2))))
 
 RESULT: Theorem (the conjecture is true).
@@ -774,7 +774,7 @@ op(op(op(X, op(op(Y, X), X)), Z), op(op(op(X, op(op(Y, X), X)), W), op(op(Z, op(
 = { by axiom 1 (a1) R->L }
 op(op(X, op(op(Y, X), X)), Z)
 
-Goal 1 (history_lemma_0058): op(x2, op(op(x0, op(op(x1, x0), x0)), x2)) = x2.
+Goal 1 (small_step_lemma_0058): op(x2, op(op(x0, op(op(x1, x0), x0)), x2)) = x2.
 Proof:
 op(x2, op(op(x0, op(op(x1, x0), x0)), x2))
 = { by lemma 13 R->L }
@@ -792,7 +792,7 @@ RESULT: Theorem (the conjecture is true).
 The conjecture is true! Here is a proof.
 
 Axiom 1 (a1): X = op(X, op(Y, op(op(Z, X), Y))).
-Axiom 2 (history_lemma_0058): op(X, op(op(Y, op(op(Z, Y), Y)), X)) = X.
+Axiom 2 (small_step_lemma_0058): op(X, op(op(Y, op(op(Z, Y), Y)), X)) = X.
 
 Goal 1 (conjecture0): x0 = op(x0, op(x1, op(x2, op(x0, x2)))).
 Proof:
@@ -803,7 +803,7 @@ op(x0, op(X, op(op(Y, x0), X)))
 op(op(x0, op(X, op(op(Y, x0), X))), op(X, op(op(Y, x0), X)))
 = { by axiom 1 (a1) }
 op(op(op(x0, op(X, op(op(Y, x0), X))), op(X, op(op(Y, x0), X))), op(op(x1, op(x2, op(x0, x2))), op(op(op(X, op(op(Y, x0), X)), op(op(x0, op(X, op(op(Y, x0), X))), op(X, op(op(Y, x0), X)))), op(x1, op(x2, op(x0, x2))))))
-= { by axiom 2 (history_lemma_0058) }
+= { by axiom 2 (small_step_lemma_0058) }
 op(op(op(x0, op(X, op(op(Y, x0), X))), op(X, op(op(Y, x0), X))), op(x1, op(x2, op(x0, x2))))
 = { by axiom 1 (a1) R->L }
 op(op(x0, op(X, op(op(Y, x0), X))), op(x1, op(x2, op(x0, x2))))
@@ -862,7 +862,7 @@ fn proof_uses_lemma() {
 % lemma_0020: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(op(X17,X17),op(X17,X17))))),X17) | deps: lemma_0019: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(op(X17,op(X17,X17)),op(X17,op(X17,X17))))),X17), lemma_0002
 % lemma_0021: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(X17,op(X17,X17))))),X17) | deps: lemma_0020: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(op(X17,X17),op(X17,X17))))),X17), lemma_0002
 % lemma_0022: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,X17)),X17) | deps: lemma_0021: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(X17,op(X17,X17))))),X17), lemma_0017: op(X11,op(X12,op(X11,X12))) = X12
-% history_lemma_0151: op(X17,X17) = op(op(X15,op(X16,X17)),X17) | deps: lemma_0022: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,X17)),X17), lemma_0011: op(X0,X0) = op(op(X1,op(X0,X0)),X0)
+% small_step_lemma_0151: op(X17,X17) = op(op(X15,op(X16,X17)),X17) | deps: lemma_0022: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,X17)),X17), lemma_0011: op(X0,X0) = op(op(X1,op(X0,X0)),X0)
 "#;
 
     // Segment 3: the final goal proof — still no lemma_0004..0008 usage
@@ -887,7 +887,7 @@ RESULT: Theorem (the conjecture is true).
         Some((block, "vampire", count_superposition_steps(block))),
         None,
         (
-            "history_lemma_0151",
+            "small_step_lemma_0151",
             seg1,
             "vampire",
             count_superposition_steps(seg1),
@@ -916,7 +916,7 @@ RESULT: Theorem (the conjecture is true).
     assert!(kept_root.contains("% lemma_0003:"));
     assert!(kept_root.contains("% lemma_0022:"));
     assert!(kept_root.contains("% lemma_0011:"));
-    assert!(!kept_root.contains("% history_lemma_0151:"));
+    assert!(!kept_root.contains("% small_step_lemma_0151:"));
 
     // Step accounting
     assert_eq!(start_steps, 6);
@@ -956,7 +956,7 @@ fn proof_uses_lemma_remove_seg() {
 % lemma_0020: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(op(X17,X17),op(X17,X17))))),X17) | deps: lemma_0019: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(op(X17,op(X17,X17)),op(X17,op(X17,X17))))),X17), lemma_0002
 % lemma_0021: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(X17,op(X17,X17))))),X17) | deps: lemma_0020: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(op(X17,X17),op(X17,X17))))),X17), lemma_0002
 % lemma_0022: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,X17)),X17) | deps: lemma_0021: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,op(X17,op(X17,op(X17,X17))))),X17), lemma_0017: op(X11,op(X12,op(X11,X12))) = X12
-% history_lemma_0151: op(X17,X17) = op(op(X15,op(X16,X17)),X17) | deps: lemma_0022: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,X17)),X17), lemma_0011: op(X0,X0) = op(op(X1,op(X0,X0)),X0)
+% small_step_lemma_0151: op(X17,X17) = op(op(X15,op(X16,X17)),X17) | deps: lemma_0022: op(op(X17,op(X17,X17)),X17) = op(op(X15,op(X16,X17)),X17), lemma_0011: op(X0,X0) = op(op(X1,op(X0,X0)),X0)
 "#;
 
     // Segment 3: the final goal proof — still no lemma_0004..0008 usage
@@ -981,7 +981,7 @@ RESULT: Theorem (the conjecture is true).
         Some((block, "vampire", count_superposition_steps(block))),
         None,
         (
-            "history_lemma_0151",
+            "small_step_lemma_0151",
             seg1,
             "vampire",
             count_superposition_steps(seg1),
@@ -1102,12 +1102,12 @@ fn untouched() {
     // Segment 3: the final goal proof — still no lemma_0004..0008 usage
     let seg3 = r#"The conjecture is true! Here is a proof.
 
-Axiom 1 (history_lemma_0151): op(op(X, op(X, X)), X) = op(op(Y, op(Z, X)), X).
+Axiom 1 (small_step_lemma_0151): op(op(X, op(X, X)), X) = op(op(Y, op(Z, X)), X).
 
 Goal 1 (conjecture0): op(x0, x0) = op(op(x1, op(x2, x0)), x0).
 Proof:
 op(x0, x0)
-= { by axiom 1 (history_lemma_0151) }
+= { by axiom 1 (small_step_lemma_0151) }
 op(op(x1, op(x2, x0)), x0)
 
 RESULT: Theorem (the conjecture is true).
@@ -1118,7 +1118,7 @@ RESULT: Theorem (the conjecture is true).
         Some((block, "vampire", count_superposition_steps(block))),
         None,
         (
-            "history_lemma_0151",
+            "small_step_lemma_0151",
             seg2,
             "vampire",
             proof_length_vampire(seg2),
@@ -1229,27 +1229,27 @@ fn stop_the_bleed_but_not_kept() {
 
     let history = r#"
 % === Superposition Steps ===
-% history_lemma_0003: h | deps: a_1: ok
+% small_step_lemma_0003: h | deps: a_1: ok
 "#;
 
     // Root has bleed `a_6:` but will not be referenced by sub, so should trim
     // away.
     let root = r#"
 % === Superposition Steps ===
-% lemma_0006: baz | deps: a_6: ! [X0] : p(X0), history_lemma_0003
+% lemma_0006: baz | deps: a_6: ! [X0] : p(X0), small_step_lemma_0003
 "#;
 
-    // SUB references history_lemma_0003, NOT lemma_0006, so root isn't
+    // SUB references small_step_lemma_0003, NOT lemma_0006, so root isn't
     // needed.
     let sub = r#"
 % === Conjecture Proof ===
-... = { by lemma 1 (history_lemma_0003) } ...
+... = { by lemma 1 (small_step_lemma_0003) } ...
 "#;
 
     let (kept_start, kept_history, kept_root, start_steps, hist_steps, root_steps) =
         trim_proof_parts(
             Some((start, "vampire", 999)), // steps_in doesn't matter; vampire steps are recomputed when trimmed
-            Some(("history_lemma_0003", history, "vampire", 1)),
+            Some(("small_step_lemma_0003", history, "vampire", 1)),
             ("lemma_9999", root, "vampire", 123),
             Some(sub),
         );
@@ -1268,7 +1268,7 @@ fn stop_the_bleed_but_not_kept() {
 
     // History is needed by sub and should remain
     assert!(
-        kept_history.contains("history_lemma_0003"),
+        kept_history.contains("small_step_lemma_0003"),
         "expected history to be kept, but got:\n{}",
         kept_history
     );
