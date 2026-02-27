@@ -8,9 +8,9 @@ use std::path::Path;
 /// Phase 1: extract lemmas, and run provers on them.
 /// Produces `summary.json` for use in Phase 2.
 pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
-    println!("=== Phase 1: Collection ===");
-    println!("[INFO] Input:  {}", input_file);
-    println!("[INFO] Output: {}", proof_file);
+    crate::klog_info!("[INFO] Phase 1: Collection");
+    crate::klog_debug!("[DEBUG] Input: {}", input_file);
+    crate::klog_debug!("[DEBUG] Output: {}", proof_file);
 
     let lemmas_dir = "../lemmas".to_string();
 
@@ -21,10 +21,10 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
                 fs::remove_file(entry.path()).expect("Failed to remove old lemma file");
             }
         }
-        println!("[INFO] Cleaned lemmas directory.");
+        crate::klog_debug!("[DEBUG] Cleaned lemmas directory.");
     }
 
-    let modes = ["single", "history", "abstract"];
+    let modes = ["big-step", "small-step", "abstracted"];
     let mut all_lemma_files = Vec::new();
 
     for mode in &modes {
@@ -54,26 +54,24 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
     let provers = ["vampire", "twee"];
     let results = prove_lemmas(&all_lemma_files, &provers, "../proofs");
 
-    println!("\n=== Phase 1 Summary ===");
+    crate::klog_info!("[INFO] Phase 1 summary: {} lemmas proved.", results.len());
     let mut lemma_nums: Vec<u32> = results.keys().cloned().collect();
     lemma_nums.sort();
-    for n in lemma_nums {
-        let (mode, prover, proof) = &results[&n];
-        println!(
-            "- lemma_{:04} (mode: {}): proved by '{}' with {} steps",
-            n,
-            mode,
-            prover,
-            proof_length(prover, proof)
-        );
-    }
+    crate::klog_debug!(
+        "[DEBUG] Proved lemma ids: {}",
+        lemma_nums
+            .iter()
+            .map(|n| format!("lemma_{:04}", n))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 
     // save summary for Phase 2
     let summary_file = format!("../output/summary_{}.json", suffix);
     let summary_json = serde_json::to_string_pretty(&results).expect("Failed to serialize results");
     fs::write(&summary_file, summary_json).expect("Failed to save summary.json");
-    println!(
-        "\n[INFO] Phase 1 complete. Summary saved to '{}'.",
+    crate::klog_info!(
+        "[INFO] Phase 1 complete. Summary saved to '{}'.",
         summary_file
     );
 }
@@ -81,7 +79,7 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
 /// Phase 2: Shorten history proofs by replacing history lemmas with abstract lemmas
 /// and rerunning provers on updated files.
 pub fn shorten_proofs(summary_file: &str) {
-    println!("=== Phase 2: Shorten History Proofs ===");
+    crate::klog_info!("[INFO] Phase 2: Shorten small-step proofs");
 
     let lemmas_dir = "../lemmas".to_string();
     let proofs_dir = "../proofs".to_string();
@@ -98,33 +96,36 @@ pub fn shorten_proofs(summary_file: &str) {
     // map abstract lemma number -> formula
     let mut abstract_map: HashMap<u32, String> = HashMap::new();
     for (&n, (mode, _, _)) in &summary_data {
-        if mode.starts_with("abstract") {
-            let lemma_name = format!("abstract_lemma_{:04}", n);
+        if mode.starts_with("abstracted") {
+            let lemma_name = format!("abstracted_lemma_{:04}", n);
             let formula = match load_lemma(&lemmas_dir, &lemma_name) {
                 Ok(f) => f,
                 Err(err) => {
-                    eprintln!("[WARN] Missing lemma {}: {}", lemma_name, err);
+                    crate::klog_warn!("[WARN] Missing lemma {}: {}", lemma_name, err);
                     continue;
                 }
             };
-            println!("[DEBUG] Abstract_{:04} formula extracted: {}", n, formula);
+            crate::klog_debug!("[DEBUG] Abstract_{:04} formula extracted", n);
             abstract_map.insert(n, formula);
         }
     }
 
     let history_to_update: Vec<u32> = summary_data
         .iter()
-        .filter(|(_, (mode, _, _))| mode.starts_with("history"))
+        .filter(|(_, (mode, _, _))| mode.starts_with("small_step"))
         .map(|(n, _)| *n)
         .collect();
 
-    println!("[INFO] History files to update: {:?}", history_to_update);
+    crate::klog_info!(
+        "[INFO] Small-step files to update: {}",
+        history_to_update.len()
+    );
 
     let block_re = Regex::new(r"(?s)(fof\(lemma_(\d{4}),\s*lemma\s*,.*?\)\s*\.)").unwrap();
     // replace history lemmas with abstract formulas
     for &history_file_num in &history_to_update {
         let history_file = format!(
-            "{}/history/history_lemma_{:04}.p",
+            "{}/small-step/small_step_lemma_{:04}.p",
             lemmas_dir, history_file_num
         );
         let mut content = fs::read_to_string(&history_file)
@@ -136,9 +137,10 @@ pub fn shorten_proofs(summary_file: &str) {
             .replace_all(&content, |caps: &regex::Captures| {
                 let lemma_num: u32 = caps[2].parse().unwrap();
                 if let Some(formula) = abstract_map.get(&lemma_num) {
-                    println!(
-                        "[INFO] Replacing lemma_{:04} in history file {}",
-                        lemma_num, history_file_num
+                    crate::klog_debug!(
+                        "[DEBUG] Replacing lemma_{:04} in history file {}",
+                        lemma_num,
+                        history_file_num
                     );
                     replaced_any = true;
                     format!("fof(lemma_{:04}, lemma,\n    {}\n).", lemma_num, formula)
@@ -157,17 +159,20 @@ pub fn shorten_proofs(summary_file: &str) {
     // rerun provers on updated history files
     let updated_files: Vec<String> = history_to_update
         .iter()
-        .map(|n| format!("{}/history/history_lemma_{:04}.p", lemmas_dir, n))
+        .map(|n| format!("{}/small-step/small_step_lemma_{:04}.p", lemmas_dir, n))
         .collect();
 
     let provers = ["vampire", "twee"];
     fs::create_dir_all("../tmp").expect("Failed to create ../tmp directory");
     let updated_results = prove_lemmas(&updated_files, &provers, "../tmp"); // tmp root
 
-    println!("\n=== Updated History Proofs ===");
+    crate::klog_info!(
+        "[INFO] Updated small-step proofs: {}",
+        updated_results.len()
+    );
     for (n, (mode, prover, proof)) in &updated_results {
-        println!(
-            "- history_lemma_{:04} (mode: {}): proved by '{}' with {} steps",
+        crate::klog_debug!(
+            "[DEBUG] small_step_lemma_{:04} (mode: {}): '{}' with {} steps",
             n,
             mode,
             prover,
@@ -183,13 +188,13 @@ pub fn shorten_proofs(summary_file: &str) {
 
         // tmp folder filename
         let proof_file_tmp =
-            Path::new(tmp_dir).join(format!("history_lemma_{:04}_{}.proof", n, prover));
+            Path::new(tmp_dir).join(format!("small_step_lemma_{:04}_{}.proof", n, prover));
         fs::write(&proof_file_tmp, proof)
             .unwrap_or_else(|_| panic!("Failed to write proof file {}", proof_file_tmp.display()));
 
         // main proofs folder filename (same naming convention)
         let proof_file_main =
-            Path::new(&proofs_dir).join(format!("history_lemma_{:04}_{}.proof", n, prover));
+            Path::new(&proofs_dir).join(format!("small_step_lemma_{:04}_{}.proof", n, prover));
         fs::write(&proof_file_main, proof)
             .unwrap_or_else(|_| panic!("Failed to write proof file {}", proof_file_main.display()));
     }
@@ -200,7 +205,7 @@ pub fn shorten_proofs(summary_file: &str) {
 pub fn structural_groups(summary_file: &str) {
     use std::{collections::HashMap, fs, path::Path};
 
-    println!("=== Phase 3: Structural Analysis of Proofs ===");
+    crate::klog_info!("[INFO] Phase 3: Structural analysis");
 
     let proofs_dir = "../proofs".to_string();
     let output_groups_file = "../output/structural_groups.txt".to_string();
@@ -212,7 +217,7 @@ pub fn structural_groups(summary_file: &str) {
     .expect("Failed to parse summary.json");
 
     if summary_data.is_empty() {
-        println!("[INFO] No proofs found in summary.json. Run Phase 1 first.");
+        crate::klog_info!("[INFO] No proofs found in summary.json. Run Phase 1 first.");
         return;
     }
 
@@ -269,8 +274,8 @@ pub fn structural_groups(summary_file: &str) {
     // save the output to structural_groups.txt
     fs::write(&output_groups_file, groups_output)
         .expect("Failed to save structural groups to file");
-    println!(
-        "\n[INFO] Structural analysis complete. Groups saved to '{}'.",
+    crate::klog_info!(
+        "[INFO] Structural analysis complete. Groups saved to '{}'.",
         output_groups_file
     );
 }
@@ -289,7 +294,7 @@ fn run_ocaml_parser(proof_file: &str, mode: &str) -> Result<(), String> {
             String::from_utf8_lossy(&output.stderr)
         ));
     }
-    println!("{}", String::from_utf8_lossy(&output.stdout));
+    crate::klog_debug!("{}", String::from_utf8_lossy(&output.stdout));
     Ok(())
 }
 

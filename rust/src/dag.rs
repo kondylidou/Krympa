@@ -88,7 +88,7 @@ pub fn build_dag(
             if formulas_match(&lemma_info.formula, twee_formula)
                 && formulas_match(twee_formula, &lemma_info.formula)
             {
-                println!("[DUPLICATE] lemma {} duplicates {}", lemma, twee_name);
+                crate::klog_debug!("[DUPLICATE] lemma {} duplicates {}", lemma, twee_name);
                 duplicates.push((lemma.clone(), twee_name.clone()));
 
                 // redirect to smallest parent
@@ -134,7 +134,7 @@ pub fn build_dag(
                 if formulas_match(dep_formula, twee_formula)
                     && formulas_match(twee_formula, dep_formula)
                 {
-                    println!("[DUPLICATE] dep {} duplicates {}", dep_name, twee_name);
+                    crate::klog_debug!("[DUPLICATE] dep {} duplicates {}", dep_name, twee_name);
                     duplicates.push((dep_name.clone(), twee_name.clone()));
                     is_duplicate = true;
 

@@ -4,7 +4,7 @@ use std::env;
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
-        eprintln!(
+        krympa::klog_error!(
             "Usage: {} <input_folder> <timeout_secs> [krympa_binary]",
             args[0]
         );

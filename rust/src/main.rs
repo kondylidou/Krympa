@@ -5,14 +5,16 @@ use std::env;
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: cargo run -- [collect|shorten|group|minimize|run_vampire] <input_file>");
-        eprintln!("Usage for benchmarking: cargo run -- benchmarking");
+        krympa::klog_error!(
+            "Usage: cargo run -- [collect|shorten|group|minimize|run_vampire] <input_file>"
+        );
+        krympa::klog_error!("Usage for benchmarking: cargo run -- benchmarking");
         return;
     }
     match args[1].as_str() {
         "collect" => {
             if args.len() < 3 {
-                eprintln!("Usage: cargo run -- collect <input_file>");
+                krympa::klog_error!("Usage: cargo run -- collect <input_file>");
             } else {
                 let input_file = &args[2];
                 // extract suffix from input file
@@ -23,7 +25,7 @@ fn main() {
         }
         "shorten" => {
             if args.len() < 3 {
-                eprintln!("Usage: cargo run -- collect <input_file>");
+                krympa::klog_error!("Usage: cargo run -- collect <input_file>");
             } else {
                 let input_file = &args[2];
                 // extract suffix from input file
@@ -34,7 +36,7 @@ fn main() {
         }
         "group" => {
             if args.len() < 3 {
-                eprintln!("Usage: cargo run -- collect <input_file>");
+                krympa::klog_error!("Usage: cargo run -- collect <input_file>");
             } else {
                 let input_file = &args[2];
                 // extract suffix from input file
@@ -45,7 +47,7 @@ fn main() {
         }
         "minimize" => {
             if args.len() < 3 {
-                eprintln!("Usage: cargo run -- minimize <input_file>");
+                krympa::klog_error!("Usage: cargo run -- minimize <input_file>");
             } else {
                 let input_file = &args[2];
 
@@ -58,14 +60,14 @@ fn main() {
 
                 // call minimize with input file and suffixed summary
                 match minimize::try_minimize(input_file, &output_file, &summary_file) {
-                    Ok(msg) => println!("{}", msg),
-                    Err(err) => eprintln!("Error: {}", err),
+                    Ok(msg) => krympa::klog_info!("{}", msg),
+                    Err(err) => krympa::klog_error!("Error: {}", err),
                 }
             }
         }
         "run_vampire" => {
             if args.len() < 3 {
-                eprintln!("Usage: cargo run -- run_vampire <input_file>");
+                krympa::klog_error!("Usage: cargo run -- run_vampire <input_file>");
             } else {
                 let input_file = &args[2];
                 // extract suffix from input file
@@ -75,7 +77,7 @@ fn main() {
                 run_vamp::run_vampire_only(input_file, &output_file);
             }
         }
-        _ => eprintln!(
+        _ => krympa::klog_error!(
             "Unknown command '{}'. Use 'collect', 'shorten', 'group', or 'minimize'",
             args[1]
         ),

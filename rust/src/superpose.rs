@@ -9,6 +9,14 @@ type AllSteps = BTreeMap<usize, VampStep>; // all steps (vamp -> step)
 type InputFormulas = BTreeMap<usize, String>; // input_formulas (vamp -> formula)
 type RelevantSteps = BTreeMap<usize, VampStep>; // only relevant (vamp -> step)
 
+fn is_small_step_lemma(name: &str) -> bool {
+    name.starts_with("small_step_lemma_")
+}
+
+fn is_big_step_lemma(name: &str) -> bool {
+    name.starts_with("big_step_lemma_")
+}
+
 /// A single Vampire step (keyed by Vampire index).
 #[derive(Debug, Clone)]
 pub struct VampStep {
@@ -183,9 +191,10 @@ pub fn superposition_steps(
     let (all_steps, input_formulas, relevant_set) = match parse_vampire_proof(vampire_file) {
         Ok(x) => x,
         Err(err) => {
-            eprintln!(
+            crate::klog_warn!(
                 "  [WARN] Cannot parse vampire proof {}: {}",
-                vampire_file, err
+                vampire_file,
+                err
             );
             return None;
         }
@@ -197,12 +206,12 @@ pub fn superposition_steps(
     let mut force_super = false;
 
     // build dependency lemma list from DAG
-    let mut deps: Vec<String> = if lemma.starts_with("history_") {
+    let mut deps: Vec<String> = if is_small_step_lemma(lemma) {
         // for a history lemma, get its children in the DAG
         let children = match dag.get(lemma) {
             Some(c) => c,
             None => {
-                eprintln!("   [WARN] No children for lemma {}", lemma);
+                crate::klog_warn!("   [WARN] No children for lemma {}", lemma);
                 return None;
             }
         };
@@ -210,12 +219,12 @@ pub fn superposition_steps(
         // filter to only single children, if any exist
         let mut single_children: Vec<String> = children
             .iter()
-            .filter(|c| c.starts_with("single_"))
+            .filter(|c| is_big_step_lemma(c))
             .cloned()
             .collect();
 
         if single_children.is_empty() {
-            println!(
+            crate::klog_debug!(
                 "   [WARN] history lemma {} has no single lemma children; checking history children.",
                 lemma
             );
@@ -225,7 +234,7 @@ pub fn superposition_steps(
                 .get(lemma)
                 .into_iter()
                 .flat_map(|v| v.iter())
-                .filter(|c| c.starts_with("history_"))
+                .filter(|c| is_small_step_lemma(c))
                 .cloned()
                 .collect();
 
@@ -237,7 +246,7 @@ pub fn superposition_steps(
 
             if non_parent_history_children.is_empty() {
                 // no non-parent history children -> prove history itself
-                println!(
+                crate::klog_debug!(
                     "   [WARN] No non-parent history children found for {}; proving history directly.",
                     lemma
                 );
@@ -266,7 +275,7 @@ pub fn superposition_steps(
         let dep_formula = match load_lemma(lemmas_dir, dep) {
             Ok(f) => f,
             Err(err) => {
-                eprintln!("     [WARN] Cannot load {}: {}. Skipping.", dep, err);
+                crate::klog_warn!("     [WARN] Cannot load {}: {}. Skipping.", dep, err);
                 continue;
             }
         };
@@ -331,9 +340,10 @@ pub fn extract_superposition_steps(
     let (all_steps, input_formulas, relevant_set) = match parse_vampire_proof(vampire_file) {
         Ok(x) => x,
         Err(err) => {
-            eprintln!(
+            crate::klog_warn!(
                 "  [WARN] Cannot parse Vampire proof {}: {}",
-                vampire_file, err
+                vampire_file,
+                err
             );
             return None;
         }
@@ -371,7 +381,7 @@ pub fn extend_with_superposition_steps(
 ) {
     for (vnum, step) in relevant_steps {
         let Some(name) = renaming.get(vnum) else {
-            eprintln!("[WARN] Missing renaming for vamp {}", vnum);
+            crate::klog_warn!("[WARN] Missing renaming for vamp {}", vnum);
             continue;
         };
 
@@ -385,7 +395,7 @@ pub fn extend_with_superposition_steps(
 
 /// Find the lemma indices already present in dependencies
 fn used_lemma_numbers(axioms: &Vec<(String, String)>) -> BTreeSet<usize> {
-    let re = Regex::new(r"(?:history_|single_|abstract_)?lemma_(\d+)").unwrap();
+    let re = Regex::new(r"(?:small_step_|big_step_|abstracted_)?lemma_(\d+)").unwrap();
     let mut used = BTreeSet::new();
 
     for (name, _) in axioms {

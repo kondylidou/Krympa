@@ -154,15 +154,16 @@ pub fn append_as_axiom(file_path: &str, formula: &str, lemma_name: &str) {
         .expect("Failed to append axiom");
 }
 
-/// Determine the actual lemma variant (history, single, abstract) by checking the proofs folder
-/// Returns the full filename including prover suffix, e.g. "history_lemma_0047_twee.proof"
+/// Determine the actual lemma variant by checking the proofs folder.
+/// Supports only canonical names (small_step/big_step/abstracted).
+/// Returns the full filename including prover suffix.
 pub fn select_actual_lemma(proofs_dir: &str, lemma_name: &str) -> Option<String> {
     // built-in axioms and conjectures just return the name
     if lemma_name.starts_with('a') || lemma_name.starts_with("conjecture_") {
         return Some(lemma_name.to_string());
     }
 
-    let variants = ["history", "single", "abstract"];
+    let variants = ["small_step", "big_step", "abstracted"];
     let suffixes = ["_twee.proof", "_vampire.proof"];
 
     for var in &variants {
@@ -264,7 +265,7 @@ pub fn parse_used_lemmas(
                     let dep_formula = load_lemma(lemmas_dir, &clean)?;
                     used.push((clean, dep_formula));
                 } else {
-                    println!("[WARN] No proof file found for {}", name);
+                    crate::klog_warn!("[WARN] No proof file found for {}", name);
                 }
                 continue;
             }
@@ -288,7 +289,7 @@ pub fn parse_used_lemmas(
                     let dep_formula = load_lemma(lemmas_dir, &clean)?;
                     used.push((clean, dep_formula));
                 } else {
-                    println!("[WARN] No proof file found for {}", name);
+                    crate::klog_warn!("[WARN] No proof file found for {}", name);
                 }
             }
         }
@@ -298,36 +299,44 @@ pub fn parse_used_lemmas(
     Ok(used)
 }
 
-/// Load a specific lemma (single, abstract, history) and extract its formula body.
-/// If lemma_name starts with "lemma_", treat it as "single_lemma_" for searching.
+/// Load a specific lemma and extract its formula body.
+/// Supports only canonical names (small_step/big_step/abstracted).
+/// If lemma_name starts with "lemma_", treat it as "big_step_lemma_" for searching.
 pub fn load_lemma(lemmas_dir: &str, lemma_name: &str) -> Result<String, String> {
-    // determine subdirectory and possibly rename lemma for file search
-    let (subdir, file_lemma_name) = if lemma_name.starts_with("single_lemma_") {
-        ("single", lemma_name.to_string())
-    } else if lemma_name.starts_with("history_lemma_") {
-        ("history", lemma_name.to_string())
-    } else if lemma_name.starts_with("abstract_lemma_") {
-        ("abstract", lemma_name.to_string())
+    let lemma_name = strip_prover_suffix(lemma_name);
+
+    // ordered lookup candidates
+    let candidates: Vec<(String, String)> = if lemma_name.starts_with("big_step_lemma_") {
+        vec![("big-step".to_string(), lemma_name.to_string())]
+    } else if lemma_name.starts_with("small_step_lemma_") {
+        vec![("small-step".to_string(), lemma_name.to_string())]
+    } else if lemma_name.starts_with("abstracted_lemma_") {
+        vec![("abstracted".to_string(), lemma_name.to_string())]
     } else if lemma_name.starts_with("lemma_") {
-        // treat as single lemma
-        ("single", lemma_name.replacen("lemma_", "single_lemma_", 1))
+        vec![(
+            "big-step".to_string(),
+            lemma_name.replacen("lemma_", "big_step_lemma_", 1),
+        )]
     } else {
         return Err(format!("[ERROR] Unknown lemma type for {}", lemma_name));
     };
 
-    // strip prover suffix (_twee, _vampire)
-    let file_lemma_name = strip_prover_suffix(&file_lemma_name);
-
-    // construct file path
-    let file_path = Path::new(lemmas_dir)
-        .join(subdir)
-        .join(format!("{}.p", file_lemma_name));
-    if !file_path.exists() {
-        return Err(format!(
-            "[ERROR] File not found for lemma {} at {:?}",
-            file_lemma_name, file_path
-        ));
+    let mut resolved: Option<(std::path::PathBuf, String)> = None;
+    for (subdir, file_lemma_name) in candidates {
+        let file_path = Path::new(lemmas_dir)
+            .join(subdir)
+            .join(format!("{}.p", file_lemma_name));
+        if file_path.exists() {
+            resolved = Some((file_path, file_lemma_name));
+            break;
+        }
     }
+    let (file_path, file_lemma_name) = resolved.ok_or_else(|| {
+        format!(
+            "[ERROR] File not found for lemma {} under {}",
+            lemma_name, lemmas_dir
+        )
+    })?;
 
     let file_path_str = file_path
         .to_str()
@@ -335,9 +344,9 @@ pub fn load_lemma(lemmas_dir: &str, lemma_name: &str) -> Result<String, String> 
 
     // determine internal TPTP name
     let internal_name = file_lemma_name
-        .replace("single_lemma_", "conjecture_")
-        .replace("history_lemma_", "conjecture_")
-        .replace("abstract_lemma_", "conjecture_");
+        .replace("big_step_lemma_", "conjecture_")
+        .replace("small_step_lemma_", "conjecture_")
+        .replace("abstracted_lemma_", "conjecture_");
 
     // extract formula body
     extract_tptp_formula_body(file_path_str, &internal_name)
@@ -422,7 +431,7 @@ pub fn extract_conjecture_from_file(path: &str) -> Result<String, String> {
         return Err("No conjecture found in file".into());
     }
 
-    // join all lines into a single formula string, strip leading/trailing whitespace, remove ending ').'
+    // join all lines into one formula string, strip leading/trailing whitespace, remove ending ').'
     let mut formula = formula_lines.join(" ");
     formula = formula.trim().trim_end_matches(").").trim().to_string();
 
@@ -490,9 +499,23 @@ pub fn create_tmp_copy(input_file: &str) -> Result<String, String> {
 
     let input_path = Path::new(input_file);
 
-    let file_name = input_path.file_name().ok_or("Invalid input filename")?;
+    let file_stem = input_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or("Invalid input filename")?;
+    let ext = input_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("p");
 
-    let tmp_path: PathBuf = tmp_dir.join(file_name);
+    // Include process id + high-resolution timestamp so concurrent minimization attempts
+    // do not overwrite each other's temporary copies.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Clock error: {}", e))?
+        .as_nanos();
+    let unique_name = format!("{}_{}_{}.{}", file_stem, std::process::id(), nanos, ext);
+    let tmp_path: PathBuf = tmp_dir.join(unique_name);
 
     fs::copy(input_path, &tmp_path).map_err(|e| format!("Failed to copy temp input: {}", e))?;
 
@@ -509,7 +532,7 @@ pub fn load_all_dependency_proofs(
     let mut result = Vec::new();
 
     for dep in dependencies {
-        // try to find a matching file: e.g. "single_lemma_0047_twee.proof"
+        // try to find a matching file: e.g. "big_step_lemma_0047_twee.proof"
         let actual_file = select_actual_lemma(proofs_dir, dep)
             .ok_or_else(|| format!("No proof file found for dependency {}", dep))?;
         let path = format!("{}/{}.proof", proofs_dir, actual_file);

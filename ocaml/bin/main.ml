@@ -4,9 +4,9 @@ open Ocaml
 let () =
   if Array.length Sys.argv < 3 then begin
     prerr_endline "Usage: main <vampire_proof_file> <mode>";
-    prerr_endline "  mode = single    -> axioms + lemma_i";
-    prerr_endline "  mode = history   -> axioms + lemmas 1..(i-1) + lemma_i";
-    prerr_endline "  mode = abstract  -> axioms + lemma_i with nested op(...) replaced by variables";
+    prerr_endline "  mode = big-step   -> axioms + lemma_i";
+    prerr_endline "  mode = small-step -> axioms + lemmas 1..(i-1) + lemma_i";
+    prerr_endline "  mode = abstracted -> axioms + lemma_i with nested op(...) replaced by variables";
     exit 1
   end;
 
@@ -24,22 +24,22 @@ let () =
     (List.length lemmas);
 
   match mode with
-  | "single" ->
-      Lemma_extractor.generate_all_files_single axioms lemmas;
-      printf "[INFO] Generated %d TPTP single-mode .p files in the lemmas directory.\n%!"
+  | "big-step" ->
+      Lemma_extractor.generate_all_files_big_step axioms lemmas;
+      printf "[INFO] Generated %d TPTP big-step .p files in the lemmas directory.\n%!"
         (List.length lemmas)
 
-  | "history" ->
-      Lemma_extractor.generate_all_files_history axioms lemmas;
-      printf "[INFO] Generated %d TPTP history-mode .p files in the lemmas directory.\n%!"
+  | "small-step" ->
+      Lemma_extractor.generate_all_files_small_step axioms lemmas;
+      printf "[INFO] Generated %d TPTP small-step .p files in the lemmas directory.\n%!"
         (List.length lemmas)
 
-  | "abstract" ->
-      Lemma_extractor.generate_all_files_abstract axioms lemmas;
-      printf "[INFO] Generated %d TPTP abstract-mode .p files in the lemmas directory.\n%!"
+  | "abstracted" ->
+      Lemma_extractor.generate_all_files_abstracted axioms lemmas;
+      printf "[INFO] Generated %d TPTP abstracted .p files in the lemmas directory.\n%!"
         (List.length lemmas)
 
   | _ ->
-      eprintf "[ERROR] Unknown mode: %s (expected 'single', 'history', or 'abstract')\n%!"
+      eprintf "[ERROR] Unknown mode: %s (expected 'big-step', 'small-step', or 'abstracted')\n%!"
         mode;
       exit 1

@@ -20,7 +20,7 @@ pub struct BenchmarkResult {
 pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
     let input_dir = Path::new(input_folder);
     if !input_dir.is_dir() {
-        eprintln!(
+        crate::klog_error!(
             "Input folder '{}' does not exist or is not a directory.",
             input_dir.display()
         );
@@ -42,19 +42,19 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
     let commands = ["run_vampire", "collect", "shorten", "minimize"];
     let mut all_results: Vec<BenchmarkResult> = Vec::new();
 
-    println!("Starting benchmarking in folder: {}\n", input_dir.display());
-    println!("Output folder: {}\n", output_dir.display());
-    println!("Per-command timeout: {} seconds\n", timeout_secs);
+    crate::klog_info!("Starting benchmarking in folder: {}", input_dir.display());
+    crate::klog_info!("Output folder: {}", output_dir.display());
+    crate::klog_info!("Per-command timeout: {} seconds", timeout_secs);
 
     'file_loop: for input_file in input_files {
         let input_str = input_file.to_string_lossy().to_string();
-        println!("=== Processing file: {} ===", input_str);
+        crate::klog_info!("=== Processing file: {} ===", input_str);
 
         let mut vampire_steps: Option<usize> = None;
         let mut minimized_steps: Option<usize> = None;
 
         for cmd in &commands {
-            println!("Running '{} {}' ...", cmd, input_str);
+            crate::klog_debug!("Running '{} {}' ...", cmd, input_str);
 
             let mut child = match Command::new(krympa_bin)
                 .args([cmd, input_str.as_str()])
@@ -64,7 +64,7 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
             {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("Failed to start '{} {}': {}", cmd, input_str, e);
+                    crate::klog_error!("Failed to start '{} {}': {}", cmd, input_str, e);
                     continue;
                 }
             };
@@ -74,9 +74,11 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
             let status = match child.wait_timeout(timeout) {
                 Ok(Some(status)) => status,
                 Ok(None) => {
-                    eprintln!(
+                    crate::klog_warn!(
                         "[TIMEOUT] '{}' exceeded {:?} on {} — recording as failed",
-                        cmd, timeout, input_str
+                        cmd,
+                        timeout,
+                        input_str
                     );
                     let _ = child.kill();
                     all_results.push(BenchmarkResult {
@@ -87,7 +89,7 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
                     continue 'file_loop;
                 }
                 Err(e) => {
-                    eprintln!("Failed waiting for '{}': {}", cmd, e);
+                    crate::klog_error!("Failed waiting for '{}': {}", cmd, e);
                     continue;
                 }
             };
@@ -100,7 +102,7 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
             if !status.success() {
-                eprintln!("Command '{}' failed on {}\n{}", cmd, input_str, stderr);
+                crate::klog_warn!("Command '{}' failed on {}\n{}", cmd, input_str, stderr);
             }
 
             // --- Vampire proof length ---
@@ -134,20 +136,20 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
             }
         }
 
-        println!("--- Summary for {} ---", input_str);
-        println!(
+        crate::klog_info!("--- Summary for {} ---", input_str);
+        crate::klog_info!(
             "Vampire proof steps: {}",
             vampire_steps
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "N/A".to_string())
         );
-        println!(
+        crate::klog_info!(
             "Minimized proof steps: {}",
             minimized_steps
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "N/A".to_string())
         );
-        println!("===========================\n");
+        crate::klog_info!("===========================");
 
         all_results.push(BenchmarkResult {
             file: input_str,
@@ -157,7 +159,7 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
     }
 
     // --- Global summary ---
-    println!("\n========== GLOBAL SUMMARY ==========");
+    crate::klog_info!("========== GLOBAL SUMMARY ==========");
 
     let mut total_vampire = 0usize;
     let mut total_minimized = 0usize;
@@ -165,7 +167,7 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
     let mut count_minimized = 0usize;
 
     for r in &all_results {
-        println!(
+        crate::klog_info!(
             "{:<45}  Vampire: {:>6}  Minimized: {:>6}",
             r.file,
             r.vampire_steps
@@ -185,24 +187,24 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
         );
     }
 
-    println!("------------------------------------");
+    crate::klog_info!("------------------------------------");
 
     if count_vampire > 0 {
-        println!(
+        crate::klog_info!(
             "Average Vampire steps: {:.2}",
             total_vampire as f64 / count_vampire as f64
         );
     }
 
     if count_minimized > 0 {
-        println!(
+        crate::klog_info!(
             "Average Minimized steps: {:.2}",
             total_minimized as f64 / count_minimized as f64
         );
     }
 
-    println!("====================================");
-    println!("All benchmarking runs completed.");
+    crate::klog_info!("====================================");
+    crate::klog_info!("All benchmarking runs completed.");
 }
 
 fn extract_suffix(path: &str) -> String {
