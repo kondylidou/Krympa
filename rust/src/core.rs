@@ -96,7 +96,7 @@ pub fn shorten_proofs(summary_file: &str) {
     // map abstract lemma number -> formula
     let mut abstract_map: HashMap<u32, String> = HashMap::new();
     for (&n, (mode, _, _)) in &summary_data {
-        if mode.starts_with("abstracted") || mode.starts_with("abstract") {
+        if mode.starts_with("abstracted") {
             let lemma_name = format!("abstracted_lemma_{:04}", n);
             let formula = match load_lemma(&lemmas_dir, &lemma_name) {
                 Ok(f) => f,
@@ -112,7 +112,7 @@ pub fn shorten_proofs(summary_file: &str) {
 
     let history_to_update: Vec<u32> = summary_data
         .iter()
-        .filter(|(_, (mode, _, _))| mode.starts_with("small_step") || mode.starts_with("history"))
+        .filter(|(_, (mode, _, _))| mode.starts_with("small_step"))
         .map(|(n, _)| *n)
         .collect();
 
@@ -124,19 +124,10 @@ pub fn shorten_proofs(summary_file: &str) {
     let block_re = Regex::new(r"(?s)(fof\(lemma_(\d{4}),\s*lemma\s*,.*?\)\s*\.)").unwrap();
     // replace history lemmas with abstract formulas
     for &history_file_num in &history_to_update {
-        let history_file_new = format!(
+        let history_file = format!(
             "{}/small-step/small_step_lemma_{:04}.p",
             lemmas_dir, history_file_num
         );
-        let history_file_old = format!(
-            "{}/history/history_lemma_{:04}.p",
-            lemmas_dir, history_file_num
-        );
-        let history_file = if Path::new(&history_file_new).exists() {
-            history_file_new
-        } else {
-            history_file_old
-        };
         let mut content = fs::read_to_string(&history_file)
             .unwrap_or_else(|_| panic!("Failed to read {}", history_file));
 
@@ -168,15 +159,7 @@ pub fn shorten_proofs(summary_file: &str) {
     // rerun provers on updated history files
     let updated_files: Vec<String> = history_to_update
         .iter()
-        .map(|n| {
-            let new_path = format!("{}/small-step/small_step_lemma_{:04}.p", lemmas_dir, n);
-            let old_path = format!("{}/history/history_lemma_{:04}.p", lemmas_dir, n);
-            if Path::new(&new_path).exists() {
-                new_path
-            } else {
-                old_path
-            }
-        })
+        .map(|n| format!("{}/small-step/small_step_lemma_{:04}.p", lemmas_dir, n))
         .collect();
 
     let provers = ["vampire", "twee"];

@@ -10,11 +10,11 @@ type InputFormulas = BTreeMap<usize, String>; // input_formulas (vamp -> formula
 type RelevantSteps = BTreeMap<usize, VampStep>; // only relevant (vamp -> step)
 
 fn is_small_step_lemma(name: &str) -> bool {
-    name.starts_with("small_step_lemma_") || name.starts_with("history_lemma_")
+    name.starts_with("small_step_lemma_")
 }
 
 fn is_big_step_lemma(name: &str) -> bool {
-    name.starts_with("big_step_lemma_") || name.starts_with("single_lemma_")
+    name.starts_with("big_step_lemma_")
 }
 
 /// A single Vampire step (keyed by Vampire index).
@@ -395,9 +395,7 @@ pub fn extend_with_superposition_steps(
 
 /// Find the lemma indices already present in dependencies
 fn used_lemma_numbers(axioms: &Vec<(String, String)>) -> BTreeSet<usize> {
-    let re =
-        Regex::new(r"(?:small_step_|big_step_|abstracted_|history_|single_|abstract_)?lemma_(\d+)")
-            .unwrap();
+    let re = Regex::new(r"(?:small_step_|big_step_|abstracted_)?lemma_(\d+)").unwrap();
     let mut used = BTreeSet::new();
 
     for (name, _) in axioms {

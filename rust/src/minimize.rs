@@ -29,15 +29,15 @@ fn format_active_roots(active: &BTreeSet<String>) -> String {
 }
 
 fn is_small_step_lemma(name: &str) -> bool {
-    name.starts_with("small_step_lemma_") || name.starts_with("history_lemma_")
+    name.starts_with("small_step_lemma_")
 }
 
 fn is_big_step_lemma(name: &str) -> bool {
-    name.starts_with("big_step_lemma_") || name.starts_with("single_lemma_")
+    name.starts_with("big_step_lemma_")
 }
 
 fn is_abstracted_lemma(name: &str) -> bool {
-    name.starts_with("abstracted_lemma_") || name.starts_with("abstract_lemma_")
+    name.starts_with("abstracted_lemma_")
 }
 
 struct ActiveRootGuard<'a> {
@@ -1302,9 +1302,6 @@ pub fn proof_uses_lemma(lemma_any_variant: &str, segments: &[&str]) -> bool {
         format!("small_step_lemma_{}", num),
         format!("big_step_lemma_{}", num),
         format!("abstracted_lemma_{}", num),
-        format!("history_lemma_{}", num),
-        format!("single_lemma_{}", num),
-        format!("abstract_lemma_{}", num),
         format!("lemma_{}", num),
     ];
 
