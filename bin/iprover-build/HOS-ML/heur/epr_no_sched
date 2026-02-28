@@ -1,0 +1,11 @@
+--clausifier res/vclausify_rel
+--clausifier_options --mode clausify -t 30
+--schedule none
+--preprocessing_flag false
+--sup_full_triv [PropSubs]
+--sup_smt_interval 50000
+--sup_immed_bw_immed []
+--sup_immed_bw_main []
+--sup_full_bw [BwUnitSubsAndRes]
+--sup_prop_simpl_new false 
+--inst_prop_sim_given false

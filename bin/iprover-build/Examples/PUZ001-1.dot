@@ -1,0 +1,56 @@
+digraph G {
+  "cnf(id_50,plain,(lives(butler)))." [shape=box, ];
+  "cnf(id_52,plain,(~killed(X0,X1) | ~richer(X0,X1)))." [shape=box, ];
+  "cnf(id_53,plain,(~hates(agatha,X0) | ~hates(charles,X0)))." [shape=box, ];
+  "cnf(id_54,plain,(~hates(X0,agatha) | ~hates(X0,butler) | ~hates(X0,charles)))." [
+  shape=box, ];
+  "cnf(id_55,plain,(hates(agatha,agatha)))." [shape=box, ];
+  "cnf(id_56,plain,(hates(agatha,charles)))." [shape=box, ];
+  "cnf(id_57,plain,(~killed(X0,X1) | hates(X0,X1)))." [shape=box, ];
+  "cnf(id_58,plain,(~hates(agatha,X0) | hates(butler,X0)))." [shape=box, ];
+  "cnf(id_59,plain,(~lives(X0) | richer(X0,agatha) | hates(butler,X0)))." [
+  shape=box, ];
+  "cnf(id_60,negated_conjecture,(killed(butler,agatha) | killed(charles,agatha)))." [
+  shape=box, ];
+  "cnf(id_91,plain,(~killed(charles,X0) | ~hates(agatha,X0)))." [shape=box, ];
+  "cnf(id_96,plain,(~killed(charles,agatha)))." [shape=box, ];
+  "cnf(id_101,plain,(killed(butler,agatha)))." [shape=box, ];
+  "cnf(id_124,plain,(~hates(agatha,charles) | ~hates(butler,agatha) | ~hates(butler,butler)))." [
+  shape=box, ];
+  "cnf(id_144,plain,(~hates(butler,agatha) | ~hates(butler,butler)))." [
+  shape=box, ];
+  "cnf(id_153,plain,(~hates(butler,agatha) | ~lives(butler) | richer(butler,agatha)))." [
+  shape=box, ];
+  "cnf(id_161,plain,(~hates(butler,agatha) | richer(butler,agatha)))." [
+  shape=box, ];
+  "cnf(id_168,plain,(~killed(butler,agatha) | richer(butler,agatha)))." [
+  shape=box, ];
+  "cnf(id_173,plain,(richer(butler,agatha)))." [shape=box, ];
+  "cnf(id_181,plain,(~killed(butler,agatha)))." [shape=box, ];
+  "cnf(id_183,plain,($false))." [shape=box, ];
+  
+  
+  "cnf(id_50,plain,(lives(butler)))." -> "cnf(id_161,plain,(~hates(butler,agatha) | richer(butler,agatha))).";
+  "cnf(id_52,plain,(~killed(X0,X1) | ~richer(X0,X1)))." -> "cnf(id_181,plain,(~killed(butler,agatha))).";
+  "cnf(id_53,plain,(~hates(agatha,X0) | ~hates(charles,X0)))." -> "cnf(id_91,plain,(~killed(charles,X0) | ~hates(agatha,X0))).";
+  "cnf(id_54,plain,(~hates(X0,agatha) | ~hates(X0,butler) | ~hates(X0,charles)))." -> "cnf(id_124,plain,(~hates(agatha,charles) | ~hates(butler,agatha) | ~hates(butler,butler))).";
+  "cnf(id_55,plain,(hates(agatha,agatha)))." -> "cnf(id_96,plain,(~killed(charles,agatha))).";
+  "cnf(id_56,plain,(hates(agatha,charles)))." -> "cnf(id_144,plain,(~hates(butler,agatha) | ~hates(butler,butler))).";
+  "cnf(id_57,plain,(~killed(X0,X1) | hates(X0,X1)))." -> "cnf(id_91,plain,(~killed(charles,X0) | ~hates(agatha,X0))).";
+  "cnf(id_57,plain,(~killed(X0,X1) | hates(X0,X1)))." -> "cnf(id_168,plain,(~killed(butler,agatha) | richer(butler,agatha))).";
+  "cnf(id_58,plain,(~hates(agatha,X0) | hates(butler,X0)))." -> "cnf(id_124,plain,(~hates(agatha,charles) | ~hates(butler,agatha) | ~hates(butler,butler))).";
+  "cnf(id_59,plain,(~lives(X0) | richer(X0,agatha) | hates(butler,X0)))." -> "cnf(id_153,plain,(~hates(butler,agatha) | ~lives(butler) | richer(butler,agatha))).";
+  "cnf(id_60,negated_conjecture,(killed(butler,agatha) | killed(charles,agatha)))." -> "cnf(id_101,plain,(killed(butler,agatha))).";
+  "cnf(id_91,plain,(~killed(charles,X0) | ~hates(agatha,X0)))." -> "cnf(id_96,plain,(~killed(charles,agatha))).";
+  "cnf(id_96,plain,(~killed(charles,agatha)))." -> "cnf(id_101,plain,(killed(butler,agatha))).";
+  "cnf(id_101,plain,(killed(butler,agatha)))." -> "cnf(id_173,plain,(richer(butler,agatha))).";
+  "cnf(id_101,plain,(killed(butler,agatha)))." -> "cnf(id_183,plain,($false)).";
+  "cnf(id_124,plain,(~hates(agatha,charles) | ~hates(butler,agatha) | ~hates(butler,butler)))." -> "cnf(id_144,plain,(~hates(butler,agatha) | ~hates(butler,butler))).";
+  "cnf(id_144,plain,(~hates(butler,agatha) | ~hates(butler,butler)))." -> "cnf(id_153,plain,(~hates(butler,agatha) | ~lives(butler) | richer(butler,agatha))).";
+  "cnf(id_153,plain,(~hates(butler,agatha) | ~lives(butler) | richer(butler,agatha)))." -> "cnf(id_161,plain,(~hates(butler,agatha) | richer(butler,agatha))).";
+  "cnf(id_161,plain,(~hates(butler,agatha) | richer(butler,agatha)))." -> "cnf(id_168,plain,(~killed(butler,agatha) | richer(butler,agatha))).";
+  "cnf(id_168,plain,(~killed(butler,agatha) | richer(butler,agatha)))." -> "cnf(id_173,plain,(richer(butler,agatha))).";
+  "cnf(id_173,plain,(richer(butler,agatha)))." -> "cnf(id_181,plain,(~killed(butler,agatha))).";
+  "cnf(id_181,plain,(~killed(butler,agatha)))." -> "cnf(id_183,plain,($false)).";
+  
+  }

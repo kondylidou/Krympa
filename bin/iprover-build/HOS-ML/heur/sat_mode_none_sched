@@ -1,0 +1,4 @@
+--sat_mode true 
+--schedule none 
+--sat_finite_models true 
+--clausifier_options --mode clausify   -t 100

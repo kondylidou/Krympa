@@ -1,0 +1,4 @@
+--clausifier res/vclausify_rel
+--clausifier_options --mode clausify
+--schedule none 
+--sub_typing false

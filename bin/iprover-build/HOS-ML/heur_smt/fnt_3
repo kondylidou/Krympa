@@ -1,0 +1,15 @@
+--schedule none 
+--out_options none 
+--sat_mode true 
+--superposition_flag false 
+--sat_finite_models true 
+--sat_fm_uc_incr true 
+--bc_imp_inh [] 
+--inst_prop_sim_given false 
+--inst_prop_sim_new false 
+--reset_solvers false
+--inst_lit_activity_flag false 
+--clausifier res/vclausify_rel
+--clausifier_options --mode tclausify --ignore_unrecognized_logic on --show_fool true --input_syntax smtlib2 -t 200
+--suppress_sat_res true
+--sub_typing false

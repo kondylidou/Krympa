@@ -1,0 +1,3 @@
+--clausifier res/vclausify_rel
+--clausifier_options --mode clausify
+--schedule default

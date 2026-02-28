@@ -1,0 +1,11 @@
+--clausifier res/vclausify_rel
+--inst_out_proof true
+--out_options none
+--res_out_proof true
+--sat_out_model small
+--schedule default
+--stats_out sel
+--clausifier_options --mode tclausify --ignore_unrecognized_logic on --show_fool true --input_syntax smtlib2 -t 200
+--prep_eq_flat_conj true
+--suppress_sat_res true
+--sub_typing false

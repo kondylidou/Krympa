@@ -1,0 +1,17 @@
+Metadata-Version: 2.1
+Name: run-prover
+Version: 0.0.0
+Summary: Scripts for running iProver competitively
+Author: Edvard K. Holden
+License: MIT
+Platform: unix
+Platform: linux
+Platform: osx
+Classifier: Programming Language :: Python :: 3.11
+Requires-Python: >=3.11
+Provides-Extra: testing
+Requires-Dist: pytest>=7.3.0; extra == "testing"
+Requires-Dist: pytest-cov>=4.0.0; extra == "testing"
+Requires-Dist: mypy>=1.2.0; extra == "testing"
+Requires-Dist: flake8>=6.0.0; extra == "testing"
+Requires-Dist: tox>=4.4.11; extra == "testing"

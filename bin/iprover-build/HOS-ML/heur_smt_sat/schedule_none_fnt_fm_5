@@ -1,0 +1,17 @@
+--clausifier res/vclausify_rel
+--clausifier_options --mode tclausify --ignore_unrecognized_logic on --show_fool true --input_syntax smtlib2 -t 200
+--preprocessing_flag false
+--schedule none 
+--instantiation_flag true
+--resolution_flag false
+--superposition_flag false
+--sat_mode true
+--sat_finite_models true
+--sat_gr_def false
+--sat_epr_types true
+--sat_non_cyclic_types false
+--sat_fm_lemmas false
+--sat_fm_prep false
+--sat_fm_uc_incr true
+--sat_out_model small
+--sub_typing false

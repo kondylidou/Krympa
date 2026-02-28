@@ -1,0 +1,2 @@
+--sat_mode true
+--clausifier_options --mode clausify   -t 100

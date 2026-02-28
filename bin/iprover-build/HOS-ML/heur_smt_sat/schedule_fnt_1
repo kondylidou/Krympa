@@ -1,0 +1,9 @@
+--clausifier res/vclausify_rel
+--clausifier_options --mode tclausify --ignore_unrecognized_logic on --show_fool true --input_syntax smtlib2 -t 200
+--schedule sat
+--sup_ordering lpo
+--sup_passive_queues [[-conj_dist;-num_symb];[+age;-num_symb];[+score;-num_symb]]
+--sup_passive_queues_freq [1;1;1]
+--inst_lit_sel [-sign;+ground;-num_var;-num_symb]
+--res_lit_sel neg_min
+--sub_typing false

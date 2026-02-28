@@ -1,0 +1,47 @@
+%assign(order, kbo).
+
+%assign(max_megs, -1).
+
+formulas(sos).
+% Associativity (Axiom 0)
+x*(y*z) = (x*y)*z.
+
+% Definition (Axiom 1)
+o(x) = x*i(x).
+o(x) = i(x)*x.
+
+% Idempotent (Axiom 2)
+o(x)*o(x) = o(x).
+
+% Shift (Axiom 3)
+i(x*y)*x = x*i(y*x).
+
+% Identity (Axiom 4)
+i(x)*o(x) = i(x).
+
+% Inverse (Axiom 5)
+i(i(x)) = o(x)*x.
+
+% Powers (Axiom 6)
+i(x*x) = i(x)*i(x).
+
+%i(x*(x*x)) = i(x)*(i(x)*i(x)).
+% Limit power (Axiom 7)
+i(o(x)) = o(x).
+
+% Right limit (Axiom 8)
+x = x*y -> x = x*i(y).
+
+% Left limit (Axiom 9)
+y = x*y -> y = i(x)*y.
+
+% Two-sided limit (Axiom 10)
+z = x*(z*y) -> z = i(x)*(z*i(y)).
+
+%
+end_of_list.
+
+
+formulas(goals).
+i(x*(x*x)) = i(x)*(i(x)*i(x)).
+end_of_list.

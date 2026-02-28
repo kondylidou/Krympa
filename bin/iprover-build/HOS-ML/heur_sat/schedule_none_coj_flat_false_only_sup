@@ -1,0 +1,7 @@
+--clausifier res/vclausify_rel
+--clausifier_options --mode clausify
+--schedule none 
+--prep_eq_flat_conj false
+--sub_typing false
+--resolution_flag false
+--instantiation_flag false

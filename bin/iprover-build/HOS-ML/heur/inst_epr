@@ -1,0 +1,10 @@
+--clausifier res/vclausify_rel
+--clausifier_options --mode clausify -t 100
+--schedule none
+--preprocessing_flag false
+--inst_to_smt_solver false
+--inst_dismatching  false
+--inst_prop_sim_given false
+--inst_prop_sim_new false
+--resolution_flag false
+--superposition_flag false

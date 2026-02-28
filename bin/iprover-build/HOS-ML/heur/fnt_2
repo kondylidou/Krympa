@@ -1,0 +1,4 @@
+--out_options none 
+--clausifier res/vclausify_rel
+--sub_typing false
+--clausifier_options --mode clausify   -t 100

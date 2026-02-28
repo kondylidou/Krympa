@@ -1,0 +1,13 @@
+--clausifier res/vclausify_rel
+--superposition_flag false 
+--schedule none 
+--instantiation_flag false
+--res_time_limit 400 
+--res_lit_sel neg_max 
+--res_lit_sel_side num_symb
+--splitting_mode input 
+--res_passive_queues [[+age;+num_var;-num_symb];[+age;-num_symb;-num_var]]
+--res_prop_simpl_given false
+--clausifier_options --mode tclausify --ignore_unrecognized_logic on --show_fool true --input_syntax smtlib2 -t 200
+--suppress_sat_res true
+--sub_typing false

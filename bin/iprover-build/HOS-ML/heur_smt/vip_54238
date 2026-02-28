@@ -1,0 +1,9 @@
+--clausifier res/vclausify_rel
+--clausifier_options --mode tclausify --ignore_unrecognized_logic on --show_fool true --input_syntax smtlib2 -t 200
+--proof_out false
+--sat_finite_models true
+--sat_mode true
+--schedule none
+--stats_out none
+--suppress_sat_res true
+--sub_typing false

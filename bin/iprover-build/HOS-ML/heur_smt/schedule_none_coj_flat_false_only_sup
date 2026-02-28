@@ -1,0 +1,8 @@
+--clausifier res/vclausify_rel
+--clausifier_options --mode tclausify --ignore_unrecognized_logic on --show_fool true --input_syntax smtlib2 -t 200
+--schedule none 
+--prep_eq_flat_conj false
+--resolution_flag false
+--instantiation_flag false
+--suppress_sat_res true
+--sub_typing false

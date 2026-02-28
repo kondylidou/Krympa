@@ -1,0 +1,9 @@
+# test_id, cmd, opts, problem, timeout, exp_result, descr
+1,iproveropt,,TESTS/PUZ001-1.p,1,% SZS status Unsatisfiable, simple cnf unsat
+2,iproveropt,--schedule none --resolution_flag false,TESTS/PUZ001+1.p,1,% SZS status Theorem, simple fof unsat
+3,iproveropt,,TESTS/ARI062_1_unsat_z3.p,1,% SZS status Theorem, simple aritm unsat
+4,iproveropt,,TESTS/PUZ012_10.p,1,% SZS status Satisfiable,TFF simple sat
+5,iproveropt,,TESTS/PUZ012_1.p,1,% SZS status Theorem,TFF simple unsat
+6,iproveropt,,TESTS/qf_uf_unsat.smt2,1,% SZS status Unsatisfiable\|^unsat, SMT2 UF unsat
+7,iproveropt,,TESTS/list2_uf_sat.smt2,1,% SZS status Satisfiable\|^sat, SMT2 UF sat
+8,iproveropt,,TESTS/agree1_unsat_arrays.smt2,1,% SZS status Unsatisfiable\|^unsat, SMT2 arrays unsat
