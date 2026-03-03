@@ -1,13 +1,48 @@
 #!/usr/bin/env bash
 set -e
 
-if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-  echo "Usage: $0 <input-file> [krympa-binary]"
+if [ $# -lt 1 ] || [ $# -gt 3 ]; then
+  echo "Usage:"
+  echo "  $0 <input-file>"
+  echo "  $0 <input-file> [vampire|twee] [krympa-binary]"
+  echo "  $0 [vampire|twee] <input-file> [krympa-binary]"
   exit 1
 fi
 
-INPUT="$1"
-KRYMPA_BINARY="${2:-./krympa}"
+INPUT_PROVER="vampire"
+KRYMPA_BINARY="./krympa"
+
+is_prover() {
+  [ "$1" = "vampire" ] || [ "$1" = "twee" ]
+}
+
+ARGS=("$@")
+POS=0
+
+# Optional leading prover: ./run_one twee <input> [binary]
+if is_prover "${ARGS[0]}"; then
+  INPUT_PROVER="${ARGS[0]}"
+  POS=1
+fi
+
+if [ $POS -ge $# ]; then
+  echo "Error: missing input file."
+  exit 1
+fi
+
+INPUT="${ARGS[$POS]}"
+POS=$((POS + 1))
+
+# Remaining args can be prover and/or binary in any order.
+while [ $POS -lt $# ]; do
+  ARG="${ARGS[$POS]}"
+  if is_prover "$ARG"; then
+    INPUT_PROVER="$ARG"
+  else
+    KRYMPA_BINARY="$ARG"
+  fi
+  POS=$((POS + 1))
+done
 
 cd ../rust || {
   echo "Error: could not cd into ../rust"
@@ -19,7 +54,10 @@ if [ ! -x "$KRYMPA_BINARY" ]; then
   exit 1
 fi
 
-"$KRYMPA_BINARY" run_vampire "$INPUT"
-"$KRYMPA_BINARY" collect "$INPUT"
-"$KRYMPA_BINARY" shorten "$INPUT"
-"$KRYMPA_BINARY" minimize "$INPUT"
+if [ "$INPUT_PROVER" = "vampire" ]; then
+  "$KRYMPA_BINARY" run_vampire "$INPUT"
+else
+  "$KRYMPA_BINARY" run_twee "$INPUT"
+fi
+"$KRYMPA_BINARY" collect "$INPUT" "$INPUT_PROVER"
+"$KRYMPA_BINARY" minimize "$INPUT" "$INPUT_PROVER"

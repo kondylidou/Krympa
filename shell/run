@@ -11,21 +11,43 @@ KRYMPA_BINARY_DEFAULT="./krympa"
 # defaults
 TIMEOUT_SECS=2700
 KRYMPA_BINARY="$KRYMPA_BINARY_DEFAULT"
+INPUT_PROVER="vampire"
+SEEN_TIMEOUT=0
+SEEN_BINARY=0
+SEEN_PROVER=0
 
-# argument parsing
-if [ $# -ge 1 ]; then
-    if [[ "$1" =~ ^[0-9]+$ ]]; then
-        TIMEOUT_SECS="$1"
-        KRYMPA_BINARY="${2:-$KRYMPA_BINARY_DEFAULT}"
+# argument parsing (order-independent):
+# - one numeric timeout
+# - one krympa binary path
+# - optional prover: vampire|twee
+for ARG in "$@"; do
+    if [[ "$ARG" =~ ^[0-9]+$ ]]; then
+        if [ $SEEN_TIMEOUT -eq 1 ]; then
+            echo "Error: timeout specified more than once."
+            exit 1
+        fi
+        TIMEOUT_SECS="$ARG"
+        SEEN_TIMEOUT=1
+    elif [ "$ARG" = "vampire" ] || [ "$ARG" = "twee" ]; then
+        if [ $SEEN_PROVER -eq 1 ]; then
+            echo "Error: prover specified more than once."
+            exit 1
+        fi
+        INPUT_PROVER="$ARG"
+        SEEN_PROVER=1
     else
-        KRYMPA_BINARY="$1"
-        TIMEOUT_SECS="${2:-2700}"
+        if [ $SEEN_BINARY -eq 1 ]; then
+            echo "Error: krympa binary specified more than once."
+            exit 1
+        fi
+        KRYMPA_BINARY="$ARG"
+        SEEN_BINARY=1
     fi
-fi
+done
 
-if [ $# -gt 2 ]; then
-    echo "Usage: $0 [timeout_secs] [krympa_binary]"
-    echo "   or: $0 [krympa_binary]"
+if [ $# -gt 3 ]; then
+    echo "Usage: $0 [timeout_secs] [krympa_binary] [vampire|twee]"
+    echo "Arguments can be given in any order."
     exit 1
 fi
 
@@ -38,6 +60,7 @@ echo "======================================"
 echo "Krympa benchmark run starting"
 echo "Timeout per benchmark : ${TIMEOUT_SECS}s"
 echo "Krympa binary         : ${KRYMPA_BINARY}"
+echo "Input prover          : ${INPUT_PROVER}"
 echo "Logs directory        : ${BENCHMARK_DIR}/output_logs"
 echo "======================================"
 echo
@@ -61,7 +84,7 @@ run_one() {
     echo "Running benchmarking for $base (timeout=${TIMEOUT_SECS}s)..."
 
     cd "$RUST_DIR" || exit 1
-    "$BENCHMARK_BINARY" "$input_folder" "$TIMEOUT_SECS" "$KRYMPA_BINARY" > "$log_file" 2>&1
+    "$BENCHMARK_BINARY" "$input_folder" "$TIMEOUT_SECS" "$KRYMPA_BINARY" "$INPUT_PROVER" > "$log_file" 2>&1
     cd "$ORIG_DIR" || exit 1
 
     echo "Finished benchmarking for $base"

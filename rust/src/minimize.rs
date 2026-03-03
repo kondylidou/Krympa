@@ -64,7 +64,8 @@ impl Drop for ActiveRootGuard<'_> {
 /// Tries several candidate root lemmas and picks the best
 pub fn try_minimize(
     input_file: &str,
-    vampire_file: &str,
+    initial_proof_file: &str,
+    initial_prover: &str,
     summary_file: &str,
 ) -> Result<String, String> {
     let lemmas_dir = "../lemmas".to_string();
@@ -368,8 +369,16 @@ pub fn try_minimize(
                         // 1. Get superposition steps
                         // get the lemma derived by superposition directly from Vampire proof
                         // in this case we are just proving the single lemma directly
-                        let maybe_superposition =
-                            superposition_steps(&dag_file, vampire_file, &lemmas_dir, candidate);
+                        let maybe_superposition = if initial_prover == "vampire" {
+                            superposition_steps(
+                                &dag_file,
+                                initial_proof_file,
+                                &lemmas_dir,
+                                candidate,
+                            )
+                        } else {
+                            None
+                        };
                         // in dependencies we will get itself (the single lemma)
                         // in this case we can ignore proved_history
                         let (dependencies, superposition_steps, _, input_formulas, all_steps) =
@@ -671,8 +680,16 @@ pub fn try_minimize(
 
                 // 1. Get superposition steps
                 // get the lemma derived by superposition directly from Vampire proof
-                let maybe_superposition =
-                    superposition_steps(&dag_file, vampire_file, &lemmas_dir, n_history_lemma);
+                let maybe_superposition = if initial_prover == "vampire" {
+                    superposition_steps(
+                        &dag_file,
+                        initial_proof_file,
+                        &lemmas_dir,
+                        n_history_lemma,
+                    )
+                } else {
+                    None
+                };
 
                 let (dependencies, superposition_steps, proved_history, input_formulas, all_steps) =
                     match maybe_superposition {
@@ -1049,11 +1066,15 @@ pub fn try_minimize(
             }
         );
         crate::klog_info!("[RESULT] Total steps: {}", steps);
-        let vampire_steps = match fs::read_to_string(vampire_file) {
-            Ok(content) => proof_length("vampire", &content),
+        let initial_steps = match fs::read_to_string(initial_proof_file) {
+            Ok(content) => proof_length(initial_prover, &content),
             Err(_) => 0,
         };
-        crate::klog_info!("[RESULT] Initial proof steps: {}", vampire_steps);
+        crate::klog_info!(
+            "[RESULT] Initial {} proof steps: {}",
+            initial_prover,
+            initial_steps
+        );
         crate::klog_info!("[RESULT] Minimized proof output: {}", proof_with_suffix);
 
         fs::write(dag_with_suffix.clone(), dag_text).map_err(|e| e.to_string())?;

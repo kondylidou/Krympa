@@ -3,6 +3,28 @@ open Str
 
 (* ==================== helpers ==================== *)
 
+let starts_with s prefix =
+  let n = String.length prefix in
+  String.length s >= n && String.sub s 0 n = prefix
+
+let trim_trailing_dot s =
+  let s = String.trim s in
+  if String.length s > 0 && s.[String.length s - 1] = '.'
+  then String.sub s 0 (String.length s - 1) |> String.trim
+  else s
+
+let extract_formula_after_colon line =
+  try
+    let i = String.index line ':' in
+    String.sub line (i + 1) (String.length line - i - 1)
+    |> trim_trailing_dot
+  with Not_found -> ""
+
+let normalize_twee_formula_spacing formula =
+  formula
+  |> Str.global_replace (regexp ",[ \t]+") ","
+  |> String.trim
+
 let is_proof_line line =
   Str.string_match (regexp "^[0-9]+\\.") line 0
   && String.contains line '['
@@ -59,6 +81,10 @@ let extract_negated_conjecture_id line =
   else
     None
 
+let is_twee_axiom_line line = starts_with line "Axiom "
+let is_twee_lemma_line line = starts_with line "Lemma "
+let is_twee_goal_line line = starts_with line "Goal "
+
 (* ==================== pass 1: find conjecture ==================== *)
 
 let find_conjecture_id filename =
@@ -91,7 +117,24 @@ let read_axioms_and_lemmas_from_file filename =
         loop axioms lemmas
 
     | line ->
-        if is_proof_line line then begin
+        let line = String.trim line in
+        if is_twee_axiom_line line then begin
+          let formula =
+            extract_formula_after_colon line
+            |> normalize_twee_formula_spacing
+          in
+          if formula = "" then loop axioms lemmas
+          else loop (formula :: axioms) lemmas
+        end
+        else if is_twee_lemma_line line || is_twee_goal_line line then begin
+          let formula =
+            extract_formula_after_colon line
+            |> normalize_twee_formula_spacing
+          in
+          if formula = "" then loop axioms lemmas
+          else loop axioms (formula :: lemmas)
+        end
+        else if is_proof_line line then begin
           let id = extract_line_id line in
           let formula = extract_formula_from_line line in
 

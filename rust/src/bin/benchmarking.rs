@@ -5,7 +5,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
         krympa::klog_error!(
-            "Usage: {} <input_folder> <timeout_secs> [krympa_binary]",
+            "Usage: {} <input_folder> <timeout_secs> [krympa_binary] [vampire|twee]",
             args[0]
         );
         std::process::exit(1);
@@ -14,11 +14,15 @@ fn main() {
     let input_folder = &args[1];
     let timeout_secs: u64 = args[2].parse().expect("timeout_secs must be a number");
 
-    let krympa_bin = if args.len() >= 4 {
-        &args[3]
-    } else {
-        "./krympa"
-    };
+    let mut krympa_bin = "./krympa";
+    let mut input_prover = "vampire";
+    for arg in args.iter().skip(3) {
+        if arg == "vampire" || arg == "twee" {
+            input_prover = arg;
+        } else {
+            krympa_bin = arg;
+        }
+    }
 
-    run(input_folder, krympa_bin, timeout_secs);
+    run(input_folder, krympa_bin, timeout_secs, input_prover);
 }

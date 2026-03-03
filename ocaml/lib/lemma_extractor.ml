@@ -18,12 +18,13 @@ let strip_leading_quantifiers formula =
   let re = Str.regexp "^[ \t]*![ \t]*\\[[^]]*\\][ \t]*:" in
   Str.global_replace re "" formula
 
-(* normalize variables: Xn -> X0,X1..., keep Yn as-is *)
+(* normalize variables: detect TPTP variables (uppercase identifiers),
+   map X* to X0,X1,..., keep non-X variables as-is *)
 let normalize_variables_with_Y formula =
   let tokens = Str.split (regexp "[^a-zA-Z0-9_]+") formula in
   let vars =
     List.filter
-      (fun t -> Str.string_match (Str.regexp "^[XY][0-9]+$") t 0)
+      (fun t -> Str.string_match (Str.regexp "^[A-Z][A-Za-z0-9_]*$") t 0)
       tokens
   in
   let uniq_vars = List.sort_uniq compare vars in
@@ -43,12 +44,12 @@ let normalize_variables_with_Y formula =
   in
   (List.map snd mapping, replaced)
 
-(* normalize all variables (Xn and Yn) *)
+(* normalize all TPTP variables (uppercase identifiers) *)
 let normalize_variables formula =
   let tokens = Str.split (regexp "[^a-zA-Z0-9_]+") formula in
   let vars =
     List.filter
-      (fun t -> Str.string_match (Str.regexp "^[XY][0-9]+$") t 0)
+      (fun t -> Str.string_match (Str.regexp "^[A-Z][A-Za-z0-9_]*$") t 0)
       tokens
   in
   let uniq_vars = List.sort_uniq compare vars in

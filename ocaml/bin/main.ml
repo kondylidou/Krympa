@@ -3,7 +3,7 @@ open Ocaml
 
 let () =
   if Array.length Sys.argv < 3 then begin
-    prerr_endline "Usage: main <vampire_proof_file> <mode>";
+    prerr_endline "Usage: main <proof_file> <mode>";
     prerr_endline "  mode = big-step   -> axioms + lemma_i";
     prerr_endline "  mode = small-step -> axioms + lemmas 1..(i-1) + lemma_i";
     prerr_endline "  mode = abstracted -> axioms + lemma_i with nested op(...) replaced by variables";

@@ -40,6 +40,17 @@ Commands executed in the pipeline:
 
 `run_vampire → collect → shorten → minimize`
 
+Alternative prover:
+
+`run_twee → collect → shorten → minimize`
+
+`collect` behavior:
+
+* `collect <input-file> vampire` reads `../output/vampire_proof_<suffix>.out`
+* `collect <input-file> twee` reads `../output/twee_proof_<suffix>.out`
+* if the selected input proof file does not exist, `collect` reports an error
+* after parsing that input proof, `collect` proves extracted lemmas with **both** Vampire and Twee
+
 ---
 
 ## Running the Tool
@@ -105,9 +116,13 @@ Then run:
 `run` and `run_one` accept an optional binary argument.
 
 ```bash
-./run_one <input-file> <krympa-binary>
+./run_one <input-file>
+./run_one <input-file> [vampire|twee] [krympa-binary]
+./run_one [vampire|twee] <input-file> [krympa-binary]
 ./run <timeout> <krympa-binary>
 ```
+
+The optional `[vampire|twee]` in `run_one` chooses which phase-0 proof is generated.
 
 ---
 

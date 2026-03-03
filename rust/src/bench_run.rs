@@ -9,7 +9,7 @@ use wait_timeout::ChildExt;
 #[derive(Debug)]
 pub struct BenchmarkResult {
     pub file: String,
-    pub vampire_steps: Option<usize>,
+    pub initial_steps: Option<usize>,
     pub minimized_steps: Option<usize>,
 }
 
@@ -17,7 +17,7 @@ pub struct BenchmarkResult {
 /// `input_folder`: folder with input files
 /// `krympa_bin`: path to prebuilt krympa binary
 /// `timeout_secs`: per-command timeout (seconds)
-pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
+pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64, input_prover: &str) {
     let input_dir = Path::new(input_folder);
     if !input_dir.is_dir() {
         crate::klog_error!(
@@ -26,6 +26,18 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
         );
         return;
     }
+
+    let run_cmd = match input_prover {
+        "vampire" => "run_vampire",
+        "twee" => "run_twee",
+        _ => {
+            crate::klog_error!(
+                "Unknown input prover '{}'. Expected 'vampire' or 'twee'.",
+                input_prover
+            );
+            return;
+        }
+    };
 
     let output_dir = Path::new("../output");
     fs::create_dir_all(output_dir).expect("Failed to create output folder");
@@ -39,7 +51,7 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
         })
         .collect();
 
-    let commands = ["run_vampire", "collect", "shorten", "minimize"];
+    let commands = [run_cmd, "collect", "minimize"];
     let mut all_results: Vec<BenchmarkResult> = Vec::new();
 
     crate::klog_info!("Starting benchmarking in folder: {}", input_dir.display());
@@ -50,14 +62,19 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
         let input_str = input_file.to_string_lossy().to_string();
         crate::klog_info!("=== Processing file: {} ===", input_str);
 
-        let mut vampire_steps: Option<usize> = None;
+        let mut initial_steps: Option<usize> = None;
         let mut minimized_steps: Option<usize> = None;
 
         for cmd in &commands {
             crate::klog_debug!("Running '{} {}' ...", cmd, input_str);
 
-            let mut child = match Command::new(krympa_bin)
-                .args([cmd, input_str.as_str()])
+            let mut command = Command::new(krympa_bin);
+            if *cmd == "collect" || *cmd == "minimize" {
+                command.args([*cmd, input_str.as_str(), input_prover]);
+            } else {
+                command.args([*cmd, input_str.as_str()]);
+            }
+            let mut child = match command
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
@@ -83,7 +100,7 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
                     let _ = child.kill();
                     all_results.push(BenchmarkResult {
                         file: input_str.clone(),
-                        vampire_steps: None,
+                        initial_steps: None,
                         minimized_steps: None,
                     });
                     continue 'file_loop;
@@ -105,16 +122,17 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
                 crate::klog_warn!("Command '{}' failed on {}\n{}", cmd, input_str, stderr);
             }
 
-            // --- Vampire proof length ---
-            if *cmd == "run_vampire" {
+            // --- Initial proof length ---
+            if *cmd == run_cmd {
                 let suffix = extract_suffix(&input_str);
-                let vampire_file = output_dir.join(format!("vampire_proof_{}.out", suffix));
+                let initial_file =
+                    output_dir.join(format!("{}_proof_{}.out", input_prover, suffix));
 
-                if vampire_file.exists() {
+                if initial_file.exists() {
                     let mut content = String::new();
-                    if let Ok(mut file) = fs::File::open(&vampire_file) {
+                    if let Ok(mut file) = fs::File::open(&initial_file) {
                         if file.read_to_string(&mut content).is_ok() {
-                            vampire_steps = Some(proof_length("vampire", &content));
+                            initial_steps = Some(proof_length(input_prover, &content));
                         }
                     }
                 }
@@ -125,7 +143,7 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
                 for line in stdout.lines() {
                     if let Some(rest) = line.strip_prefix("[RESULT] Total steps:") {
                         if let Ok(n) = rest.trim().parse::<usize>() {
-                            minimized_steps = Some(match vampire_steps {
+                            minimized_steps = Some(match initial_steps {
                                 Some(v) if n > v => v,
                                 _ => n,
                             });
@@ -138,8 +156,9 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
 
         crate::klog_info!("--- Summary for {} ---", input_str);
         crate::klog_info!(
-            "Vampire proof steps: {}",
-            vampire_steps
+            "Initial ({}) proof steps: {}",
+            input_prover,
+            initial_steps
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "N/A".to_string())
         );
@@ -153,7 +172,7 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
 
         all_results.push(BenchmarkResult {
             file: input_str,
-            vampire_steps,
+            initial_steps,
             minimized_steps,
         });
     }
@@ -161,20 +180,20 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
     // --- Global summary ---
     crate::klog_info!("========== GLOBAL SUMMARY ==========");
 
-    let mut total_vampire = 0usize;
+    let mut total_initial = 0usize;
     let mut total_minimized = 0usize;
-    let mut count_vampire = 0usize;
+    let mut count_initial = 0usize;
     let mut count_minimized = 0usize;
 
     for r in &all_results {
         crate::klog_info!(
-            "{:<45}  Vampire: {:>6}  Minimized: {:>6}",
+            "{:<45}  Initial: {:>6}  Minimized: {:>6}",
             r.file,
-            r.vampire_steps
-                .map(|v| {
-                    total_vampire += v;
-                    count_vampire += 1;
-                    v.to_string()
+            r.initial_steps
+                .map(|i| {
+                    total_initial += i;
+                    count_initial += 1;
+                    i.to_string()
                 })
                 .unwrap_or_else(|| "N/A".to_string()),
             r.minimized_steps
@@ -189,10 +208,10 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
 
     crate::klog_info!("------------------------------------");
 
-    if count_vampire > 0 {
+    if count_initial > 0 {
         crate::klog_info!(
-            "Average Vampire steps: {:.2}",
-            total_vampire as f64 / count_vampire as f64
+            "Average Initial steps: {:.2}",
+            total_initial as f64 / count_initial as f64
         );
     }
 
