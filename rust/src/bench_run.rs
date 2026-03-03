@@ -39,7 +39,7 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
         })
         .collect();
 
-    let commands = ["run_vampire", "collect", "shorten", "minimize"];
+    let commands = ["run_atp", "collect", "shorten", "minimize"];
     let mut all_results: Vec<BenchmarkResult> = Vec::new();
 
     crate::klog_info!("Starting benchmarking in folder: {}", input_dir.display());
@@ -106,7 +106,7 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
             }
 
             // --- Vampire proof length ---
-            if *cmd == "run_vampire" {
+            if *cmd == "run_atp" {
                 let suffix = extract_suffix(&input_str);
                 let vampire_file = output_dir.join(format!("vampire_proof_{}.out", suffix));
 

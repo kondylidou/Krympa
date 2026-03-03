@@ -50,8 +50,8 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
         }
     }
 
-    // run provers on all lemma files
-    let provers = ["vampire", "twee"];
+    // run all supported provers on all lemma files
+    let provers = ["vampire", "iprover", "twee"];
     let results = prove_lemmas(&all_lemma_files, &provers, "../proofs");
 
     crate::klog_info!("[INFO] Phase 1 summary: {} lemmas proved.", results.len());
@@ -83,9 +83,10 @@ pub fn shorten_proofs(summary_file: &str) {
 
     let lemmas_dir = "../lemmas".to_string();
     let proofs_dir = "../proofs".to_string();
-    let tmp_dirs = [
-        ("vampire", "../proofs/vampire_tmp".to_string()),
-        ("twee", "../proofs/twee_tmp".to_string()),
+    let tmp_dirs: Vec<(String, String)> = vec![
+        ("vampire".to_string(), "../proofs/vampire_tmp".to_string()),
+        ("iprover".to_string(), "../proofs/iprover_tmp".to_string()),
+        ("twee".to_string(), "../proofs/twee_tmp".to_string()),
     ];
 
     let summary_data: HashMap<u32, (String, String, String)> = serde_json::from_str(
@@ -162,7 +163,7 @@ pub fn shorten_proofs(summary_file: &str) {
         .map(|n| format!("{}/small-step/small_step_lemma_{:04}.p", lemmas_dir, n))
         .collect();
 
-    let provers = ["vampire", "twee"];
+    let provers = ["vampire", "iprover", "twee"];
     fs::create_dir_all("../tmp").expect("Failed to create ../tmp directory");
     let updated_results = prove_lemmas(&updated_files, &provers, "../tmp"); // tmp root
 
@@ -182,8 +183,8 @@ pub fn shorten_proofs(summary_file: &str) {
         // find prover-specific tmp dir
         let tmp_dir = tmp_dirs
             .iter()
-            .find(|(p, _)| p == prover)
-            .map(|(_, path)| path)
+            .find(|(p, _)| p.as_str() == prover)
+            .map(|(_, path)| path.as_str())
             .expect("Prover tmp dir not found");
 
         // tmp folder filename

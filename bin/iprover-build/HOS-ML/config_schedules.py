@@ -1670,6 +1670,9 @@ epr_sat_schedule = [
   [("heur_sat/schedule_none_fnt_fm", 300)],
 ]
 
+# Krympa custom schedule loaded from HOS-ML/heur/tao_2026_03_01
+tao_2026_03_01_schedule = [[("heur/tao_2026_03_01", None)]]
+
 # FIXME all the ignores are not nice
 # SCHEDULES: Dict[str, List[List[Tuple[str, int | float | None]]]] = { # Cannot infer types on the refs
 SCHEDULES: Dict[str, List[List[Tuple[Any, Any]]]] = {  # type: ignore
@@ -1677,6 +1680,7 @@ SCHEDULES: Dict[str, List[List[Tuple[Any, Any]]]] = {  # type: ignore
     "fof_schedule": fof_schedule,
     "fnt_schedule": fnt_schedule,
     "ueq_schedule": casc_j12_ueq,
+    "tao_2026_03_01_schedule": tao_2026_03_01_schedule,
     "tfa_schedule": casc_29_tfa,    
 #    "epr_unsat_schedule": epr_unsat_v2_schedule,
 #    "epr_unsat_schedule": epr_unsat_schedule,

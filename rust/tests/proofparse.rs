@@ -1,3 +1,4 @@
+use krympa::superpose::extract_superposition_steps;
 use krympa::superpose::parse_vampire_proof;
 use krympa::superpose::prepend_superposition_steps;
 use krympa::superpose::VampStep;
@@ -253,4 +254,55 @@ fn test_real_vampire_uses_axiom_names_for_backtracked_inputs() {
         }),
         "expected step 20 deps to include lemma_* and small_step_lemma_0139 (not a_17). got:\n{annotated}"
     );
+}
+
+#[test]
+fn test_extract_superposition_steps_on_negated_conjecture_chain() {
+    let proof = r#"
+1. ! [X0,X1,X2,X3,X4] : op(X4,op(X2,X4)) = op(op(X4,op(X2,X4)),op(op(X3,op(X2,X3)),op(X0,op(op(X1,X2),X0)))) [input]
+2. ! [X0,X1,X2,X3,X4,X5,X6,X7] : op(op(X6,op(op(X7,X2),X6)),X2) = op(op(op(X6,op(op(X7,X2),X6)),X2),op(op(op(X3,op(op(X1,X2),X3)),op(X4,op(op(X5,op(X1,X2)),X4))),op(X0,op(op(X1,X2),X0)))) [input]
+3. ! [X0,X1,X2,X3] : op(X2,op(X1,X2)) = op(op(X2,op(X1,X2)),op(X3,op(op(X0,X1),X3))) [input]
+4. ! [X0,X1,X2,X3,X4,X5] : op(op(X4,op(op(X5,X2),X4)),X2) = op(op(op(X4,op(op(X5,X2),X4)),X2),op(op(X3,op(op(X1,X2),X3)),op(X0,op(op(X1,X2),X0)))) [input]
+5. ~! [X0,X1,X2,X3,X4,X5] : op(op(X4,op(op(X5,X2),X4)),X2) = op(op(op(X4,op(op(X5,X2),X4)),X2),op(op(X3,op(op(X1,X2),X3)),op(X0,op(op(X1,X2),X0)))) [negated conjecture 4]
+6. ? [X0,X1,X2,X3,X4,X5] : op(op(X4,op(op(X5,X2),X4)),X2) != op(op(op(X4,op(op(X5,X2),X4)),X2),op(op(X3,op(op(X1,X2),X3)),op(X0,op(op(X1,X2),X0)))) [ennf transformation 5]
+7. ? [X0,X1,X2,X3,X4,X5] : op(op(X4,op(op(X5,X2),X4)),X2) != op(op(op(X4,op(op(X5,X2),X4)),X2),op(op(X3,op(op(X1,X2),X3)),op(X0,op(op(X1,X2),X0)))) => op(op(sK4,op(op(sK5,sK2),sK4)),sK2) != op(op(op(sK4,op(op(sK5,sK2),sK4)),sK2),op(op(sK3,op(op(sK1,sK2),sK3)),op(sK0,op(op(sK1,sK2),sK0)))) [choice axiom]
+8. op(op(sK4,op(op(sK5,sK2),sK4)),sK2) != op(op(op(sK4,op(op(sK5,sK2),sK4)),sK2),op(op(sK3,op(op(sK1,sK2),sK3)),op(sK0,op(op(sK1,sK2),sK0)))) [skolemisation 6,7]
+9. ( ! [X2,X3,X0,X1,X4] : (op(X4,op(X2,X4)) = op(op(X4,op(X2,X4)),op(op(X3,op(X2,X3)),op(X0,op(op(X1,X2),X0)))))) [cnf transformation 1]
+10. ( ! [X2,X3,X0,X1,X6,X7,X4,X5] : (op(op(X6,op(op(X7,X2),X6)),X2) = op(op(op(X6,op(op(X7,X2),X6)),X2),op(op(op(X3,op(op(X1,X2),X3)),op(X4,op(op(X5,op(X1,X2)),X4))),op(X0,op(op(X1,X2),X0)))))) [cnf transformation 2]
+11. ( ! [X2,X3,X0,X1] : (op(X2,op(X1,X2)) = op(op(X2,op(X1,X2)),op(X3,op(op(X0,X1),X3))))) [cnf transformation 3]
+12. op(op(sK4,op(op(sK5,sK2),sK4)),sK2) != op(op(op(sK4,op(op(sK5,sK2),sK4)),sK2),op(op(sK3,op(op(sK1,sK2),sK3)),op(sK0,op(op(sK1,sK2),sK0)))) [cnf transformation 8]
+13. ! [X0,X1,X2,X3,X4] : (op(op(X0,op(X1,X0)),op(op(X2,op(X1,X2)),op(X3,op(op(X4,X1),X3)))) = op(X0,op(X1,X0))) [cnf transformation 9]
+14. ! [X0,X1,X2,X3,X4,X5,X6,X7] : (op(op(op(X0,op(op(X1,X2),X0)),X2),op(op(op(X3,op(op(X4,X2),X3)),op(X5,op(op(X6,op(X4,X2)),X5))),op(X7,op(op(X4,X2),X7)))) = op(op(X0,op(op(X1,X2),X0)),X2)) [cnf transformation 10]
+15. ! [X0,X1,X2,X3] : (op(op(X0,op(X1,X0)),op(X2,op(op(X3,X1),X2))) = op(X0,op(X1,X0))) [cnf transformation 11]
+16. $true [cnf transformation 12]
+17. ! [X0,X1,X2] : (op(op(X0,op(X1,X0)),op(X2,op(X1,X2))) = op(X0,op(X1,X0))) [demodulation 13,15]
+18. ! [X0,X1,X2,X3,X4] : op(op(op(X0,op(op(X1,X2),X0)),X2),op(X3,op(op(X4,X2),X3))) = op(op(X0,op(op(X1,X2),X0)),X2) [demodulation 16,17]
+19. ! [X0,X1,X2,X3,X4] : (op(op(op(X0,op(op(X1,X2),X0)),X2),op(X3,op(op(X4,X2),X3))) = op(op(X0,op(op(X1,X2),X0)),X2)) [demodulation 14,15,17]
+20. ! [X0,X1,X2,X3,X4,X5] : op(op(op(X0,op(op(X1,X2),X0)),X2),op(op(X3,op(op(X4,X2),X3)),op(X5,op(op(X4,X2),X5)))) = op(op(X0,op(op(X1,X2),X0)),X2) [backward subsumption resolution 18,19]
+"#;
+
+    let file = write_tmp(proof);
+    let (all_steps_parsed, _, _) = parse_vampire_proof(&file).unwrap();
+    let target_formula = all_steps_parsed
+        .get(&20)
+        .expect("missing step 20 in parsed proof")
+        .formula
+        .clone();
+
+    let (relevant_steps, input_formulas, _all_steps) =
+        extract_superposition_steps(&file, &target_formula)
+            .expect("expected to extract relevant superposition chain");
+
+    // Only relevant inference chain should be kept.
+    assert!(relevant_steps.contains_key(&20));
+    assert!(relevant_steps.contains_key(&19));
+    assert!(relevant_steps.contains_key(&18));
+    assert!(relevant_steps.contains_key(&17));
+    assert_eq!(relevant_steps.len(), 4);
+
+    // Inputs are still tracked from the full proof.
+    assert!(input_formulas.contains_key(&1));
+    assert!(input_formulas.contains_key(&2));
+    assert!(input_formulas.contains_key(&3));
+    assert!(input_formulas.contains_key(&4));
 }

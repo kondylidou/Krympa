@@ -46,7 +46,18 @@ pub fn parse_vampire_proof(
     let mut relevant: BTreeSet<usize> = BTreeSet::new();
 
     // keywords indicating relevant proof steps
-    let proof_keywords = ["demodulation", "superposition", "resolution"];
+    let proof_keywords = [
+        "demodulation",
+        "superposition",
+        "resolution",
+        "subsumption",
+        "simplification",
+        "factoring",
+        "rewriting",
+        "distinctness",
+        "light normalisation",
+        "light_normalisation",
+    ];
 
     for line in content.lines() {
         let line_trimmed = line.trim();
@@ -286,10 +297,10 @@ pub fn superposition_steps(
                 Some(s) => s,
                 None => continue,
             };
-            let wrapped = format!("({})", step.formula);
-
             // check if the dependency formula matches this step's formula
-            if formulas_match(&dep_formula, &wrapped) {
+            if formulas_match(&dep_formula, &step.formula)
+                || formulas_match(&dep_formula, &format!("({})", step.formula))
+            {
                 matched_any = true;
 
                 // gather full transitive deps, then keep only relevant nodes among them
@@ -353,7 +364,10 @@ pub fn extract_superposition_steps(
     let proving_vnum = relevant_set.iter().copied().find(|vnum| {
         all_steps
             .get(vnum)
-            .map(|step| formulas_match(lemma_formula, &format!("({})", step.formula)))
+            .map(|step| {
+                formulas_match(lemma_formula, &step.formula)
+                    || formulas_match(lemma_formula, &format!("({})", step.formula))
+            })
             .unwrap_or(false)
     })?;
 

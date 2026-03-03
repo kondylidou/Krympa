@@ -7,25 +7,34 @@ BENCHMARK_BINARY="./benchmarking_binary"
 
 # default krympa binary
 KRYMPA_BINARY_DEFAULT="./krympa"
+PROVER_DEFAULT="vampire"
 
 # defaults
 TIMEOUT_SECS=2700
 KRYMPA_BINARY="$KRYMPA_BINARY_DEFAULT"
+PROVER="$PROVER_DEFAULT"
 
-# argument parsing
-if [ $# -ge 1 ]; then
-    if [[ "$1" =~ ^[0-9]+$ ]]; then
-        TIMEOUT_SECS="$1"
-        KRYMPA_BINARY="${2:-$KRYMPA_BINARY_DEFAULT}"
+# argument parsing (order-independent):
+#   numeric arg => timeout
+#   vampire|iprover => prover
+#   anything else => krympa binary
+for arg in "$@"; do
+    if [[ "$arg" =~ ^[0-9]+$ ]]; then
+        TIMEOUT_SECS="$arg"
+    elif [ "$arg" = "vampire" ] || [ "$arg" = "iprover" ]; then
+        PROVER="$arg"
     else
-        KRYMPA_BINARY="$1"
-        TIMEOUT_SECS="${2:-2700}"
+        KRYMPA_BINARY="$arg"
     fi
-fi
+done
 
-if [ $# -gt 2 ]; then
-    echo "Usage: $0 [timeout_secs] [krympa_binary]"
-    echo "   or: $0 [krympa_binary]"
+if [ $# -gt 3 ]; then
+    echo "Usage: $0 [timeout_secs|prover|krympa_binary] ..."
+    echo "  prover: vampire|iprover (default: vampire)"
+    echo "  examples:"
+    echo "    $0 iprover"
+    echo "    $0 1800 iprover"
+    echo "    $0 iprover ./krympa"
     exit 1
 fi
 
@@ -38,6 +47,7 @@ echo "======================================"
 echo "Krympa benchmark run starting"
 echo "Timeout per benchmark : ${TIMEOUT_SECS}s"
 echo "Krympa binary         : ${KRYMPA_BINARY}"
+echo "Start prover          : ${PROVER}"
 echo "Logs directory        : ${BENCHMARK_DIR}/output_logs"
 echo "======================================"
 echo
@@ -61,7 +71,7 @@ run_one() {
     echo "Running benchmarking for $base (timeout=${TIMEOUT_SECS}s)..."
 
     cd "$RUST_DIR" || exit 1
-    "$BENCHMARK_BINARY" "$input_folder" "$TIMEOUT_SECS" "$KRYMPA_BINARY" > "$log_file" 2>&1
+    KRYMPA_ATP="$PROVER" "$BENCHMARK_BINARY" "$input_folder" "$TIMEOUT_SECS" "$KRYMPA_BINARY" > "$log_file" 2>&1
     cd "$ORIG_DIR" || exit 1
 
     echo "Finished benchmarking for $base"

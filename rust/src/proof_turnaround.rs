@@ -85,12 +85,23 @@ fn is_proof_step(rule: &str) -> bool {
         || rule.starts_with("demodulation")
         || rule.starts_with("forward demodulation")
         || rule.starts_with("backward demodulation")
+        || rule.starts_with("light normalisation")
+        || rule.starts_with("light_normalisation")
         || rule.starts_with("simplification")
         || rule.starts_with("subsumption")
+        || rule.starts_with("subsumption resolution")
+        || rule.starts_with("backward subsumption resolution")
+        || rule.starts_with("forward subsumption resolution")
         || rule.starts_with("distinctness")
-        || rule.starts_with("trivial inequality removal")
         || rule == "equality"
         || rule == "inequality"
+}
+
+fn normalize_rule_name(rule: &str) -> String {
+    rule.replace('_', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /* ------------------ PARSING ------------------ */
@@ -120,7 +131,7 @@ fn parse_formula_with_bound(s: &str, bound: &mut BTreeSet<String>) -> Formula {
         let q = &caps[1];
         let vars: Vec<String> = caps[2]
             .split(',')
-            .map(|v| v.trim().to_string())
+            .map(|v| v.trim().split(':').next().unwrap_or("").trim().to_string())
             .filter(|v| !v.is_empty())
             .collect();
         let rest = caps[3].trim();
@@ -152,6 +163,172 @@ fn parse_formula_with_bound(s: &str, bound: &mut BTreeSet<String>) -> Formula {
     } else {
         panic!("Cannot parse formula: {}", s);
     }
+}
+
+fn strip_outer_parens(s: &str) -> &str {
+    let t = s.trim();
+    if t.starts_with('(') && t.ends_with(')') && t.len() >= 2 {
+        &t[1..t.len() - 1]
+    } else {
+        t
+    }
+}
+
+fn extract_iprover_refutation_block(proof_text: &str) -> String {
+    let start_marker = "% SZS output start CNFRefutation";
+    let end_marker = "% SZS output end CNFRefutation";
+    match (proof_text.find(start_marker), proof_text.find(end_marker)) {
+        (Some(s), Some(e)) if e > s => proof_text[s..e].to_string(),
+        _ => proof_text.to_string(),
+    }
+}
+
+fn extract_balanced_statements(block: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let bytes = block.as_bytes();
+    let mut i = 0usize;
+
+    while i < bytes.len() {
+        let rem = &block[i..];
+        let is_fof = rem.starts_with("fof(");
+        let is_tcf = rem.starts_with("tcf(");
+        if !is_fof && !is_tcf {
+            i += 1;
+            continue;
+        }
+
+        let mut j = i;
+        let mut depth = 0i32;
+        let mut started = false;
+        while j < bytes.len() {
+            let c = bytes[j] as char;
+            if c == '(' {
+                depth += 1;
+                started = true;
+            } else if c == ')' {
+                depth -= 1;
+            }
+            if started && depth == 0 && c == '.' {
+                out.push(block[i..=j].trim().to_string());
+                i = j + 1;
+                break;
+            }
+            j += 1;
+        }
+        if j >= bytes.len() {
+            break;
+        }
+    }
+    out
+}
+
+fn parse_source_rule_and_depnames(source: &str) -> (String, Vec<String>, bool, bool) {
+    let src = source.trim();
+
+    if src.starts_with("file(") {
+        return ("input".to_string(), Vec::new(), false, true);
+    }
+
+    if src.starts_with("introduced(") {
+        let inner = src
+            .trim_start_matches("introduced(")
+            .trim_end_matches(')')
+            .trim();
+        let parts = split_top_level(inner, ',');
+        let raw_rule = parts.first().map(|s| s.trim()).unwrap_or("introduced");
+        return (normalize_rule_name(raw_rule), Vec::new(), false, false);
+    }
+
+    if !src.starts_with("inference(") {
+        return ("unknown".to_string(), Vec::new(), false, false);
+    }
+
+    let inner = src
+        .trim_start_matches("inference(")
+        .trim_end_matches(')')
+        .trim();
+    let parts = split_top_level(inner, ',');
+    if parts.is_empty() {
+        return ("unknown".to_string(), Vec::new(), false, false);
+    }
+    let rule = normalize_rule_name(parts[0].trim());
+    let is_neg = parts[0].trim() == "negated_conjecture";
+
+    let deps_raw = parts.last().map(|s| s.trim()).unwrap_or("");
+    let deps_inner = deps_raw
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or("");
+    let deps = split_top_level(deps_inner, ',')
+        .into_iter()
+        .map(|d| d.trim().to_string())
+        .filter(|d| !d.is_empty())
+        .collect::<Vec<_>>();
+
+    (rule, deps, is_neg, false)
+}
+
+fn parse_iprover_cnf_refutation(proof_text: &str) -> BTreeMap<usize, SuperpositionStep> {
+    let block = extract_iprover_refutation_block(proof_text);
+    let statements = extract_balanced_statements(&block);
+    if statements.is_empty() {
+        return BTreeMap::new();
+    }
+
+    let mut rows: Vec<(String, Formula, String, Vec<String>, bool, bool)> = Vec::new();
+    for stmt in statements {
+        let open = match stmt.find('(') {
+            Some(i) => i,
+            None => continue,
+        };
+        let close = match stmt.rfind(')') {
+            Some(i) if i > open => i,
+            _ => continue,
+        };
+
+        let inner = &stmt[open + 1..close];
+        let args = split_top_level(inner, ',');
+        if args.len() < 4 {
+            continue;
+        }
+
+        let name = args[0].trim().to_string();
+        let formula_str = strip_outer_parens(args[2].trim())
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let formula = parse_formula(&formula_str);
+        let source = args[3..].join(",");
+        let (rule, dep_names, is_neg, is_input) = parse_source_rule_and_depnames(&source);
+        rows.push((name, formula, rule, dep_names, is_neg, is_input));
+    }
+
+    let mut idx_of: BTreeMap<String, usize> = BTreeMap::new();
+    for (i, (name, _, _, _, _, _)) in rows.iter().enumerate() {
+        idx_of.entry(name.clone()).or_insert(i + 1);
+    }
+
+    let mut out = BTreeMap::new();
+    for (name, formula, rule, dep_names, is_neg, is_input) in rows {
+        let Some(&idx) = idx_of.get(&name) else {
+            continue;
+        };
+        let deps = dep_names
+            .iter()
+            .filter_map(|d| idx_of.get(d).copied())
+            .map(|d| (0, d))
+            .collect::<Vec<_>>();
+        out.insert(
+            idx,
+            SuperpositionStep {
+                formula,
+                deps,
+                is_negated_conjecture: is_neg,
+                rule: if is_input { "input".to_string() } else { rule },
+            },
+        );
+    }
+    out
 }
 
 /// Parse term (simple)
@@ -186,19 +363,28 @@ fn parse_term(s: &str, bound: &BTreeSet<String>) -> Term {
 /// Split top-level comma-separated terms
 fn split_top_level(s: &str, sep: char) -> Vec<String> {
     let mut res = Vec::new();
-    let mut depth = 0;
+    let mut paren_depth = 0;
+    let mut bracket_depth = 0;
     let mut buf = String::new();
     for c in s.chars() {
         match c {
             '(' => {
-                depth += 1;
+                paren_depth += 1;
                 buf.push(c);
             }
             ')' => {
-                depth -= 1;
+                paren_depth -= 1;
                 buf.push(c);
             }
-            c if c == sep && depth == 0 => {
+            '[' => {
+                bracket_depth += 1;
+                buf.push(c);
+            }
+            ']' => {
+                bracket_depth -= 1;
+                buf.push(c);
+            }
+            c if c == sep && paren_depth == 0 && bracket_depth == 0 => {
                 res.push(buf.trim().to_string());
                 buf.clear();
             }
@@ -280,7 +466,7 @@ fn parse_inf_bracket(inf: &str) -> (String, Vec<usize>, bool) {
     }
 
     let rule_full = if !words.is_empty() {
-        words.join(" ")
+        normalize_rule_name(&words.join(" "))
     } else if is_neg {
         "negated conjecture".to_string()
     } else {
@@ -290,8 +476,16 @@ fn parse_inf_bracket(inf: &str) -> (String, Vec<usize>, bool) {
     (rule_full, deps, is_neg)
 }
 
-/// Parse Vampire proof into steps (robust-ish)
-pub fn parse_vampire_proof(proof_text: &str) -> BTreeMap<usize, SuperpositionStep> {
+/// Parse equational proof text (Vampire numbered output or raw iProver CNFRefutation)
+/// into steps.
+pub fn parse_equational_proof(proof_text: &str) -> BTreeMap<usize, SuperpositionStep> {
+    // Accept raw iProver CNFRefutation text and normalize it to the same step map.
+    if proof_text.contains("% SZS output start CNFRefutation")
+        && (proof_text.contains("tcf(") || proof_text.contains("fof("))
+    {
+        return parse_iprover_cnf_refutation(proof_text);
+    }
+
     let mut steps_map = BTreeMap::new();
     let line_re = Regex::new(r"^\s*(\d+)\s*[.]?\s*(.*)$").unwrap();
 
@@ -845,7 +1039,7 @@ pub fn turn_proof_around(
 /* ------------------ TOP-LEVEL PROCEDURE ------------------ */
 
 pub fn eq_proof_procedure(proof_text: &str) -> String {
-    let parsed = parse_vampire_proof(proof_text);
+    let parsed = parse_equational_proof(proof_text);
 
     // always turn the proof
     let final_steps = turn_proof_around(&parsed);

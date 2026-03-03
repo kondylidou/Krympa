@@ -1,7 +1,6 @@
 use crate::alpha_match::formulas_match;
 use crate::dag::*;
 use crate::prover_wrapper::*;
-use crate::run_vamp::run_vampire;
 use crate::superpose::*;
 use crate::utils::*;
 use rayon::prelude::*;
@@ -268,6 +267,7 @@ pub fn try_minimize(
                     format!("{}/{}.proof", proofs_dir, actual_file),
                     format!("{}/{}_twee.proof", proofs_dir, actual_file),
                     format!("{}/{}_vampire.proof", proofs_dir, actual_file),
+                    format!("{}/{}_iprover.proof", proofs_dir, actual_file),
                 ];
 
                 let path = ext.iter().find(|p| Path::new(p).exists()).ok_or_else(|| {
@@ -286,8 +286,8 @@ pub fn try_minimize(
                     .ok_or_else(|| format!("Cannot extract prover from filename {}", actual_file))?
                     .to_string();
 
-                // handle Vampire-specific prepending
-                let (root_proof_steps, _root_proved_by) = if prover == "vampire" {
+                // handle start-prover (vampire/iprover) superposition prepending
+                let (root_proof_steps, _root_proved_by) = if prover == "vampire" || prover == "iprover" {
                     if let Some((superposition_steps, input_formulas, all_steps)) =
                         extract_superposition_steps(path, root_formula)
                     {
@@ -1066,7 +1066,7 @@ pub fn try_minimize(
     Ok("Minimization complete".into())
 }
 
-/// Proves a lemma using Twee and Vampire, selecting the shorter proof.
+/// Proves a lemma using Twee, Vampire, and iProver, selecting the shortest proof.
 /// - `superposition_steps`: optional superposition steps to append
 /// - `dependencies`: optional dependencies (lemma names)
 /// - `axioms`: additional axioms to append
@@ -1113,7 +1113,7 @@ pub fn prove_lemma(
     // 6. Run provers
     let twee_proof = run_twee(&tmp_path);
     let vampire_proof_file = format!("{}.vampire_proof", tmp_path);
-    run_vampire(&tmp_path, &vampire_proof_file);
+    run_start_prover(&tmp_path, &vampire_proof_file, "vampire");
     let vampire_proof_exists = Path::new(&vampire_proof_file).exists();
 
     // 7. Select shorter proof
@@ -1208,7 +1208,7 @@ fn is_single_or_abstract(name: &str) -> bool {
 }
 
 /// Fallback: load an existing proof from proofs_dir (any variant),
-/// and if it's a Vampire proof try to prepend extracted superposition steps.
+/// and if it's a start prover proof (vampire/iprover) try to prepend extracted superposition steps.
 /// Returns (proof_text, step_count).
 fn fallback_proof(
     proofs_dir: &str,
@@ -1232,6 +1232,7 @@ fn fallback_proof(
         format!("{}/{}.proof", proofs_dir, actual_file),
         format!("{}/{}_twee.proof", proofs_dir, actual_file),
         format!("{}/{}_vampire.proof", proofs_dir, actual_file),
+        format!("{}/{}_iprover.proof", proofs_dir, actual_file),
     ];
 
     let path = candidates
@@ -1251,8 +1252,8 @@ fn fallback_proof(
         .ok_or_else(|| format!("Cannot extract prover from filename {}", actual_file))?
         .to_string();
 
-    // handle Vampire-specific prepending
-    let steps = if prover == "vampire" {
+    // handle start prover (vampire/iprover) prepending
+    let steps = if prover == "vampire" || prover == "iprover" {
         //let extra_dependencies = Vec::new();
         if let Some((relevant_steps, input_formulas, all_steps)) =
             extract_superposition_steps(path, lemma_formula)

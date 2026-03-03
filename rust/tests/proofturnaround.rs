@@ -1,9 +1,10 @@
 use krympa::proof_turnaround::_debug_print_parsed_proof;
 use krympa::proof_turnaround::eq_proof_procedure;
-use krympa::proof_turnaround::parse_vampire_proof;
+use krympa::proof_turnaround::parse_equational_proof;
 use krympa::proof_turnaround::turn_proof_around;
 use krympa::proof_turnaround::SuperpositionStep;
 use krympa::proof_turnaround::_count_nontrivial_steps;
+use std::fs;
 
 #[test]
 fn eliminates_turned_equality_resolution_and_reflexive_eq() {
@@ -15,7 +16,7 @@ fn eliminates_turned_equality_resolution_and_reflexive_eq() {
 5. $false [equality resolution 4]
 "#;
 
-    let parsed = parse_vampire_proof(proof_text);
+    let parsed = parse_equational_proof(proof_text);
 
     // we expect the “useful” turned proof to have 3 nontrivial steps:
     // 1) axiom
@@ -70,7 +71,7 @@ fn proof_turnaround() {
 % ------------------------------
 "#;
 
-    let steps_map = parse_vampire_proof(proof_text);
+    let steps_map = parse_equational_proof(proof_text);
     _debug_print_parsed_proof(&steps_map);
     let final_proof = eq_proof_procedure(proof_text);
     println!("\n[TEST] Final proof");
@@ -88,7 +89,7 @@ fn test_mixed_quantifiers_contrapositive() {
 5. $false  [superposition 3,4]
 "#;
 
-    let steps = parse_vampire_proof(proof_text);
+    let steps = parse_equational_proof(proof_text);
     _debug_print_parsed_proof(&steps);
     let turned = turn_proof_around(&steps);
     println!("\n[TEST] Turned proof steps");
@@ -158,7 +159,7 @@ fn no_proof_turnaround() {
 % ------------------------------
 "#;
 
-    let parsed = parse_vampire_proof(proof_text);
+    let parsed = parse_equational_proof(proof_text);
     let turned = turn_proof_around(&parsed);
 
     // Collect steps in index order
@@ -227,9 +228,23 @@ fn proof_turnaround_dif() {
 % ------------------------------
 "#;
 
-    let steps_map = parse_vampire_proof(proof_text);
+    let steps_map = parse_equational_proof(proof_text);
     _debug_print_parsed_proof(&steps_map);
     let final_proof = eq_proof_procedure(proof_text);
     println!("\n[TEST] Final proof");
     println!("{}", final_proof);
+}
+
+#[test]
+fn iprover_full_fixture_parse_and_turnaround_print_output() {
+    let fixture = "tests/fixtures/iprover_raw_Equation650_full.out";
+    let raw = fs::read_to_string(fixture).expect("Failed to read iProver fixture");
+    let output = eq_proof_procedure(&raw);
+    assert!(
+        !output.trim().is_empty(),
+        "Turned proof output should not be empty"
+    );
+
+    println!("\n[TEST] iProver fixture: {}", fixture);
+    println!("\n[TEST] Turned proof output:\n{}", output);
 }

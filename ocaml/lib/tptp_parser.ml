@@ -49,6 +49,12 @@ let is_real_inference_step line =
   string_match (regexp ".*demodulation.*") tag 0
   || string_match (regexp ".*superposition.*") tag 0
   || string_match (regexp ".*resolution.*") tag 0
+  || string_match (regexp ".*subsumption.*") tag 0
+  || string_match (regexp ".*simplification.*") tag 0
+  || string_match (regexp ".*factoring.*") tag 0
+  || string_match (regexp ".*rewriting.*") tag 0
+  || string_match (regexp ".*distinctness.*") tag 0
+  || string_match (regexp ".*normalisation.*") tag 0
 
 let extract_negated_conjecture_id line =
   if string_match
