@@ -5,9 +5,8 @@ pub mod logging;
 pub mod minimize;
 pub mod proof_turnaround;
 pub mod prover_wrapper;
-pub mod run_twee;
-pub mod run_vamp;
 pub mod superpose;
+pub mod tptp_to_smt2;
 pub mod utils;
 
 // benchmarking available as a library module

@@ -44,12 +44,17 @@ Alternative prover:
 
 `run_twee → collect → shorten → minimize`
 
+Additional prover:
+
+`run_cvc5 → collect → shorten → minimize`
+
 `collect` behavior:
 
 * `collect <input-file> vampire` reads `../output/vampire_proof_<suffix>.out`
 * `collect <input-file> twee` reads `../output/twee_proof_<suffix>.out`
+* `collect <input-file> cvc5` reads `../output/cvc5_proof_<suffix>.out`
 * if the selected input proof file does not exist, `collect` reports an error
-* after parsing that input proof, `collect` proves extracted lemmas with **both** Vampire and Twee
+* after parsing that input proof, `collect` proves extracted lemmas with **Vampire, Twee, and cvc5**
 
 ---
 
@@ -117,12 +122,12 @@ Then run:
 
 ```bash
 ./run_one <input-file>
-./run_one <input-file> [vampire|twee] [krympa-binary]
-./run_one [vampire|twee] <input-file> [krympa-binary]
+./run_one <input-file> [vampire|twee|cvc5] [krympa-binary]
+./run_one [vampire|twee|cvc5] <input-file> [krympa-binary]
 ./run <timeout> <krympa-binary>
 ```
 
-The optional `[vampire|twee]` in `run_one` chooses which phase-0 proof is generated.
+The optional `[vampire|twee|cvc5]` in `run_one` chooses which phase-0 proof is generated.
 
 ---
 

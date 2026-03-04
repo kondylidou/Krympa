@@ -30,9 +30,10 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64, input_prover
     let run_cmd = match input_prover {
         "vampire" => "run_vampire",
         "twee" => "run_twee",
+        "cvc5" => "run_cvc5",
         _ => {
             crate::klog_error!(
-                "Unknown input prover '{}'. Expected 'vampire' or 'twee'.",
+                "Unknown input prover '{}'. Expected 'vampire', 'twee', or 'cvc5'.",
                 input_prover
             );
             return;

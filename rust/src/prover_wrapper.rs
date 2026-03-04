@@ -1,3 +1,5 @@
+use crate::proof_turnaround::eq_proof_procedure;
+use crate::tptp_to_smt2::convert_tptp_file_to_smt2;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::env;
@@ -21,9 +23,19 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
     };
 
     let timeout = Duration::from_secs(5);
-    match child.wait_timeout(timeout).unwrap() {
-        Some(status) => {
-            let output = child.wait_with_output().unwrap();
+    match child.wait_timeout(timeout) {
+        Ok(Some(status)) => {
+            let output = match child.wait_with_output() {
+                Ok(o) => o,
+                Err(e) => {
+                    crate::klog_error!(
+                        "[ERROR] Failed to read prover output from '{}': {}",
+                        exe_path,
+                        e
+                    );
+                    return None;
+                }
+            };
             if status.success() {
                 Some(String::from_utf8_lossy(&output.stdout).to_string())
             } else {
@@ -37,11 +49,20 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
                 None
             }
         }
-        None => {
+        Ok(None) => {
             crate::klog_debug!(
                 "[TIMEOUT] Prover '{}' exceeded {} seconds",
                 exe_path,
                 timeout.as_secs()
+            );
+            let _ = child.kill();
+            None
+        }
+        Err(e) => {
+            crate::klog_error!(
+                "[ERROR] Failed while waiting for prover '{}': {}",
+                exe_path,
+                e
             );
             let _ = child.kill();
             None
@@ -67,12 +88,186 @@ fn twee_path() -> String {
         .to_string()
 }
 
+fn cvc5_path() -> String {
+    let local = env::current_dir().unwrap().join("../bin/cvc5");
+    if local.exists() {
+        local.to_str().unwrap().to_string()
+    } else {
+        "cvc5".to_string()
+    }
+}
+
 pub fn run_vampire(file: &str) -> Option<String> {
     run_external_prover(&vampire_path(), &["--input_syntax", "tptp", file])
 }
 
 pub fn run_twee(file: &str) -> Option<String> {
     run_external_prover(&twee_path(), &["--quiet", file])
+}
+
+pub fn run_cvc5(file: &str) -> Option<String> {
+    let smt2_path = format!("{}.cvc5_tmp.smt2", file);
+    if let Err(err) = convert_tptp_file_to_smt2(file, &smt2_path) {
+        crate::klog_debug!("[DEBUG] cvc5 conversion failed for '{}': {}", file, err);
+        return None;
+    }
+    let result = run_external_prover(
+        &cvc5_path(),
+        &[
+            "--mbqi-enum",
+            "--produce-proofs",
+            "--dump-proofs",
+            "--proof-format-mode=alethe",
+            &smt2_path,
+        ],
+    );
+    let _ = fs::remove_file(&smt2_path);
+    result
+}
+
+pub fn run_vampire_only(input: &str, output: &str) {
+    let input_path = Path::new(input);
+    if !input_path.exists() {
+        crate::klog_error!(
+            "[ERROR] Input file does not exist: {}",
+            input_path.display()
+        );
+        return;
+    }
+
+    let output_path = Path::new(output);
+    if let Some(parent) = output_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            crate::klog_error!(
+                "[ERROR] Failed to create output directory '{}': {}",
+                parent.display(),
+                e
+            );
+            return;
+        }
+    }
+
+    crate::klog_info!("[INFO] Phase 0: Running Vampire and redirecting proof.");
+    crate::klog_info!("[INFO] Input: {}", input_path.display());
+    crate::klog_info!("[INFO] Output: {}", output_path.display());
+
+    run_vampire_to_file(input_path.to_str().unwrap(), output_path.to_str().unwrap());
+}
+
+pub fn run_vampire_to_file(input_file: &str, output_file: &str) {
+    match run_vampire(input_file) {
+        Some(vampire_output) => {
+            let transformed_output = eq_proof_procedure(&vampire_output);
+            if let Err(e) = fs::write(output_file, transformed_output) {
+                crate::klog_error!(
+                    "[ERROR] Failed to write transformed Vampire output '{}': {}",
+                    output_file,
+                    e
+                );
+            } else {
+                crate::klog_debug!("[DEBUG] Vampire proof written to {}", output_file);
+            }
+        }
+        None => {
+            crate::klog_error!("[ERROR] Failed to run Vampire");
+        }
+    }
+}
+
+pub fn run_twee_only(input: &str, output: &str) {
+    let input_path = Path::new(input);
+    if !input_path.exists() {
+        crate::klog_error!(
+            "[ERROR] Input file does not exist: {}",
+            input_path.display()
+        );
+        return;
+    }
+
+    let output_path = Path::new(output);
+    if let Some(parent) = output_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            crate::klog_error!(
+                "[ERROR] Failed to create output directory '{}': {}",
+                parent.display(),
+                e
+            );
+            return;
+        }
+    }
+
+    crate::klog_info!("[INFO] Phase 0: Running Twee.");
+    crate::klog_info!("[INFO] Input: {}", input_path.display());
+    crate::klog_info!("[INFO] Output: {}", output_path.display());
+
+    run_twee_to_file(input_path.to_str().unwrap(), output_path.to_str().unwrap());
+}
+
+pub fn run_twee_to_file(input_file: &str, output_file: &str) {
+    match run_twee(input_file) {
+        Some(twee_output) => {
+            if let Err(e) = fs::write(output_file, twee_output) {
+                crate::klog_error!(
+                    "[ERROR] Failed to write Twee output '{}': {}",
+                    output_file,
+                    e
+                );
+            } else {
+                crate::klog_debug!("[DEBUG] Twee proof written to {}", output_file);
+            }
+        }
+        None => {
+            crate::klog_error!("[ERROR] Failed to run Twee");
+        }
+    }
+}
+
+pub fn run_cvc5_only(input: &str, output: &str) {
+    let input_path = Path::new(input);
+    if !input_path.exists() {
+        crate::klog_error!(
+            "[ERROR] Input file does not exist: {}",
+            input_path.display()
+        );
+        return;
+    }
+
+    let output_path = Path::new(output);
+    if let Some(parent) = output_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            crate::klog_error!(
+                "[ERROR] Failed to create output directory '{}': {}",
+                parent.display(),
+                e
+            );
+            return;
+        }
+    }
+
+    crate::klog_info!("[INFO] Phase 0: Running cvc5.");
+    crate::klog_info!("[INFO] Input: {}", input_path.display());
+    crate::klog_info!("[INFO] Output: {}", output_path.display());
+
+    run_cvc5_to_file(input_path.to_str().unwrap(), output_path.to_str().unwrap());
+}
+
+pub fn run_cvc5_to_file(input_file: &str, output_file: &str) {
+    match run_cvc5(input_file) {
+        Some(cvc5_output) => {
+            if let Err(e) = fs::write(output_file, cvc5_output) {
+                crate::klog_error!(
+                    "[ERROR] Failed to write cvc5 output '{}': {}",
+                    output_file,
+                    e
+                );
+            } else {
+                crate::klog_debug!("[DEBUG] cvc5 output written to {}", output_file);
+            }
+        }
+        None => {
+            crate::klog_error!("[ERROR] Failed to run cvc5");
+        }
+    }
 }
 
 /// Count Vampire proof steps, ignoring input/negated conjecture lines
@@ -123,12 +318,56 @@ pub fn proof_length_twee(proof: &str) -> usize {
         .count()
 }
 
+pub fn proof_length_cvc5(proof: &str) -> usize {
+    let mut steps = 0usize;
+    for line in proof.lines() {
+        let l = line.trim_start();
+        if l.starts_with("(step ") {
+            steps += 1;
+        }
+    }
+    if steps > 0 {
+        steps
+    } else {
+        proof
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with(';') && !l.starts_with('%'))
+            .count()
+    }
+}
+
 pub fn proof_length(prover: &str, proof: &str) -> usize {
     match prover {
         "vampire" => proof_length_vampire(proof),
         "twee" => proof_length_twee(proof),
+        "cvc5" => proof_length_cvc5(proof),
         _ => proof.lines().count(),
     }
+}
+
+fn classify_result_status(proof: &str) -> &'static str {
+    for raw in proof.lines() {
+        let l = raw.trim().to_ascii_lowercase();
+        if l.is_empty() {
+            continue;
+        }
+        if l.contains("szs status unsatisfiable") || l.contains("result: theorem") || l == "unsat" {
+            return "theorem";
+        }
+        if l.contains("counter-satisfiable")
+            || l.contains("counter_satisfiable")
+            || l.contains("countersatisfiable")
+            || (l.contains("satisfiable") && !l.contains("unsatisfiable"))
+            || l == "sat"
+        {
+            return "sat";
+        }
+        if l.contains("unknown") || l == "unknown" {
+            return "unknown";
+        }
+    }
+    "unknown"
 }
 
 pub fn prove_lemmas(
@@ -144,8 +383,10 @@ pub fn prove_lemmas(
 
     let vampire_dir = out_dir.join("vampire_tmp");
     let twee_dir = out_dir.join("twee_tmp");
+    let cvc5_dir = out_dir.join("cvc5_tmp");
     fs::create_dir_all(&vampire_dir).unwrap();
     fs::create_dir_all(&twee_dir).unwrap();
+    fs::create_dir_all(&cvc5_dir).unwrap();
 
     // group by lemma index
     let mut groups: HashMap<u32, Vec<String>> = HashMap::new();
@@ -187,21 +428,12 @@ pub fn prove_lemmas(
                 let file_stem = Path::new(lemma_file).file_stem().unwrap().to_string_lossy();
                 let vampire_file = vampire_dir.join(format!("{}_vampire.proof", file_stem));
                 let twee_file = twee_dir.join(format!("{}_twee.proof", file_stem));
+                let cvc5_file = cvc5_dir.join(format!("{}_cvc5.proof", file_stem));
 
-                for (prover, proof) in try_provers(lemma_file, provers, &vampire_file, &twee_file) {
-                    let szs_status = proof
-                        .lines()
-                        .find(|l| l.contains("RESULT:") || l.contains("SZS status"))
-                        .unwrap_or("")
-                        .to_lowercase(); // normalize to lowercase
-
-                    let len = if szs_status.contains("countersatisfiable")
-                        || szs_status.contains("counter-satisfiable")
-                        || szs_status.contains("counter_satisfiable")
-                        || (szs_status.contains("satisfiable")
-                            && !szs_status.contains("unsatisfiable"))
-                        || szs_status.contains("unknown")
-                    {
+                for (prover, proof) in
+                    try_provers(lemma_file, provers, &vampire_file, &twee_file, &cvc5_file)
+                {
+                    let len = if matches!(classify_result_status(&proof), "sat" | "unknown") {
                         1000 // sentinel for non-theorem / countersat / unknown
                              // TODO we can use them. But for now we just want shortest
                              // theorem proofs. Later we can see how we prove the
@@ -223,14 +455,16 @@ pub fn prove_lemmas(
                     if a.2 != b.2 {
                         a.2.cmp(&b.2)
                     } else {
-                        // Tie-breaker: prefer "twee" over "vampire" over others
+                        // Tie-breaker: prefer "twee" over "cvc5" over "vampire" over others.
                         let order = |p: &String| {
                             if p == "twee" {
                                 0
-                            } else if p == "vampire" {
+                            } else if p == "cvc5" {
                                 1
-                            } else {
+                            } else if p == "vampire" {
                                 2
+                            } else {
+                                3
                             }
                         };
                         order(&a.0).cmp(&order(&b.0))
@@ -269,6 +503,7 @@ fn try_provers(
     provers: &[&str],
     vampire_file: &Path,
     twee_file: &Path,
+    cvc5_file: &Path,
 ) -> Vec<(String, String)> {
     let mut successes = Vec::new();
 
@@ -276,6 +511,7 @@ fn try_provers(
         let output_file = match prover {
             "vampire" => vampire_file,
             "twee" => twee_file,
+            "cvc5" => cvc5_file,
             _ => {
                 crate::klog_error!("[ERROR] Unknown prover '{}'", prover);
                 continue;
@@ -296,6 +532,13 @@ fn try_provers(
                 Some(c) => c,
                 None => {
                     crate::klog_debug!("[DEBUG] Twee failed for '{}'", lemma_file);
+                    continue;
+                }
+            },
+            "cvc5" => match run_cvc5(lemma_file) {
+                Some(c) => c,
+                None => {
+                    crate::klog_debug!("[DEBUG] cvc5 failed for '{}'", lemma_file);
                     continue;
                 }
             },

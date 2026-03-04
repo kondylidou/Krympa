@@ -53,13 +53,14 @@ pub fn precompute_lemmas(
             continue;
         }
 
-        // canonical lemma name (remove _twee/_vampire)
+        // canonical lemma name (remove prover suffix)
         let lemma_name = path
             .file_stem()
             .and_then(|s| s.to_str())
             .ok_or("Invalid proof file name")?
             .trim_end_matches("_twee")
             .trim_end_matches("_vampire")
+            .trim_end_matches("_cvc5")
             .to_string();
 
         // path to TWEE version
@@ -164,7 +165,7 @@ pub fn select_actual_lemma(proofs_dir: &str, lemma_name: &str) -> Option<String>
     }
 
     let variants = ["small_step", "big_step", "abstracted"];
-    let suffixes = ["_twee.proof", "_vampire.proof"];
+    let suffixes = ["_twee.proof", "_vampire.proof", "_cvc5.proof"];
 
     for var in &variants {
         // determine the base name to use in the filename
@@ -562,7 +563,7 @@ pub fn load_all_dependency_proofs(
 
 /// Strips the prover suffix (_twee, _vampire) from a lemma name if present
 pub fn strip_prover_suffix(lemma_name: &str) -> String {
-    let suffixes = ["_twee", "_vampire"];
+    let suffixes = ["_twee", "_vampire", "_cvc5"];
     for suf in &suffixes {
         if lemma_name.ends_with(suf) {
             return lemma_name.trim_end_matches(suf).to_string();

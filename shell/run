@@ -19,7 +19,7 @@ SEEN_PROVER=0
 # argument parsing (order-independent):
 # - one numeric timeout
 # - one krympa binary path
-# - optional prover: vampire|twee
+# - optional prover: vampire|twee|cvc5
 for ARG in "$@"; do
     if [[ "$ARG" =~ ^[0-9]+$ ]]; then
         if [ $SEEN_TIMEOUT -eq 1 ]; then
@@ -28,7 +28,7 @@ for ARG in "$@"; do
         fi
         TIMEOUT_SECS="$ARG"
         SEEN_TIMEOUT=1
-    elif [ "$ARG" = "vampire" ] || [ "$ARG" = "twee" ]; then
+    elif [ "$ARG" = "vampire" ] || [ "$ARG" = "twee" ] || [ "$ARG" = "cvc5" ]; then
         if [ $SEEN_PROVER -eq 1 ]; then
             echo "Error: prover specified more than once."
             exit 1
@@ -46,7 +46,7 @@ for ARG in "$@"; do
 done
 
 if [ $# -gt 3 ]; then
-    echo "Usage: $0 [timeout_secs] [krympa_binary] [vampire|twee]"
+    echo "Usage: $0 [timeout_secs] [krympa_binary] [vampire|twee|cvc5]"
     echo "Arguments can be given in any order."
     exit 1
 fi

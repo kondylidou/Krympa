@@ -1,7 +1,6 @@
 use crate::alpha_match::formulas_match;
 use crate::dag::*;
 use crate::prover_wrapper::*;
-use crate::run_vamp::run_vampire;
 use crate::superpose::*;
 use crate::utils::*;
 use rayon::prelude::*;
@@ -269,6 +268,7 @@ pub fn try_minimize(
                     format!("{}/{}.proof", proofs_dir, actual_file),
                     format!("{}/{}_twee.proof", proofs_dir, actual_file),
                     format!("{}/{}_vampire.proof", proofs_dir, actual_file),
+                    format!("{}/{}_cvc5.proof", proofs_dir, actual_file),
                 ];
 
                 let path = ext.iter().find(|p| Path::new(p).exists()).ok_or_else(|| {
@@ -311,8 +311,7 @@ pub fn try_minimize(
                         (proof_length(&prover, &root_proof), "fallback".to_string())
                     }
                 } else {
-                    // Twee proof
-                    (proof_length(&prover, &root_proof), "twee".to_string())
+                    (proof_length(&prover, &root_proof), prover.clone())
                 };
 
                 // we need to push what we already have proved to the extra dependencies for matching
@@ -546,17 +545,19 @@ pub fn try_minimize(
                     // it with Twee, we won't find it in the superposition steps.
                     else if is_abstract {
                         // 6. Compute (in this case find) root_proof
-                        // construct the expected file path for the twee proof
                         let path = Path::new(&proofs_dir).join(format!("{}_twee.proof", candidate));
+                        if !path.exists() {
+                            crate::klog_warn!(
+                                "   [WARN] Abstract lemma {} proof file does not exist, skipping",
+                                candidate
+                            );
+                            continue; // skip this candidate if proof is missing
+                        }
 
-                        if path.exists() {
-                            let abstract_proof = fs::read_to_string(&path).map_err(|_| {
-                                format!("Cannot read proof file {}", path.display())
-                            })?;
-
-                            // extract prover
-                            let prover = "twee".to_string();
-                            let abstract_proof_steps = proof_length(&prover, &abstract_proof);
+                        let abstract_proof = fs::read_to_string(&path)
+                            .map_err(|_| format!("Cannot read proof file {}", path.display()))?;
+                        let prover = "twee".to_string();
+                        let abstract_proof_steps = proof_length(&prover, &abstract_proof);
 
                             // load the formula of the abstracted lemma
                             let abstract_formula = match load_lemma(&lemmas_dir, candidate) {
@@ -638,13 +639,6 @@ pub fn try_minimize(
 
                             // 8. Compute total steps
                             steps_total = kept_abstract_steps + kept_root_steps + sub_proof_steps;
-                        } else {
-                            crate::klog_warn!(
-                                "   [WARN] Abstract lemma {} proof file does not exist, skipping",
-                                candidate
-                            );
-                            continue; // skip this candidate if proof is missing
-                        }
                     }
                     // single/history fallback:
                     // update local best
@@ -1087,7 +1081,7 @@ pub fn try_minimize(
     Ok("Minimization complete".into())
 }
 
-/// Proves a lemma using Twee and Vampire, selecting the shorter proof.
+/// Proves a lemma using available provers, selecting the shorter proof.
 /// - `superposition_steps`: optional superposition steps to append
 /// - `dependencies`: optional dependencies (lemma names)
 /// - `axioms`: additional axioms to append
@@ -1134,11 +1128,12 @@ pub fn prove_lemma(
     // 6. Run provers
     let twee_proof = run_twee(&tmp_path);
     let vampire_proof_file = format!("{}.vampire_proof", tmp_path);
-    run_vampire(&tmp_path, &vampire_proof_file);
+    run_vampire_to_file(&tmp_path, &vampire_proof_file);
     let vampire_proof_exists = Path::new(&vampire_proof_file).exists();
+    let cvc5_proof = run_cvc5(&tmp_path);
 
     // 7. Select shorter proof
-    let result: Option<(String, usize, String)> = match (twee_proof, vampire_proof_exists) {
+    let mut result: Option<(String, usize, String)> = match (twee_proof, vampire_proof_exists) {
         // Twee + Vampire available
         (Some(tp), true) => {
             let t_len = proof_length_twee(&tp);
@@ -1193,6 +1188,31 @@ pub fn prove_lemma(
         // no proof
         (None, false) => None,
     };
+
+    // Include cvc5 result if it proved UNSAT and is shorter.
+    if let Some(cp) = cvc5_proof {
+        let mut first_nonempty = "";
+        for line in cp.lines() {
+            let t = line.trim();
+            if !t.is_empty() {
+                first_nonempty = t;
+                break;
+            }
+        }
+        if first_nonempty.eq_ignore_ascii_case("unsat") {
+            let c_len = proof_length_cvc5(&cp);
+            result = match result {
+                Some((best_proof, best_steps, best_by)) => {
+                    if c_len < best_steps {
+                        Some((cp, c_len, "cvc5".to_string()))
+                    } else {
+                        Some((best_proof, best_steps, best_by))
+                    }
+                }
+                None => Some((cp, c_len, "cvc5".to_string())),
+            };
+        }
+    }
 
     // 8. Fallback: load an existing proof from proofs_dir (only if <= current best)
     let result: Option<(String, usize, String)> = match result {
@@ -1253,6 +1273,7 @@ fn fallback_proof(
         format!("{}/{}.proof", proofs_dir, actual_file),
         format!("{}/{}_twee.proof", proofs_dir, actual_file),
         format!("{}/{}_vampire.proof", proofs_dir, actual_file),
+        format!("{}/{}_cvc5.proof", proofs_dir, actual_file),
     ];
 
     let path = candidates

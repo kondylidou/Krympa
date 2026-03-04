@@ -4,8 +4,8 @@ set -e
 if [ $# -lt 1 ] || [ $# -gt 3 ]; then
   echo "Usage:"
   echo "  $0 <input-file>"
-  echo "  $0 <input-file> [vampire|twee] [krympa-binary]"
-  echo "  $0 [vampire|twee] <input-file> [krympa-binary]"
+  echo "  $0 <input-file> [vampire|twee|cvc5] [krympa-binary]"
+  echo "  $0 [vampire|twee|cvc5] <input-file> [krympa-binary]"
   exit 1
 fi
 
@@ -13,7 +13,7 @@ INPUT_PROVER="vampire"
 KRYMPA_BINARY="./krympa"
 
 is_prover() {
-  [ "$1" = "vampire" ] || [ "$1" = "twee" ]
+  [ "$1" = "vampire" ] || [ "$1" = "twee" ] || [ "$1" = "cvc5" ]
 }
 
 ARGS=("$@")
@@ -56,6 +56,8 @@ fi
 
 if [ "$INPUT_PROVER" = "vampire" ]; then
   "$KRYMPA_BINARY" run_vampire "$INPUT"
+elif [ "$INPUT_PROVER" = "cvc5" ]; then
+  "$KRYMPA_BINARY" run_cvc5 "$INPUT"
 else
   "$KRYMPA_BINARY" run_twee "$INPUT"
 fi

@@ -51,7 +51,7 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
     }
 
     // run provers on all lemma files
-    let provers = ["vampire", "twee"];
+    let provers = ["vampire", "twee", "cvc5"];
     let results = prove_lemmas(&all_lemma_files, &provers, "../proofs");
 
     crate::klog_info!("[INFO] Phase 1 summary: {} lemmas proved.", results.len());
@@ -86,6 +86,7 @@ pub fn shorten_proofs(summary_file: &str) {
     let tmp_dirs = [
         ("vampire", "../proofs/vampire_tmp".to_string()),
         ("twee", "../proofs/twee_tmp".to_string()),
+        ("cvc5", "../proofs/cvc5_tmp".to_string()),
     ];
 
     let summary_data: HashMap<u32, (String, String, String)> = serde_json::from_str(
@@ -162,7 +163,7 @@ pub fn shorten_proofs(summary_file: &str) {
         .map(|n| format!("{}/small-step/small_step_lemma_{:04}.p", lemmas_dir, n))
         .collect();
 
-    let provers = ["vampire", "twee"];
+    let provers = ["vampire", "twee", "cvc5"];
     fs::create_dir_all("../tmp").expect("Failed to create ../tmp directory");
     let updated_results = prove_lemmas(&updated_files, &provers, "../tmp"); // tmp root
 
@@ -318,12 +319,16 @@ fn normalize_axiom(s: &str) -> String {
 fn extract_axioms(proof_text: &str) -> HashSet<String> {
     let re_twee = Regex::new(r"(?m)^Axiom\s+\d+\s*\(.*?\):\s*(.*?)\.").unwrap();
     let re_vampire = Regex::new(r"(?m)^\d*\.?\s*! \[.*?\] : (.*?) \[input\]").unwrap();
+    let re_cvc5 = Regex::new(r"(?m)^\(assume\s+[^\s]+\s+(.*)\)$").unwrap();
 
     let mut set = HashSet::new();
     for cap in re_twee.captures_iter(proof_text) {
         set.insert(normalize_axiom(&cap[1]));
     }
     for cap in re_vampire.captures_iter(proof_text) {
+        set.insert(normalize_axiom(&cap[1]));
+    }
+    for cap in re_cvc5.captures_iter(proof_text) {
         set.insert(normalize_axiom(&cap[1]));
     }
     set
