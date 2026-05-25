@@ -111,6 +111,17 @@ Then run:
 
 ---
 
+## Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--parallel` / `--sequential` | parallel | Execution mode |
+| `--term-size` | off | Prefer proofs with smaller average term size over slightly longer proofs |
+
+Flags go before the subcommand: `./krympa --sequential --term-size minimize <input-file>`
+
+---
+
 ### Utilities
 
 #### Summarize benchmark logs

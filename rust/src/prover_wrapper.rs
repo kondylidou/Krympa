@@ -93,8 +93,13 @@ pub fn run_twee(file: &str) -> Option<String> {
 pub fn proof_length_vampire(proof: &str) -> usize {
     let mut count = 0;
 
-    // core inference indicators
-    let proof_keywords = ["demodulation", "superposition", "resolution"];
+    // core inference indicators — must match superpose.rs parse_vampire_proof
+    let proof_keywords = [
+        "demodulation",
+        "superposition",
+        "resolution",
+        "trivial inequality removal",
+    ];
 
     for line in proof.lines() {
         let l = line.trim_start();
@@ -141,6 +146,119 @@ pub fn proof_length(prover: &str, proof: &str) -> usize {
         "vampire" => proof_length_vampire(proof),
         "twee" => proof_length_twee(proof),
         _ => proof.lines().count(),
+    }
+}
+
+/// Number of `op(` nodes in a term — a measure of structural complexity.
+/// A bare variable scores 1 (minimum meaningful unit).
+fn term_size(term: &str) -> usize {
+    term.matches("op(").count() * 2 + 1
+}
+
+/// Average term size across all intermediate terms in a twee proof.
+/// Counts every line inside a `Proof:` block that is not a `= { by … }` step line.
+pub fn avg_term_size_twee(proof: &str) -> f64 {
+    let mut in_proof = false;
+    let mut sizes: Vec<usize> = Vec::new();
+
+    for line in proof.lines() {
+        let t = line.trim();
+        if t.starts_with("Proof:") {
+            in_proof = true;
+            continue;
+        }
+        // New section starts, exits the proof block
+        if t.starts_with("Lemma ") || t.starts_with("Goal ") || t.starts_with("RESULT") {
+            in_proof = false;
+            continue;
+        }
+        if !in_proof || t.is_empty() {
+            continue;
+        }
+        // Skip step lines: "= { by … }"
+        if t.starts_with("= {") {
+            continue;
+        }
+        sizes.push(term_size(t));
+    }
+
+    if sizes.is_empty() {
+        return 0.0;
+    }
+    sizes.iter().sum::<usize>() as f64 / sizes.len() as f64
+}
+
+/// Average term size across all inference-step formulas in a vampire proof.
+/// Only considers superposition / demodulation / resolution steps.
+/// For each such step the formula is split on `=` / `!=` and both sides are measured.
+pub fn avg_term_size_vampire(proof: &str) -> f64 {
+    let proof_keywords = [
+        "demodulation",
+        "superposition",
+        "resolution",
+        "trivial inequality removal",
+    ];
+    let mut sizes: Vec<usize> = Vec::new();
+
+    for line in proof.lines() {
+        let l = line.trim_start();
+        if l.is_empty() || l.starts_with('%') {
+            continue;
+        }
+        // Strip leading line number "N. "
+        let l_no_num = if let Some(dot_pos) = l.find('.') {
+            l[dot_pos + 1..].trim_start()
+        } else {
+            l
+        };
+        if !l_no_num.contains('[') || !proof_keywords.iter().any(|kw| l_no_num.contains(kw)) {
+            continue;
+        }
+        // Formula is everything before the last `[`
+        let formula = match l_no_num.rfind('[') {
+            Some(pos) => l_no_num[..pos].trim(),
+            None => continue,
+        };
+        // Strip universal quantifier "! [X0,…] : body" if present
+        let body = if formula.starts_with("! [") {
+            match formula.find("] : ") {
+                Some(pos) => formula[pos + 4..].trim(),
+                None => formula,
+            }
+        } else {
+            formula
+        };
+        // Split equation into its two sides; fall back to treating the whole body as one term
+        if let Some(pos) = body.find(" != ") {
+            sizes.push(term_size(body[..pos].trim()));
+            sizes.push(term_size(body[pos + 4..].trim()));
+        } else if let Some(pos) = body.find(" = ") {
+            sizes.push(term_size(body[..pos].trim()));
+            sizes.push(term_size(body[pos + 3..].trim()));
+        } else {
+            sizes.push(term_size(body));
+        }
+    }
+
+    if sizes.is_empty() {
+        return 0.0;
+    }
+    sizes.iter().sum::<usize>() as f64 / sizes.len() as f64
+}
+
+/// When `--term-size-aware` is on, proof A is better than proof B if:
+///   • A has strictly fewer steps, OR
+///   • A has lower average term size and is at most TOLERANCE × longer.
+/// Falls back to pure step-count comparison when term sizes are equal.
+const TERM_SIZE_TOLERANCE: f64 = 1.5;
+
+pub fn proof_quality_better(a_steps: usize, a_avg: f64, b_steps: usize, b_avg: f64) -> bool {
+    if a_steps < b_steps {
+        true
+    } else if b_steps < a_steps {
+        a_avg < b_avg && a_steps as f64 <= b_steps as f64 * TERM_SIZE_TOLERANCE
+    } else {
+        a_avg < b_avg
     }
 }
 

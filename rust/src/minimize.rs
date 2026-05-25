@@ -1,6 +1,6 @@
 use crate::alpha_match::formulas_match;
 use crate::dag::*;
-use crate::execution::{execution_mode, ExecutionMode};
+use crate::execution::{execution_mode, term_size_aware, ExecutionMode};
 use crate::prover_wrapper::*;
 use crate::run_vamp::run_vampire;
 use crate::superpose::*;
@@ -1127,37 +1127,50 @@ pub fn prove_lemma(
     run_vampire(&tmp_path, &vampire_proof_file);
     let vampire_proof_exists = Path::new(&vampire_proof_file).exists();
 
-    // 7. Select shorter proof
+    // 7. Select shorter proof (or better proof when --term-size-aware is on)
     let result: Option<(String, usize, String)> = match (twee_proof, vampire_proof_exists) {
         // Twee + Vampire available
         (Some(tp), true) => {
             let t_len = proof_length_twee(&tp);
 
-            // read Vampire proof text
-            let _vp_text = fs::read_to_string(&vampire_proof_file)
-                .map_err(|_| "Failed to read Vampire proof file")?;
-
-            // prepend superposition steps if they exist
             if let Some((sp_steps, input_formulas, all_steps)) =
                 extract_superposition_steps(&vampire_proof_file, &c_formula)
             {
                 let v_len = sp_steps.len();
-                if v_len < t_len {
+
+                let chose_vampire = if term_size_aware() {
+                    let vp_text = fs::read_to_string(&vampire_proof_file).unwrap_or_default();
+                    let t_avg = avg_term_size_twee(&tp);
+                    let v_avg = avg_term_size_vampire(&vp_text);
+                    let better = proof_quality_better(v_len, v_avg, t_len, t_avg);
+                    crate::klog_debug!(
+                        "[DEBUG] prove_lemma: twee {} steps (avg_term={:.1}), vampire {} steps (avg_term={:.1}) → chose {}",
+                        t_len, t_avg, v_len, v_avg,
+                        if better { "vampire" } else { "twee" }
+                    );
+                    better
+                } else if v_len < t_len {
                     crate::klog_debug!(
                         "[DEBUG] prove_lemma: twee {} steps, vampire {} steps → chose vampire",
                         t_len,
                         v_len
                     );
-                    let (vp, renaming) =
-                        prepend_superposition_steps(axioms, &sp_steps, &input_formulas, &all_steps);
-                    extend_with_superposition_steps(axioms, &sp_steps, &renaming);
-                    Some((vp, v_len, "vampire".to_string()))
+                    true
                 } else {
                     crate::klog_debug!(
                         "[DEBUG] prove_lemma: twee {} steps, vampire {} steps → chose twee",
                         t_len,
                         v_len
                     );
+                    false
+                };
+
+                if chose_vampire {
+                    let (vp, renaming) =
+                        prepend_superposition_steps(axioms, &sp_steps, &input_formulas, &all_steps);
+                    extend_with_superposition_steps(axioms, &sp_steps, &renaming);
+                    Some((vp, v_len, "vampire".to_string()))
+                } else {
                     Some((tp, t_len, "twee".to_string()))
                 }
             } else {

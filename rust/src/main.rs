@@ -1,16 +1,17 @@
-use krympa::execution::{parse_execution_mode, set_execution_mode};
+use krympa::execution::{parse_execution_mode, set_execution_mode, set_term_size_aware};
 use krympa::utils::extract_suffix;
 use krympa::{core, minimize, run_vamp};
 use std::env;
 
 fn main() {
     let raw_args: Vec<String> = env::args().skip(1).collect();
-    let (mode, args) = parse_execution_mode(&raw_args);
+    let (mode, tsa, args) = parse_execution_mode(&raw_args);
     set_execution_mode(mode);
+    set_term_size_aware(tsa);
 
     if args.is_empty() {
         krympa::klog_error!(
-            "Usage: krympa [--sequential|--parallel] [collect|shorten|group|minimize|run_vampire] <input_file>"
+            "Usage: krympa [--sequential|--parallel] [--term-size] [collect|shorten|group|minimize|run_vampire] <input_file>"
         );
         krympa::klog_error!("Usage for benchmarking: benchmarking_binary <input_folder> <timeout_secs> [krympa_binary]");
         return;

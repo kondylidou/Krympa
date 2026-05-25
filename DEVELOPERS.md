@@ -32,6 +32,17 @@ Use `--sequential` when debugging to get deterministic, interleaved-free log out
 
 The shell scripts `run_one` and `run` always run in parallel mode — they do not accept or forward execution mode flags.
 
+## Term-Size Proof Selection
+
+`--term-size` extends proof selection: a proof with lower average term size is
+preferred when its step count is within 1.5× of the shorter proof's step count.
+Strictly fewer steps still always wins.
+
+```bash
+./krympa --term-size minimize <input-file>
+./krympa --sequential --term-size minimize <input-file>
+```
+
 ## Logging
 
 Controlled by `KRYMPA_LOG`:
