@@ -1,3 +1,4 @@
+use crate::execution::{execution_mode, ExecutionMode};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::env;
@@ -171,10 +172,7 @@ pub fn prove_lemmas(
     let mut sorted_nums: Vec<u32> = groups.keys().cloned().collect();
     sorted_nums.sort();
 
-    // PARALLEL: each lemma index `n` runs on its own rayon worker thread
-    sorted_nums
-        .par_iter()
-        .filter_map(|&n| {
+    let process_n = |&n: &u32| -> Option<(u32, (String, String, String))> {
             crate::klog_debug!("[DEBUG] Proving lemma {}", n);
             crate::klog_debug!(
                 "[DEBUG] lemma {} running on thread {:?}",
@@ -264,8 +262,13 @@ pub fn prove_lemmas(
                 crate::klog_warn!("[WARN] No successful proof for group {}", n);
                 None
             }
-        })
-        .collect()
+    };
+
+    if execution_mode() == ExecutionMode::Sequential {
+        sorted_nums.iter().filter_map(&process_n).collect()
+    } else {
+        sorted_nums.par_iter().filter_map(&process_n).collect()
+    }
 }
 
 fn try_provers(

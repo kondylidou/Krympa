@@ -1,5 +1,6 @@
 use crate::alpha_match::formulas_match;
 use crate::dag::*;
+use crate::execution::{execution_mode, ExecutionMode};
 use crate::prover_wrapper::*;
 use crate::run_vamp::run_vampire;
 use crate::superpose::*;
@@ -142,16 +143,17 @@ pub fn try_minimize(
         .map(|(name, _)| name.clone())
         .collect::<Vec<_>>()
         .join(", ");
+    let total_roots = selected_roots.len();
     let active_roots = std::sync::Mutex::new(BTreeSet::<String>::new());
+    let mode = execution_mode();
     crate::klog_info!(
-        "[INFO] Evaluating {} arrival candidates in parallel: {}",
-        selected_roots.len(),
+        "[INFO] Evaluating {} arrival candidates in {} mode: {}",
+        total_roots,
+        mode.as_str(),
         selected_root_names
     );
 
-    selected_roots
-        .par_iter()
-        .try_for_each(|(root_lemma, root_formula)| -> Result<(), String> {
+    let process_root = |(root_lemma, root_formula): &(String, String)| -> Result<(), String> {
             {
                 let mut active = active_roots
                     .lock()
@@ -161,14 +163,14 @@ pub fn try_minimize(
                     "[INFO] Arrival lemma started: {} | active {}/{}: {}",
                     root_lemma,
                     active.len(),
-                    selected_roots.len(),
+                    total_roots,
                     format_active_roots(&active)
                 );
             }
             let _active_guard = ActiveRootGuard {
                 root: root_lemma.clone(),
                 active_roots: &active_roots,
-                total_roots: selected_roots.len(),
+                total_roots,
             };
             crate::klog_debug!("[DEBUG] Root lemma {}", root_lemma);
 
@@ -1030,7 +1032,13 @@ pub fn try_minimize(
             let _ = fs::remove_file(&dag_file);
             let _ = fs::remove_file(&lemmas_out_path);
             Ok(())
-        })?;
+    };
+
+    if mode == ExecutionMode::Sequential {
+        selected_roots.iter().try_for_each(&process_root)?;
+    } else {
+        selected_roots.par_iter().try_for_each(&process_root)?;
+    }
 
     let global_best = global_best
         .into_inner()
@@ -1125,7 +1133,6 @@ pub fn prove_lemma(
             // read Vampire proof text
             let _vp_text = fs::read_to_string(&vampire_proof_file)
                 .map_err(|_| "Failed to read Vampire proof file")?;
-            //let v_len = proof_length_vampire(&vp_text);
 
             // prepend superposition steps if they exist
             if let Some((sp_steps, input_formulas, all_steps)) =
@@ -1133,14 +1140,26 @@ pub fn prove_lemma(
             {
                 let v_len = sp_steps.len();
                 if v_len < t_len {
+                    crate::klog_debug!(
+                        "[DEBUG] prove_lemma: twee {} steps, vampire {} steps → chose vampire",
+                        t_len, v_len
+                    );
                     let (vp, renaming) =
                         prepend_superposition_steps(axioms, &sp_steps, &input_formulas, &all_steps);
                     extend_with_superposition_steps(axioms, &sp_steps, &renaming);
                     Some((vp, v_len, "vampire".to_string()))
                 } else {
+                    crate::klog_debug!(
+                        "[DEBUG] prove_lemma: twee {} steps, vampire {} steps → chose twee",
+                        t_len, v_len
+                    );
                     Some((tp, t_len, "twee".to_string()))
                 }
             } else {
+                crate::klog_debug!(
+                    "[DEBUG] prove_lemma: twee {} steps, vampire: no superposition steps → chose twee",
+                    t_len
+                );
                 Some((tp, t_len, "twee".to_string()))
             }
         }
@@ -1148,6 +1167,10 @@ pub fn prove_lemma(
         // Twee only
         (Some(tp), false) => {
             let t_len = proof_length_twee(&tp);
+            crate::klog_debug!(
+                "[DEBUG] prove_lemma: vampire: no proof, twee {} steps → chose twee",
+                t_len
+            );
             Some((tp, t_len, "twee".to_string()))
         }
 
@@ -1156,7 +1179,10 @@ pub fn prove_lemma(
             let vp_text = fs::read_to_string(&vampire_proof_file)
                 .map_err(|_| "Failed to read Vampire proof file")?;
             let v_len = proof_length_vampire(&vp_text);
-
+            crate::klog_debug!(
+                "[DEBUG] prove_lemma: twee: no proof, vampire {} steps → chose vampire",
+                v_len
+            );
             if let Some((sp_steps, input_formulas, all_steps)) =
                 extract_superposition_steps(&vampire_proof_file, &c_formula)
             {
@@ -1170,7 +1196,10 @@ pub fn prove_lemma(
         }
 
         // no proof
-        (None, false) => None,
+        (None, false) => {
+            crate::klog_debug!("[DEBUG] prove_lemma: no proof found by either prover");
+            None
+        }
     };
 
     // 8. Fallback: load an existing proof from proofs_dir (only if <= current best)
@@ -1178,6 +1207,10 @@ pub fn prove_lemma(
         Some((best_proof, best_steps, best_by)) => {
             if let Ok((fb_proof, fb_steps)) = fallback_proof(&proofs_dir, &c_name, &c_formula) {
                 if fb_steps < best_steps {
+                    crate::klog_debug!(
+                        "[DEBUG] prove_lemma: fallback {} steps < current {} steps → using fallback",
+                        fb_steps, best_steps
+                    );
                     Some((fb_proof, fb_steps, "fallback".to_string()))
                 } else {
                     Some((best_proof, best_steps, best_by))
@@ -1190,8 +1223,13 @@ pub fn prove_lemma(
         // no proof found in this run -> try fallback
         None => {
             if let Ok((fb_proof, fb_steps)) = fallback_proof(&proofs_dir, &c_name, &c_formula) {
+                crate::klog_debug!(
+                    "[DEBUG] prove_lemma: no proof from provers, fallback {} steps",
+                    fb_steps
+                );
                 Some((fb_proof, fb_steps, "fallback".to_string()))
             } else {
+                crate::klog_debug!("[DEBUG] prove_lemma: no proof found by any means");
                 None
             }
         }
