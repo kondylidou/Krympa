@@ -46,7 +46,12 @@ pub fn parse_vampire_proof(
     let mut relevant: BTreeSet<usize> = BTreeSet::new();
 
     // keywords indicating relevant proof steps
-    let proof_keywords = ["demodulation", "superposition", "resolution", "trivial inequality removal"];
+    let proof_keywords = [
+        "demodulation",
+        "superposition",
+        "resolution",
+        "trivial inequality removal",
+    ];
 
     for line in content.lines() {
         let line_trimmed = line.trim();
