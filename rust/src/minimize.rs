@@ -1040,7 +1040,7 @@ pub fn try_minimize(
     if mode == ExecutionMode::Sequential {
         selected_roots.iter().try_for_each(&process_root)?;
     } else {
-        selected_roots.par_iter().try_for_each(&process_root)?;
+        selected_roots.par_iter().try_for_each(process_root)?;
     }
 
     let global_best = global_best
