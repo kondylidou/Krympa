@@ -353,9 +353,25 @@ pub fn extract_superposition_steps(
     let proving_vnum = relevant_set.iter().copied().find(|vnum| {
         all_steps
             .get(vnum)
-            .map(|step| formulas_match(lemma_formula, &format!("({})", step.formula)))
+            .map(|step| {
+                formulas_match(lemma_formula, &step.formula)
+                    || formulas_match(lemma_formula, &format!("({})", step.formula))
+            })
             .unwrap_or(false)
-    })?;
+    });
+
+    if proving_vnum.is_none() {
+        crate::klog_debug!(
+            "[DEBUG] extract_superposition_steps: no step matched lemma formula: {}\n  relevant steps: {}",
+            lemma_formula,
+            relevant_set.iter()
+                .filter_map(|v| all_steps.get(v).map(|s| format!("{}: {}", v, s.formula)))
+                .collect::<Vec<_>>()
+                .join("\n  ")
+        );
+    }
+
+    let proving_vnum = proving_vnum?;
 
     // gather full transitive deps and keep only relevant ones
     let mut closure: BTreeSet<usize> = BTreeSet::new();
