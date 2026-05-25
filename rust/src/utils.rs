@@ -69,7 +69,13 @@ pub fn precompute_lemmas(
             Err(_) => {
                 // no twee proof for this lemma; register it with empty dependencies
                 let formula = load_lemma(lemmas_dir, &lemma_name)?;
-                all_lemmas.insert(lemma_name, LemmaInfo { formula, dependencies: Vec::new() });
+                all_lemmas.insert(
+                    lemma_name,
+                    LemmaInfo {
+                        formula,
+                        dependencies: Vec::new(),
+                    },
+                );
                 continue;
             }
         };

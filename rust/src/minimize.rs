@@ -154,25 +154,25 @@ pub fn try_minimize(
     );
 
     let process_root = |(root_lemma, root_formula): &(String, String)| -> Result<(), String> {
-            {
-                let mut active = active_roots
-                    .lock()
-                    .map_err(|_| "Failed to lock active_roots".to_string())?;
-                active.insert(root_lemma.clone());
-                crate::klog_info!(
-                    "[INFO] Arrival lemma started: {} | active {}/{}: {}",
-                    root_lemma,
-                    active.len(),
-                    total_roots,
-                    format_active_roots(&active)
-                );
-            }
-            let _active_guard = ActiveRootGuard {
-                root: root_lemma.clone(),
-                active_roots: &active_roots,
+        {
+            let mut active = active_roots
+                .lock()
+                .map_err(|_| "Failed to lock active_roots".to_string())?;
+            active.insert(root_lemma.clone());
+            crate::klog_info!(
+                "[INFO] Arrival lemma started: {} | active {}/{}: {}",
+                root_lemma,
+                active.len(),
                 total_roots,
-            };
-            crate::klog_debug!("[DEBUG] Root lemma {}", root_lemma);
+                format_active_roots(&active)
+            );
+        }
+        let _active_guard = ActiveRootGuard {
+            root: root_lemma.clone(),
+            active_roots: &active_roots,
+            total_roots,
+        };
+        crate::klog_debug!("[DEBUG] Root lemma {}", root_lemma);
 
         // build the minimal dag
         let (dag, lemmas) = build_dag(root_lemma, &precomputed)?;
@@ -246,7 +246,8 @@ pub fn try_minimize(
                 if candidates.is_empty() && has_history_dependency {
                     crate::klog_warn!(
                         "   [BUG] Root {} depends on history {:?} — refusing root-only proof",
-                        root_lemma, root_deps
+                        root_lemma,
+                        root_deps
                     );
                     return Ok(()); // skipping this now
                 }
@@ -557,7 +558,8 @@ pub fn try_minimize(
                                 Err(err) => {
                                     crate::klog_warn!(
                                         "     [WARN] Cannot load {}: {}. Skipping.",
-                                        candidate, err
+                                        candidate,
+                                        err
                                     );
                                     continue; // skip missing lemmas
                                 }
@@ -1021,7 +1023,8 @@ pub fn try_minimize(
                     *best_guard = Some(candidate);
                 }
                 Some((b_lemmas, b_steps, _, _, _, _, _)) => {
-                    if candidate.1 < *b_steps || (candidate.1 == *b_steps && candidate.0 < *b_lemmas)
+                    if candidate.1 < *b_steps
+                        || (candidate.1 == *b_steps && candidate.0 < *b_lemmas)
                     {
                         *best_guard = Some(candidate);
                     }
@@ -1029,9 +1032,9 @@ pub fn try_minimize(
             }
         }
 
-            let _ = fs::remove_file(&dag_file);
-            let _ = fs::remove_file(&lemmas_out_path);
-            Ok(())
+        let _ = fs::remove_file(&dag_file);
+        let _ = fs::remove_file(&lemmas_out_path);
+        Ok(())
     };
 
     if mode == ExecutionMode::Sequential {
@@ -1142,7 +1145,8 @@ pub fn prove_lemma(
                 if v_len < t_len {
                     crate::klog_debug!(
                         "[DEBUG] prove_lemma: twee {} steps, vampire {} steps → chose vampire",
-                        t_len, v_len
+                        t_len,
+                        v_len
                     );
                     let (vp, renaming) =
                         prepend_superposition_steps(axioms, &sp_steps, &input_formulas, &all_steps);
@@ -1151,7 +1155,8 @@ pub fn prove_lemma(
                 } else {
                     crate::klog_debug!(
                         "[DEBUG] prove_lemma: twee {} steps, vampire {} steps → chose twee",
-                        t_len, v_len
+                        t_len,
+                        v_len
                     );
                     Some((tp, t_len, "twee".to_string()))
                 }
