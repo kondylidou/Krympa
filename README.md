@@ -17,7 +17,7 @@ the accompanying paper:
 ## Requirements
 
 * Python 3
-* A Unix environment (Linux)
+* A Unix environment (Linux or macOS)
 
 ---
 
