@@ -50,18 +50,22 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
 }
 
 fn vampire_path() -> String {
+    let bin = if cfg!(target_os = "macos") { "vampire_mac" } else { "vampire" };
     env::current_dir()
         .unwrap()
-        .join("../bin/vampire")
+        .join("../bin")
+        .join(bin)
         .to_str()
         .unwrap()
         .to_string()
 }
 
 fn twee_path() -> String {
+    let bin = if cfg!(target_os = "macos") { "twee_mac" } else { "twee" };
     env::current_dir()
         .unwrap()
-        .join("../bin/twee")
+        .join("../bin")
+        .join(bin)
         .to_str()
         .unwrap()
         .to_string()
