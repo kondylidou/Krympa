@@ -12,7 +12,6 @@ infix:65 " ◇ " => Magma.op
 abbrev Equation_a1 (G : Type _) [Magma G] :=
   ∀ x y z : G, x = (x ◇ (y ◇ ((z ◇ x) ◇ y)))
 
-
 abbrev Equation_conjecture0 (G : Type _) [Magma G] :=
   ∀ x y z : G, x = (x ◇ (y ◇ (z ◇ (x ◇ z))))
 
@@ -93,5 +92,5 @@ theorem Equation_a1_implies_Equation_conjecture0 (G : Type _) [Magma G]
     duper [lemma_10, lemma_9]
 
   show _ by
-    exact lemma_11
-
+    intros x y z
+    nth_rw 1 [lemma_11 x (y ◇ (z ◇ (x ◇ z)))]

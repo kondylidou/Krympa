@@ -100,9 +100,6 @@ theorem Equation_a1_implies_Equation_conjecture0 (G : Type _) [Magma G]
     nth_rw 1 [←lemma9 y x x]
     exact lemma10 x y x x
 
-  have lemma12 (x y z : G) :
-  x = (x ◇ (y ◇ (z ◇ (x ◇ z)))) := by
-    nth_rw 1 [lemma11 x (y ◇ (z ◇ (x ◇ z)))]
-
   show _ by
-    exact lemma12
+    intros x y z
+    nth_rw 1 [lemma11 x (y ◇ (z ◇ (x ◇ z)))]
