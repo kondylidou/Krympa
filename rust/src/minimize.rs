@@ -1121,6 +1121,19 @@ pub fn prove_lemma(
         ("conjecture".to_string(), formula)
     };
 
+    // build a lookup-only axiom list that also includes the conjecture formula so that
+    // Vampire input steps corresponding to the conjecture are named rather than falling
+    // back to an a_N annotation (which looks like an unresolved reference in the output)
+    let lookup_storage: Option<Vec<(String, String)>> = if axioms.iter().all(|(n, _)| n != &c_name)
+    {
+        let mut tmp = axioms.clone();
+        tmp.push((c_name.clone(), c_formula.clone()));
+        Some(tmp)
+    } else {
+        None
+    };
+    let axioms_for_lookup: &Vec<(String, String)> = lookup_storage.as_ref().unwrap_or(axioms);
+
     // 6. Run provers
     let twee_proof = run_twee(&tmp_path);
     let vampire_proof_file = format!("{}.vampire_proof", tmp_path);
@@ -1166,10 +1179,15 @@ pub fn prove_lemma(
                 };
 
                 if chose_vampire {
-                    let (vp, renaming) =
-                        prepend_superposition_steps(axioms, &sp_steps, &input_formulas, &all_steps);
+                    let (vp, renaming) = prepend_superposition_steps(
+                        axioms_for_lookup,
+                        &sp_steps,
+                        &input_formulas,
+                        &all_steps,
+                    );
                     extend_with_superposition_steps(axioms, &sp_steps, &renaming);
-                    Some((vp, v_len, "vampire".to_string()))
+                    let deduped_len = renaming.values().collect::<BTreeSet<_>>().len();
+                    Some((vp, deduped_len, "vampire".to_string()))
                 } else {
                     Some((tp, t_len, "twee".to_string()))
                 }
@@ -1204,10 +1222,15 @@ pub fn prove_lemma(
             if let Some((sp_steps, input_formulas, all_steps)) =
                 extract_superposition_steps(&vampire_proof_file, &c_formula)
             {
-                let (vp, renaming) =
-                    prepend_superposition_steps(axioms, &sp_steps, &input_formulas, &all_steps);
+                let (vp, renaming) = prepend_superposition_steps(
+                    axioms_for_lookup,
+                    &sp_steps,
+                    &input_formulas,
+                    &all_steps,
+                );
                 extend_with_superposition_steps(axioms, &sp_steps, &renaming);
-                Some((vp, v_len, "vampire".to_string()))
+                let deduped_len = renaming.values().collect::<BTreeSet<_>>().len();
+                Some((vp, deduped_len, "vampire".to_string()))
             } else {
                 Some((vp_text, v_len, "vampire".to_string()))
             }

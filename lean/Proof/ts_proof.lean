@@ -1,0 +1,108 @@
+import Mathlib.Tactic.NthRewrite
+import Duper
+open Lean Grind
+
+set_option linter.style.longLine false
+
+class Magma (α : Type _) where
+  op : α → α → α
+
+infix:65 " ◇ " => Magma.op
+
+abbrev Equation_a1 (G : Type _) [Magma G] :=
+  ∀ x y z : G, x = (x ◇ (y ◇ ((z ◇ x) ◇ y)))
+
+abbrev Equation_conjecture0 (G : Type _) [Magma G] :=
+  ∀ x y z : G, x = (x ◇ (y ◇ (z ◇ (x ◇ z))))
+
+theorem Equation_a1_implies_Equation_conjecture0 (G : Type _) [Magma G]
+    (op_law : Equation_a1 G) : Equation_conjecture0 G :=
+  have lemma1 (x y z w : G) :
+  (x ◇ ((y ◇ z) ◇ x)) = ((x ◇ ((y ◇ z) ◇ x)) ◇ (w ◇ (z ◇ w))) := by
+    nth_rw 3 [op_law z x y]
+    exact op_law (x ◇ ((y ◇ z) ◇ x)) w z
+
+  have lemma2 (x y z w v : G) :
+  (x ◇ (y ◇ x)) = ((x ◇ (y ◇ x)) ◇ (z ◇ ((w ◇ ((v ◇ y) ◇ w)) ◇ z))) := by
+    nth_rw 1 [lemma1 w v y x]
+    exact op_law (x ◇ (y ◇ x)) z (w ◇ ((v ◇ y) ◇ w))
+
+  have lemma3 (x y z w v u : G) :
+  (x ◇ ((y ◇ ((z ◇ w) ◇ y)) ◇ x)) =
+      ((x ◇ ((y ◇ ((z ◇ w) ◇ y)) ◇ x)) ◇ (v ◇ ((u ◇ (w ◇ u)) ◇ v))) := by
+    nth_rw 1 2 [lemma1 y z w u]
+    exact lemma1 x (y ◇ ((z ◇ w) ◇ y)) (u ◇ (w ◇ u)) v
+
+  have lemma4 (x y z w v : G) :
+  (x ◇ (y ◇ x)) = ((x ◇ (y ◇ x)) ◇ ((z ◇ (y ◇ z)) ◇ (w ◇ ((v ◇ y) ◇ w)))) := by
+    nth_rw 1 [lemma1 w v y z]
+    exact lemma2 x y (z ◇ (y ◇ z)) w v
+
+  have lemma5 (x y z w : G) :
+  (x ◇ ((y ◇ ((z ◇ y) ◇ y)) ◇ x)) =
+      ((x ◇ ((y ◇ ((z ◇ y) ◇ y)) ◇ x)) ◇ (w ◇ ((y ◇ ((z ◇ y) ◇ y)) ◇ w))) := by
+    nth_rw 1 [lemma3 w y z y x ((z ◇ y) ◇ y)]
+    exact lemma4 x (y ◇ ((z ◇ y) ◇ y)) w x ((z ◇ y) ◇ y)
+
+  have lemma6 (x y z w : G) :
+  ((x ◇ ((y ◇ x) ◇ x)) ◇ z) =
+      (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ ((w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ (z ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ z)))) := by
+    nth_rw 1 [lemma5 z x y w]
+    exact op_law ((x ◇ ((y ◇ x) ◇ x)) ◇ z) (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) z
+
+  have lemma7 (x y z w : G) :
+  ((x ◇ ((y ◇ x) ◇ x)) ◇ z) =
+      (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w))) := by
+    nth_rw 1 [lemma6 x y z w]
+    exact lemma5 w x y z
+
+  have lemma8 (x y z w : G) :
+  (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) =
+      ((x ◇ ((y ◇ x) ◇ x)) ◇ z) := by
+    calc
+      (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) =
+        (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ ((w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)))))) := by
+        nth_rw 1 [←op_law]
+      _ =
+        (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ ((w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)))))))) := by
+        nth_rw 1 [←lemma7]
+      _ =
+        (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ ((w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)))) ◇ ((((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w))) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)))))))))) := by
+        nth_rw 2 [←lemma7]
+      _ =
+        (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w))))) := by
+        nth_rw 1 [←op_law]
+      _ =
+        (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)))) := by
+        nth_rw 1 [←lemma7]
+      _ = ((x ◇ ((y ◇ x) ◇ x)) ◇ z) := by
+        nth_rw 1 [←lemma7]
+
+  have lemma9 (x y z : G) :
+  (x ◇ ((y ◇ ((z ◇ y) ◇ y)) ◇ x)) = x := by
+    calc
+      (x ◇ ((y ◇ ((z ◇ y) ◇ y)) ◇ x)) =
+        (x ◇ (((y ◇ ((z ◇ y) ◇ y)) ◇ x) ◇ ((y ◇ ((z ◇ y) ◇ y)) ◇ x))) := by
+        nth_rw 1 [lemma8]
+      _ =
+        (x ◇ (((y ◇ ((z ◇ y) ◇ y)) ◇ x) ◇ (((y ◇ ((z ◇ y) ◇ y)) ◇ x) ◇ ((y ◇ ((z ◇ y) ◇ y)) ◇ x)))) := by
+        nth_rw 2 [←lemma8]
+      _ = x := by
+        nth_rw 1 [←op_law]
+
+  have lemma10 (x y z w : G) :
+  (x ◇ (y ◇ ((z ◇ ((w ◇ z) ◇ z)) ◇ y))) = x := by
+    nth_rw 1 [lemma5 x x x (y ◇ ((z ◇ ((w ◇ z) ◇ z)) ◇ y))]
+    exact lemma9 x x x
+
+  have lemma11 (x y : G) :
+  (x ◇ y) = x := by
+    nth_rw 1 [←lemma9 y x x]
+    exact lemma10 x y x x
+
+  have lemma12 (x y z : G) :
+  x = (x ◇ (y ◇ (z ◇ (x ◇ z)))) := by
+    nth_rw 1 [lemma11 x (y ◇ (z ◇ (x ◇ z)))]
+
+  show _ by
+    exact lemma12
