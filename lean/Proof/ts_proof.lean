@@ -5,14 +5,14 @@ class Magma (α : Type _) where
 
 infix:65 " ◇ " => Magma.op
 
-abbrev Equation_a1 (G : Type _) [Magma G] :=
-  ∀ x y z : G, x = (x ◇ (y ◇ ((z ◇ x) ◇ y)))
+abbrev Equation650 (G : Type _) [Magma G] :=
+  ∀ x y z : G, x = x ◇ (y ◇ ((z ◇ x) ◇ y))
 
-abbrev Equation_conjecture0 (G : Type _) [Magma G] :=
-  ∀ x y z : G, x = (x ◇ (y ◇ (z ◇ (x ◇ z))))
+abbrev Equation448 (G : Type _) [Magma G] :=
+  ∀ x y z : G, x = x ◇ (y ◇ (z ◇ (x ◇ z)))
 
-theorem Equation_a1_implies_Equation_conjecture0 (G : Type _) [Magma G]
-    (op_law : Equation_a1 G) : Equation_conjecture0 G :=
+theorem Equation650_implies_Equation448 (G : Type _) [Magma G]
+    (op_law : Equation650 G) : Equation448 G :=
   have lemma1 (x y z w : G) :
       x ◇ ((y ◇ z) ◇ x) = (x ◇ ((y ◇ z) ◇ x)) ◇ (w ◇ (z ◇ w)) := by
     nth_rw 3 [op_law z x y]
