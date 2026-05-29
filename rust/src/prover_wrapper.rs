@@ -253,12 +253,14 @@ pub fn avg_term_size_vampire(proof: &str) -> f64 {
 const TERM_SIZE_TOLERANCE: f64 = 1.5;
 
 pub fn proof_quality_better(a_steps: usize, a_avg: f64, b_steps: usize, b_avg: f64) -> bool {
-    if a_steps < b_steps {
-        true
-    } else if b_steps < a_steps {
-        a_avg < b_avg && a_steps as f64 <= b_steps as f64 * TERM_SIZE_TOLERANCE
-    } else {
+    if a_steps == b_steps {
         a_avg < b_avg
+    } else if a_steps < b_steps {
+        // A is shorter — A wins unless B has lower avg and is within tolerance
+        !(b_avg < a_avg && b_steps as f64 <= a_steps as f64 * TERM_SIZE_TOLERANCE)
+    } else {
+        // B is shorter — A wins only if A has lower avg and is within tolerance
+        a_avg < b_avg && a_steps as f64 <= b_steps as f64 * TERM_SIZE_TOLERANCE
     }
 }
 
