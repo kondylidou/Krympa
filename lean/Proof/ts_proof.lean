@@ -94,8 +94,9 @@ theorem Equation_a1_implies_Equation_conjecture0 (G : Type _) [Magma G]
 
   have lemma10 (x y z w : G) :
   (x ◇ (y ◇ ((z ◇ ((w ◇ z) ◇ z)) ◇ y))) = x := by
-    nth_rw 1 [lemma5 x x x (y ◇ ((z ◇ ((w ◇ z) ◇ z)) ◇ y))]
-    exact lemma9 x x x
+    symm
+    nth_rw 1 2 [←lemma9 x z w]
+    exact lemma5 x z w y
 
   have lemma11 (x y : G) :
   (x ◇ y) = x := by
