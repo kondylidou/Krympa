@@ -246,7 +246,7 @@ pub fn avg_term_size_vampire(proof: &str) -> f64 {
     sizes.iter().sum::<usize>() as f64 / sizes.len() as f64
 }
 
-/// When `--term-size-aware` is on, proof A is better than proof B if:
+/// When `--term-size` is on, proof A is better than proof B if:
 ///   • A has strictly fewer steps, OR
 ///   • A has lower average term size and is at most TOLERANCE × longer.
 /// Falls back to pure step-count comparison when term sizes are equal.
