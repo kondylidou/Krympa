@@ -53,29 +53,30 @@ theorem Equation_a1_implies_Equation_conjecture0 (G : Type _) [Magma G]
   have lemma7 (x y z w : G) :
   ((x ◇ ((y ◇ x) ◇ x)) ◇ z) =
       (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w))) := by
-    nth_rw 1 [lemma6 x y z w]
-    exact lemma5 w x y z
+    nth_rw 1 [lemma5 w x y z]
+    exact lemma6 x y z w
 
   have lemma8 (x y z w : G) :
   (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) =
       ((x ◇ ((y ◇ x) ◇ x)) ◇ z) := by
+    let T := x ◇ ((y ◇ x) ◇ x)
     calc
-      (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) =
-        (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ ((w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)))))) := by
+      ((T ◇ z) ◇ (T ◇ w)) =
+        ((T ◇ z) ◇ ((T ◇ w) ◇ ((T ◇ (T ◇ w)) ◇ ((w ◇ (T ◇ w)) ◇ (T ◇ (T ◇ w)))))) := by
         nth_rw 1 [←op_law]
       _ =
-        (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ ((w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)))))))) := by
+        ((T ◇ z) ◇ ((T ◇ w) ◇ ((T ◇ (T ◇ w)) ◇ ((w ◇ (T ◇ w)) ◇ (T ◇ ((T ◇ w) ◇ (w ◇ (T ◇ w)))))))) := by
         nth_rw 1 [←lemma7]
       _ =
-        (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ ((w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)))) ◇ ((((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w))) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)))))))))) := by
+        ((T ◇ z) ◇ ((T ◇ w) ◇ ((T ◇ (T ◇ w)) ◇ ((w ◇ (T ◇ w)) ◇ ((T ◇ ((T ◇ w) ◇ (w ◇ (T ◇ w)))) ◇ (((T ◇ w) ◇ (w ◇ (T ◇ w))) ◇ (T ◇ ((T ◇ w) ◇ (w ◇ (T ◇ w)))))))))) := by
         nth_rw 2 [←lemma7]
       _ =
-        (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)) ◇ (w ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w))))) := by
+        ((T ◇ z) ◇ ((T ◇ w) ◇ ((T ◇ (T ◇ w)) ◇ (w ◇ (T ◇ w))))) := by
         nth_rw 1 [←op_law]
       _ =
-        (((x ◇ ((y ◇ x) ◇ x)) ◇ z) ◇ (((x ◇ ((y ◇ x) ◇ x)) ◇ w) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ ((x ◇ ((y ◇ x) ◇ x)) ◇ w)))) := by
+        ((T ◇ z) ◇ ((T ◇ w) ◇ (T ◇ (T ◇ w)))) := by
         nth_rw 1 [←lemma7]
-      _ = ((x ◇ ((y ◇ x) ◇ x)) ◇ z) := by
+      _ = (T ◇ z) := by
         nth_rw 1 [←lemma7]
 
   have lemma9 (x y z : G) :
@@ -85,7 +86,8 @@ theorem Equation_a1_implies_Equation_conjecture0 (G : Type _) [Magma G]
         (x ◇ (((y ◇ ((z ◇ y) ◇ y)) ◇ x) ◇ ((y ◇ ((z ◇ y) ◇ y)) ◇ x))) := by
         nth_rw 1 [lemma8]
       _ =
-        (x ◇ (((y ◇ ((z ◇ y) ◇ y)) ◇ x) ◇ (((y ◇ ((z ◇ y) ◇ y)) ◇ x) ◇ ((y ◇ ((z ◇ y) ◇ y)) ◇ x)))) := by
+        (x ◇ (((y ◇ ((z ◇ y) ◇ y)) ◇ x) ◇
+            (((y ◇ ((z ◇ y) ◇ y)) ◇ x) ◇ ((y ◇ ((z ◇ y) ◇ y)) ◇ x)))) := by
         nth_rw 2 [←lemma8]
       _ = x := by
         nth_rw 1 [←op_law]
