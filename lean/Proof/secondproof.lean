@@ -1,6 +1,4 @@
 import Mathlib.Tactic.NthRewrite
-import Duper
-open Lean Grind
 
 class Magma (α : Type _) where
   op : α → α → α
