@@ -1,4 +1,4 @@
-use crate::alpha_match::formulas_match;
+use crate::alpha_match::{formulas_match, normalize_formula_alpha};
 use crate::dag::*;
 use crate::execution::{execution_mode, term_size_aware, ExecutionMode};
 use crate::prover_wrapper::*;
@@ -1043,9 +1043,24 @@ pub fn try_minimize(
         selected_roots.par_iter().try_for_each(process_root)?;
     }
 
-    let global_best = global_best
+    let mut global_best = global_best
         .into_inner()
         .map_err(|_| "Failed to unwrap global_best".to_string())?;
+
+    if term_size_aware() {
+        if let Some((_, steps, _, _, proof, _, _)) = global_best.as_mut() {
+            match refine_final_proof(input_file, &lemmas_dir, proof, *steps) {
+                Ok(Some((refined, refined_steps))) => {
+                    *proof = refined;
+                    *steps = refined_steps;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    crate::klog_warn!("[WARN] Final proof refinement skipped: {}", error)
+                }
+            }
+        }
+    }
 
     if let Some((_, steps, root, n_history, annotated_proof, dag_text, lemmas_text)) = &global_best
     {
@@ -1077,6 +1092,164 @@ pub fn try_minimize(
     Ok("Minimization complete".into())
 }
 
+/// Split one useful internal TWEE lemma out of the final proof and reprove only
+/// the two remaining goals. This runs once, after the main search has finished.
+fn refine_final_proof(
+    input_file: &str,
+    lemmas_dir: &str,
+    proof: &str,
+    original_steps: usize,
+) -> Result<Option<(String, usize)>, String> {
+    let marker = "The conjecture is true! Here is a proof.";
+    let Some(twee_start) = proof.find(marker) else {
+        return Ok(None);
+    };
+    let rest = &proof[twee_start..];
+    let Some(twee_end) = rest.rfind("% === Superposition Steps ===") else {
+        return Ok(None);
+    };
+    let twee = &rest[..twee_end];
+    let cuts = extract_twee_lemmas(twee);
+    if cuts.len() != 1 {
+        return Ok(None);
+    }
+    let (cut_name, cut_formula) = &cuts[0];
+    let Some((cut_text, _)) = twee.split_once("\nGoal ") else {
+        return Ok(None);
+    };
+
+    let step_re = Regex::new(r"(?m)^%\s*([A-Za-z_]*lemma_\d+):\s*(.*?)\s*\|\s*deps:").unwrap();
+    let mut axioms = step_re
+        .captures_iter(&proof[..twee_start])
+        .map(|capture| (capture[1].to_string(), capture[2].to_string()))
+        .collect::<Vec<_>>();
+    let Some(mut cut_proof) = compress_twee_cut(input_file, cut_text, &axioms)? else {
+        return Ok(None);
+    };
+    let header = Regex::new(r"(?m)^Lemma\s+(\d+):").unwrap();
+    cut_proof = header
+        .replacen(&cut_proof, 1, format!("Lemma $1 ({}):", cut_name))
+        .to_string();
+    cut_proof.push_str("\n\nRESULT: Theorem (the lemma is true).\n\n");
+    let cut_axiom = (cut_name.clone(), normalize_formula_alpha(cut_formula));
+    axioms.push(cut_axiom.clone());
+
+    let goal_re = Regex::new(r"Goal\s+\d+\s+\(([^)]+)\)").unwrap();
+    let Some(goal_name) = goal_re
+        .captures(twee)
+        .and_then(|capture| capture.get(1))
+        .map(|name| name.as_str().to_string())
+    else {
+        return Ok(None);
+    };
+    let goal_axiom = (goal_name.clone(), load_lemma(lemmas_dir, &goal_name)?);
+    axioms.push(goal_axiom.clone());
+    let focused_axioms = [cut_axiom, goal_axiom];
+    let Some((goal_proof, goal_steps, _)) = prove_lemma_matching(
+        input_file,
+        lemmas_dir,
+        None,
+        &mut axioms,
+        Some(&goal_name),
+        true,
+        Some(&focused_axioms),
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some((conclusion, conclusion_steps, _)) =
+        prove_lemma_matching(input_file, lemmas_dir, None, &mut axioms, None, true, None)?
+    else {
+        return Ok(None);
+    };
+
+    let prefix = &proof[..twee_start];
+    let steps = count_superposition_steps(prefix)
+        + proof_length_twee(&cut_proof)
+        + goal_steps
+        + conclusion_steps;
+    if steps >= original_steps {
+        return Ok(None);
+    }
+    crate::klog_debug!(
+        "[DEBUG] Final local refinement: {} steps -> {} steps",
+        original_steps,
+        steps
+    );
+    Ok(Some((
+        format!("{}{}{}{}", prefix, cut_proof, goal_proof, conclusion),
+        steps,
+    )))
+}
+
+fn compress_twee_cut(
+    input_file: &str,
+    proof: &str,
+    axioms: &[(String, String)],
+) -> Result<Option<String>, String> {
+    let lines = proof.lines().collect::<Vec<_>>();
+    let cite = Regex::new(r"by\s+(?:axiom|lemma)\s+\d+(?:\s+\(([^)]+)\))?").unwrap();
+    let source = |line: &str| {
+        cite.captures(line)
+            .and_then(|capture| capture.get(1).or_else(|| capture.get(0)))
+            .map(|name| name.as_str().to_string())
+    };
+    let Some(index) = (1..lines.len().saturating_sub(3))
+        .filter(|index| {
+            source(lines[*index]).is_some() && source(lines[*index]) == source(lines[*index + 2])
+        })
+        .max_by_key(|index| {
+            lines[index - 1].matches("op(").count() as isize
+                - lines[index + 3].matches("op(").count() as isize
+        })
+    else {
+        return Ok(None);
+    };
+    let equation = format!("{} = {}", lines[index - 1].trim(), lines[index + 3].trim());
+    let Some(cited_axiom) =
+        source(lines[index]).and_then(|source| axioms.iter().find(|(name, _)| name == &source))
+    else {
+        return Ok(None);
+    };
+    if !vampire_proves_in_one_step(input_file, cited_axiom, &equation)? {
+        return Ok(None);
+    }
+
+    let mut output = lines[..index].join("\n");
+    output.push_str(&format!(
+        "\n= {{ by direct superposition of {} and {} }}\n{}\n",
+        lines[index]
+            .trim_start_matches("= { by ")
+            .trim_end_matches(" }"),
+        lines[index + 2]
+            .trim_start_matches("= { by ")
+            .trim_end_matches(" }"),
+        lines[index + 3]
+    ));
+    output.push_str(&lines[index + 4..].join("\n"));
+    Ok(Some(output))
+}
+
+fn vampire_proves_in_one_step(
+    input_file: &str,
+    axiom: &(String, String),
+    formula: &str,
+) -> Result<bool, String> {
+    let candidate = create_tmp_copy(input_file)?;
+    fs::write(&candidate, "").map_err(|error| error.to_string())?;
+    append_as_axiom(&candidate, &axiom.1, &axiom.0);
+    append_as_axiom(&candidate, formula, "local_shortcut");
+    promote_axiom_to_conjecture(&candidate, "local_shortcut")?;
+    let proof = crate::prover_wrapper::run_vampire(&candidate).unwrap_or_default();
+    let _ = fs::remove_file(candidate);
+    Ok(proof.contains("SZS status Theorem")
+        && proof
+            .lines()
+            .filter(|line| line.contains("superposition") || line.contains("demodulation"))
+            .count()
+            == 1)
+}
+
 /// Proves a lemma using Twee and Vampire, selecting the shorter proof.
 /// - `superposition_steps`: optional superposition steps to append
 /// - `dependencies`: optional dependencies (lemma names)
@@ -1086,10 +1259,29 @@ pub fn try_minimize(
 pub fn prove_lemma(
     input_file: &str,
     lemmas_dir: &str,
-    //    superposition_steps: Option<(BTreeMap<usize, SuperpositionStep>, BTreeMap<usize, String>)>,
     dependencies: Option<&[String]>,    // names
     axioms: &mut Vec<(String, String)>, // (name, formula)
     conjecture: Option<&str>,
+) -> Result<Option<(String, usize, String)>, String> {
+    prove_lemma_matching(
+        input_file,
+        lemmas_dir,
+        dependencies,
+        axioms,
+        conjecture,
+        false,
+        None,
+    )
+}
+
+fn prove_lemma_matching(
+    input_file: &str,
+    lemmas_dir: &str,
+    dependencies: Option<&[String]>,
+    axioms: &mut Vec<(String, String)>,
+    conjecture: Option<&str>,
+    allow_instance: bool,
+    prover_axioms: Option<&[(String, String)]>,
 ) -> Result<Option<(String, usize, String)>, String> {
     let tmp_path = create_tmp_copy(input_file)?;
     let proofs_dir = "../proofs".to_string();
@@ -1104,10 +1296,8 @@ pub fn prove_lemma(
     }
 
     // 2. Append extra dependencies
-    if !axioms.is_empty() {
-        for (name, formula) in axioms.iter() {
-            append_as_axiom(&tmp_path, formula, name);
-        }
+    for (name, formula) in prover_axioms.unwrap_or(axioms) {
+        append_as_axiom(&tmp_path, formula, name);
     }
 
     // 3. Handle conjecture
@@ -1147,7 +1337,11 @@ pub fn prove_lemma(
             let t_len = proof_length_twee(&tp);
 
             if let Some((sp_steps, input_formulas, all_steps)) =
-                extract_superposition_steps(&vampire_proof_file, &c_formula)
+                extract_superposition_steps_matching(
+                    &vampire_proof_file,
+                    &c_formula,
+                    allow_instance,
+                )
             {
                 let v_len = sp_steps.len();
 
@@ -1179,11 +1373,13 @@ pub fn prove_lemma(
                 };
 
                 if chose_vampire {
-                    let (vp, renaming) = prepend_superposition_steps(
+                    let target = allow_instance.then_some((c_name.as_str(), c_formula.as_str()));
+                    let (vp, renaming) = prepend_superposition_steps_for_target(
                         axioms_for_lookup,
                         &sp_steps,
                         &input_formulas,
                         &all_steps,
+                        target,
                     );
                     extend_with_superposition_steps(axioms, &sp_steps, &renaming);
                     let deduped_len = renaming.values().collect::<BTreeSet<_>>().len();
@@ -1220,13 +1416,19 @@ pub fn prove_lemma(
                 v_len
             );
             if let Some((sp_steps, input_formulas, all_steps)) =
-                extract_superposition_steps(&vampire_proof_file, &c_formula)
+                extract_superposition_steps_matching(
+                    &vampire_proof_file,
+                    &c_formula,
+                    allow_instance,
+                )
             {
-                let (vp, renaming) = prepend_superposition_steps(
+                let target = allow_instance.then_some((c_name.as_str(), c_formula.as_str()));
+                let (vp, renaming) = prepend_superposition_steps_for_target(
                     axioms_for_lookup,
                     &sp_steps,
                     &input_formulas,
                     &all_steps,
+                    target,
                 );
                 extend_with_superposition_steps(axioms, &sp_steps, &renaming);
                 let deduped_len = renaming.values().collect::<BTreeSet<_>>().len();

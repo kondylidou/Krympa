@@ -173,6 +173,51 @@ pub fn formulas_match(formula: &str, other_formula: &str) -> bool {
     formulas_match_with_permutations(formula, other_formula)
 }
 
+/// Check whether `specific` is a universally quantified instance of `general`.
+pub fn formula_is_instance_of(general: &str, specific: &str) -> bool {
+    let (gl, gr) = match parse_equation(&normalize_formula_alpha(general)) {
+        Some(equation) => equation,
+        None => return false,
+    };
+    let (sl, sr) = match parse_equation(&normalize_formula_alpha(specific)) {
+        Some(equation) => equation,
+        None => return false,
+    };
+    let matches = [(&sl, &sr), (&sr, &sl)].into_iter().any(|(left, right)| {
+        let mut substitution = HashMap::new();
+        instance_matches(&gl, left, &mut substitution)
+            && instance_matches(&gr, right, &mut substitution)
+    });
+    matches
+}
+
+fn instance_matches(
+    general: &Term,
+    specific: &Term,
+    substitution: &mut HashMap<String, Term>,
+) -> bool {
+    match general {
+        Term::Var(variable) => match substitution.get(variable) {
+            Some(term) => term == specific,
+            None => {
+                substitution.insert(variable.clone(), specific.clone());
+                true
+            }
+        },
+        Term::Fun(function, arguments) => match specific {
+            Term::Fun(other, other_arguments)
+                if function == other && arguments.len() == other_arguments.len() =>
+            {
+                arguments
+                    .iter()
+                    .zip(other_arguments)
+                    .all(|(left, right)| instance_matches(left, right, substitution))
+            }
+            _ => false,
+        },
+    }
+}
+
 /// Pattern match formula onto other_formula with variable map
 /// Alpha-match terms with a variable->variable bijection.
 /// - Variables can only match variables (not arbitrary subterms).

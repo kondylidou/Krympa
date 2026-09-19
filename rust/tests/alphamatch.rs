@@ -1,3 +1,4 @@
+use krympa::alpha_match::formula_is_instance_of;
 use krympa::alpha_match::formulas_match;
 use krympa::alpha_match::formulas_match_with_permutations;
 use krympa::alpha_match::normalize_formula_alpha;
@@ -131,6 +132,15 @@ fn test_twee_formulas() {
     let twee1 = "! [X, Y, Z] : (op(X, op(op(Y, op(op(Z, Y), Y)), X)) = X)";
     let twee2 = "! [X, Y] : (op(X, Y) = X)";
     assert!(!formulas_match(twee1, twee2));
+}
+
+#[test]
+fn test_universal_instance_matching() {
+    let general = "! [X0, X1] : op(X0, X1) = X0";
+    let specific = "! [X0, X1, X2] : X0 = op(X0, op(X1, op(X2, op(X0, X2))))";
+
+    assert!(formula_is_instance_of(general, specific));
+    assert!(!formula_is_instance_of(specific, general));
 }
 
 #[test]

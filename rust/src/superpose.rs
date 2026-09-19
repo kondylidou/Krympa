@@ -1,4 +1,4 @@
-use crate::alpha_match::formulas_match;
+use crate::alpha_match::{formula_is_instance_of, formulas_match};
 use crate::dag::load_dag;
 use crate::utils::*;
 use regex::Regex;
@@ -342,6 +342,14 @@ pub fn extract_superposition_steps(
     vampire_file: &str,
     lemma_formula: &str,
 ) -> Option<(RelevantSteps, InputFormulas, AllSteps)> {
+    extract_superposition_steps_matching(vampire_file, lemma_formula, false)
+}
+
+pub(crate) fn extract_superposition_steps_matching(
+    vampire_file: &str,
+    lemma_formula: &str,
+    allow_instance: bool,
+) -> Option<(RelevantSteps, InputFormulas, AllSteps)> {
     let (all_steps, input_formulas, relevant_set) = match parse_vampire_proof(vampire_file) {
         Ok(x) => x,
         Err(err) => {
@@ -361,6 +369,7 @@ pub fn extract_superposition_steps(
             .map(|step| {
                 formulas_match(lemma_formula, &step.formula)
                     || formulas_match(lemma_formula, &format!("({})", step.formula))
+                    || (allow_instance && formula_is_instance_of(&step.formula, lemma_formula))
             })
             .unwrap_or(false)
     });
@@ -452,6 +461,16 @@ pub fn prepend_superposition_steps(
     input_formulas: &InputFormulas, // (vamp -> formula) for inputs
     all_steps: &AllSteps,           // full graph (vamp -> step)
 ) -> (String, BTreeMap<usize, String>) {
+    prepend_superposition_steps_for_target(axioms, relevant_steps, input_formulas, all_steps, None)
+}
+
+pub(crate) fn prepend_superposition_steps_for_target(
+    axioms: &Vec<(String, String)>,
+    relevant_steps: &RelevantSteps,
+    input_formulas: &InputFormulas,
+    all_steps: &AllSteps,
+    target: Option<(&str, &str)>,
+) -> (String, BTreeMap<usize, String>) {
     // allocate lemma numbers from 1 upward, skipping already-used numbers
     let mut used = used_lemma_numbers(axioms);
     let mut next = 1usize;
@@ -471,8 +490,16 @@ pub fn prepend_superposition_steps(
     // (including reversed equality direction) collapse to the same name.
     let mut renaming: BTreeMap<usize, String> = BTreeMap::new();
     let mut seen_this_run: Vec<(String, String)> = Vec::new();
+    let target_vnum = target.and_then(|(_, formula)| {
+        relevant_steps
+            .iter()
+            .find(|(_, step)| formula_is_instance_of(&step.formula, formula))
+            .map(|(vnum, _)| *vnum)
+    });
     for (vnum, step) in relevant_steps {
-        if let Some(existing) = find_existing_name_for_formula(axioms, &step.formula) {
+        if Some(*vnum) == target_vnum {
+            renaming.insert(*vnum, target.unwrap().0.to_string());
+        } else if let Some(existing) = find_existing_name_for_formula(axioms, &step.formula) {
             renaming.insert(*vnum, existing.to_string());
         } else if let Some(existing) = find_existing_name_for_formula(&seen_this_run, &step.formula)
         {
@@ -552,4 +579,46 @@ pub fn prepend_superposition_steps(
 
     annotated.push('\n');
     (annotated, renaming)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generalized_endpoint_gets_target_name_without_self_dependency() {
+        let input = VampStep {
+            formula: "op(X0,X0) = X0".to_string(),
+            deps: vec![],
+            is_input: true,
+        };
+        let intermediate = VampStep {
+            formula: "op(X0,op(X1,X0)) = op(X0,X1)".to_string(),
+            deps: vec![1],
+            is_input: false,
+        };
+        let endpoint = VampStep {
+            formula: "op(X0,X1) = X0".to_string(),
+            deps: vec![10],
+            is_input: false,
+        };
+        let relevant_steps = BTreeMap::from([(10, intermediate.clone()), (11, endpoint.clone())]);
+        let input_formulas = BTreeMap::from([(1, input.formula.clone())]);
+        let all_steps = BTreeMap::from([(1, input), (10, intermediate), (11, endpoint)]);
+        let axioms = vec![("a1".to_string(), "op(X0,X0) = X0".to_string())];
+
+        let (proof, renaming) = prepend_superposition_steps_for_target(
+            &axioms,
+            &relevant_steps,
+            &input_formulas,
+            &all_steps,
+            Some(("goal", "op(X0,op(X1,X0)) = X0")),
+        );
+
+        assert_eq!(renaming.get(&11).map(String::as_str), Some("goal"));
+        assert_ne!(renaming.get(&10).map(String::as_str), Some("goal"));
+        assert!(!proof
+            .lines()
+            .any(|line| { line.starts_with("% goal:") && line.contains("| deps: goal:") }));
+    }
 }
