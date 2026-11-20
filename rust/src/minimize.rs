@@ -1053,7 +1053,7 @@ pub fn try_minimize(
 
     if term_size_aware() {
         if let Some((_, steps, _, _, proof, _, _)) = global_best.as_mut() {
-            match refine_final_proof(input_file, &lemmas_dir, proof, *steps) {
+            match refine_final_proof(input_file, &lemmas_dir, proof, *steps, None) {
                 Ok(Some((refined, refined_steps))) => {
                     *proof = refined;
                     *steps = refined_steps;
@@ -1098,11 +1098,15 @@ pub fn try_minimize(
 
 /// Split one useful internal TWEE lemma out of the final proof and reprove only
 /// the two remaining goals. This runs once, after the main search has finished.
-fn refine_final_proof(
+///
+/// `goal_formula` is the statement of the lemma that the Twee section proves.
+/// Without it the statement is loaded from `lemmas_dir`.
+pub(crate) fn refine_final_proof(
     input_file: &str,
     lemmas_dir: &str,
     proof: &str,
     original_steps: usize,
+    goal_formula: Option<&str>,
 ) -> Result<Option<(String, usize)>, String> {
     let marker = "The conjecture is true! Here is a proof.";
     let Some(twee_start) = proof.find(marker) else {
@@ -1146,7 +1150,10 @@ fn refine_final_proof(
     else {
         return Ok(None);
     };
-    let goal_axiom = (goal_name.clone(), load_lemma(lemmas_dir, &goal_name)?);
+    let goal_axiom = match goal_formula {
+        Some(formula) => (goal_name.clone(), formula.to_string()),
+        None => (goal_name.clone(), load_lemma(lemmas_dir, &goal_name)?),
+    };
     axioms.push(goal_axiom.clone());
     let focused_axioms = [cut_axiom, goal_axiom];
     let Some((goal_proof, goal_steps, _)) = prove_lemma_matching(

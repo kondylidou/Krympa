@@ -77,8 +77,8 @@ How they are found without proving any lemma first:
 
 `direct` has no problem variants (big-step, small-step, abstracted): those are
 the questions `collect` asks about each lemma, and `direct` asks none.
-`--term-size` applies to its prover choice; the final refinement pass is part of
-`minimize` only.
+`--term-size` works as in `minimize`: it steers each choice between a Twee and a
+Vampire proof, and the final refinement pass runs on the best proof.
 
 Steps, all results checked in Lean (default prover options, macOS binaries,
 2026-11-20). "+ compress" is the result after `python/compress.py`, see below.
@@ -87,7 +87,7 @@ Steps, all results checked in Lean (default prover options, macOS binaries,
 |---|---|---|---|---|---|
 | 650 ⇒ 448 | 82 | 26 (29 in another run) | 19 | 22 | 18 |
 | 650 ⇒ 448, from the 62-step Vampire proof | 62 | 22 | 18 | 22 | 18 |
-| same, `--term-size` with final refinement | 62 | 19 | 16 | | |
+| same, `--term-size` with final refinement | 62 | 19 | 16 | 19 | 16 |
 | 470 ⇒ 3177 | 19 | 10 | 9 | 8 | 8 |
 | 524 ⇒ 608 | 8 | 6 | 5 | 5 | 5 |
 | 4514 ⇒ 4518 | 8 | 7 | 7 | 6 | 6 |

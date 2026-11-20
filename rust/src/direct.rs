@@ -17,8 +17,10 @@
 //!     with every equation of the first two segments available.
 
 use crate::alpha_match::formulas_match;
-use crate::execution::{execution_mode, ExecutionMode};
-use crate::minimize::{count_superposition_steps, proof_uses_lemma, prove_lemma};
+use crate::execution::{execution_mode, term_size_aware, ExecutionMode};
+use crate::minimize::{
+    count_superposition_steps, proof_uses_lemma, prove_lemma, refine_final_proof,
+};
 use crate::prover_wrapper::proof_length;
 use crate::regex_cache::cached_regex;
 use crate::superpose::{
@@ -311,10 +313,24 @@ pub fn try_direct(input_file: &str, vampire_file: &str) -> Result<String, String
     }
 
     // fewest steps; ties go to fewer segments, then to the earliest lemmas
-    let best = candidates
+    let mut best = candidates
         .into_iter()
         .min_by_key(|c| (c.total, c.arrival.is_some(), c.departure, c.arrival))
         .ok_or("No combination produced a proof.")?;
+
+    // With --term-size the final refinement of `minimize` applies here too.
+    if let (true, Some(arrival)) = (term_size_aware(), best.arrival) {
+        let statement = &all_steps[&arrival].formula;
+        match refine_final_proof(input_file, "", &best.proof, best.total, Some(statement)) {
+            Ok(Some((refined, steps))) => {
+                // the refinement keeps the first segment as it is
+                best.proof = refined;
+                best.total = steps;
+            }
+            Ok(None) => {}
+            Err(error) => crate::klog_warn!("[WARN] Final proof refinement skipped: {}", error),
+        }
+    }
 
     let suffix = extract_suffix(input_file);
     let output = format!("../output/proof_{}.out", suffix);
