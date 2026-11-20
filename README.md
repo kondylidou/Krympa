@@ -40,6 +40,10 @@ Commands executed in the pipeline:
 
 `run_vampire → collect → shorten → minimize`
 
+A shorter alternative is `run_vampire → direct`. It proves no lemmas in advance:
+each equation of the Vampire proof is tried as the single cut point, keeping
+Vampire's derivation up to it and proving the conjecture again from there.
+
 ---
 
 ## Running the Tool

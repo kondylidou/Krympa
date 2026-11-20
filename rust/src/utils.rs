@@ -193,7 +193,7 @@ pub fn select_actual_lemma(proofs_dir: &str, lemma_name: &str) -> Option<String>
 
         for suf in &suffixes {
             let filename_with_ext = format!("{}{}", base_name, suf);
-            let proof_path = format!("{}/{}", proofs_dir, &filename_with_ext);
+            let proof_path = format!("{}/{}", proofs_dir, filename_with_ext);
 
             if Path::new(&proof_path).exists() {
                 // strip the ".proof" extension for the returned value
@@ -524,13 +524,23 @@ pub fn create_tmp_copy(input_file: &str) -> Result<String, String> {
         .and_then(|s| s.to_str())
         .unwrap_or("p");
 
-    // Include process id + high-resolution timestamp so concurrent minimization attempts
-    // do not overwrite each other's temporary copies.
+    // Process id + timestamp + a per-process counter. The timestamp alone is not
+    // enough: the clock can have microsecond resolution, so two threads that start
+    // together would get the same name and read each other's problem and proof.
+    static NEXT_COPY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let serial = NEXT_COPY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| format!("Clock error: {}", e))?
         .as_nanos();
-    let unique_name = format!("{}_{}_{}.{}", file_stem, std::process::id(), nanos, ext);
+    let unique_name = format!(
+        "{}_{}_{}_{}.{}",
+        file_stem,
+        std::process::id(),
+        nanos,
+        serial,
+        ext
+    );
     let tmp_path: PathBuf = tmp_dir.join(unique_name);
 
     fs::copy(input_path, &tmp_path).map_err(|e| format!("Failed to copy temp input: {}", e))?;

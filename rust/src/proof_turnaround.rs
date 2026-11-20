@@ -472,7 +472,7 @@ fn drop_trivial_deps(steps: &mut BTreeMap<usize, SuperpositionStep>) {
         .filter_map(|&t| steps.get(&t).map(|s| (t, s.deps.clone())))
         .collect();
 
-    for (_, step) in steps.iter_mut() {
+    for step in steps.values_mut() {
         let mut new_deps: Vec<(usize, usize)> = Vec::new();
         for &(lvl, d) in &step.deps {
             if trivial.contains(&d) {

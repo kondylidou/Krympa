@@ -1,6 +1,7 @@
 pub mod alpha_match;
 pub mod core;
 pub mod dag;
+pub mod direct;
 pub mod execution;
 pub mod logging;
 pub mod minimize;

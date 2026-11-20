@@ -1,6 +1,6 @@
 use krympa::execution::{parse_execution_mode, set_execution_mode, set_term_size_aware};
 use krympa::utils::extract_suffix;
-use krympa::{core, minimize, run_vamp};
+use krympa::{core, direct, minimize, run_vamp};
 use std::env;
 
 fn main() {
@@ -11,7 +11,7 @@ fn main() {
 
     if args.is_empty() {
         krympa::klog_error!(
-            "Usage: krympa [--sequential|--parallel] [--term-size] [collect|shorten|group|minimize|run_vampire] <input_file>"
+            "Usage: krympa [--sequential|--parallel] [--term-size] [collect|shorten|group|minimize|direct|run_vampire] <input_file>"
         );
         krympa::klog_error!("Usage for benchmarking: benchmarking_binary <input_folder> <timeout_secs> [krympa_binary]");
         return;
@@ -70,6 +70,19 @@ fn main() {
                 }
             }
         }
+        "direct" => {
+            if args.len() < 2 {
+                krympa::klog_error!("Usage: krympa direct <input_file>");
+            } else {
+                let input_file = &args[1];
+                let suffix = extract_suffix(input_file);
+                let vampire_file = format!("../output/vampire_proof_{}.out", suffix);
+                match direct::try_direct(input_file, &vampire_file) {
+                    Ok(msg) => krympa::klog_info!("{}", msg),
+                    Err(err) => krympa::klog_error!("Error: {}", err),
+                }
+            }
+        }
         "run_vampire" => {
             if args.len() < 2 {
                 krympa::klog_error!("Usage: krympa run_vampire <input_file>");
@@ -83,7 +96,7 @@ fn main() {
             }
         }
         _ => krympa::klog_error!(
-            "Unknown command '{}'. Use 'collect', 'shorten', 'group', or 'minimize'",
+            "Unknown command '{}'. Use 'run_vampire', 'collect', 'shorten', 'group', 'minimize' or 'direct'",
             args[0]
         ),
     }
