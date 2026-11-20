@@ -1,3 +1,4 @@
+use crate::regex_cache::cached_regex;
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
@@ -118,7 +119,7 @@ fn parse_formula_with_bound(s: &str, bound: &mut BTreeSet<String>) -> Formula {
     }
 
     // quantifier head with OPTIONAL ":" so "? [sK0] ! [Y] : ..." parses.
-    let qre = Regex::new(r"^([!?])\s*\[([^\]]*)\]\s*(?::\s*)?(.*)$").unwrap();
+    let qre = cached_regex(r"^([!?])\s*\[([^\]]*)\]\s*(?::\s*)?(.*)$");
     if let Some(caps) = qre.captures(s) {
         let q = &caps[1];
         let vars: Vec<String> = caps[2]
@@ -161,10 +162,7 @@ fn parse_formula_with_bound(s: &str, bound: &mut BTreeSet<String>) -> Formula {
 fn parse_term(s: &str, bound: &BTreeSet<String>) -> Term {
     let s = s.trim();
 
-    if let Some(caps) = Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$")
-        .unwrap()
-        .captures(s)
-    {
+    if let Some(caps) = cached_regex(r"^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$").captures(s) {
         let f = caps[1].to_string();
         let args_str = &caps[2];
         let args: Vec<Term> = split_top_level(args_str, ',')
@@ -296,7 +294,7 @@ fn parse_inf_bracket(inf: &str) -> (String, Vec<usize>, bool) {
 /// Parse Vampire proof into steps (robust-ish)
 pub fn parse_vampire_proof(proof_text: &str) -> BTreeMap<usize, SuperpositionStep> {
     let mut steps_map = BTreeMap::new();
-    let line_re = Regex::new(r"^\s*(\d+)\s*[.]?\s*(.*)$").unwrap();
+    let line_re = cached_regex(r"^\s*(\d+)\s*[.]?\s*(.*)$");
 
     for line in proof_text.lines() {
         let line = line.trim();
@@ -637,7 +635,7 @@ fn flatten_quantifiers(f: Formula) -> Formula {
 /// Cosmetic but requested: rename bound variables that look like sK\d+ to X0,X1,...
 /// This is scope-safe (handles shadowing).
 fn rename_skolem_like_bound_vars(f: &Formula) -> Formula {
-    let sk_like = Regex::new(r"^sK\d+$").unwrap();
+    let sk_like = cached_regex(r"^sK\d+$");
     let mut counter: usize = 0;
 
     fn rename_term(t: &Term, env: &Vec<HashMap<String, String>>) -> Term {

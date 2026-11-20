@@ -1,6 +1,6 @@
 use crate::alpha_match::*;
+use crate::regex_cache::cached_regex;
 use crate::utils::*;
-use regex::Regex;
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -10,7 +10,7 @@ type FormulaMap = BTreeMap<String, String>;
 /// Parse DAG from file
 pub fn load_dag(dag_file: &str) -> DependencyGraph {
     let content = fs::read_to_string(dag_file).expect("Failed to read DAG file");
-    let re = Regex::new(r"^\s*(\S+)\s*->\s*\{([^}]*)\}").unwrap();
+    let re = cached_regex(r"^\s*(\S+)\s*->\s*\{([^}]*)\}");
     let mut dag = BTreeMap::new();
     for line in content.lines() {
         if let Some(cap) = re.captures(line) {

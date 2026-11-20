@@ -123,6 +123,8 @@ pub fn shorten_proofs(summary_file: &str) {
 
     let block_re = Regex::new(r"(?s)(fof\(lemma_(\d{4}),\s*lemma\s*,.*?\)\s*\.)").unwrap();
     // replace history lemmas with abstract formulas
+    // only files that actually change need to be proved again
+    let mut changed: Vec<u32> = Vec::new();
     for &history_file_num in &history_to_update {
         let history_file = format!(
             "{}/small-step/small_step_lemma_{:04}.p",
@@ -153,11 +155,23 @@ pub fn shorten_proofs(summary_file: &str) {
         if replaced_any {
             fs::write(&history_file, content)
                 .unwrap_or_else(|_| panic!("Failed to write {}", history_file));
+            changed.push(history_file_num);
         }
     }
 
+    // An unchanged file is the exact problem Phase 1 already solved, so proving
+    // it again can only reproduce the proof that is already in `proofs_dir`.
+    crate::klog_info!(
+        "[INFO] Small-step files changed by abstraction: {} of {}",
+        changed.len(),
+        history_to_update.len()
+    );
+    if changed.is_empty() {
+        return;
+    }
+
     // rerun provers on updated history files
-    let updated_files: Vec<String> = history_to_update
+    let updated_files: Vec<String> = changed
         .iter()
         .map(|n| format!("{}/small-step/small_step_lemma_{:04}.p", lemmas_dir, n))
         .collect();

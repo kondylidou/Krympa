@@ -1,5 +1,5 @@
+use crate::regex_cache::cached_regex;
 use itertools::Itertools;
-use regex::Regex;
 use std::collections::{BTreeMap, HashMap};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,7 +29,7 @@ fn is_var_atom(s: &str) -> bool {
 /// Output has all whitespace removed.
 pub fn normalize_formula_alpha(formula: &str) -> String {
     // regex to extract leading quantifier: ! [X,Y,...] : body
-    let quant_re = Regex::new(r"!\s*\[([^\]]*)\]\s*:\s*(.*)").unwrap();
+    let quant_re = cached_regex(r"!\s*\[([^\]]*)\]\s*:\s*(.*)");
 
     let mut normalized_body = if let Some(cap) = quant_re.captures(formula) {
         // extract quantified variables
@@ -39,7 +39,7 @@ pub fn normalize_formula_alpha(formula: &str) -> String {
         // replace each quantified variable consistently
         for (i, var) in vars.iter().enumerate() {
             let canon_var = format!("V{}", i);
-            let var_re = Regex::new(&format!(r"\b{}\b", regex::escape(var))).unwrap();
+            let var_re = cached_regex(&format!(r"\b{}\b", regex::escape(var)));
             body = var_re.replace_all(&body, canon_var.as_str()).to_string();
         }
 
@@ -49,7 +49,7 @@ pub fn normalize_formula_alpha(formula: &str) -> String {
     };
 
     // normalize any remaining X-style variables (unquantified)
-    let var_re = Regex::new(r"\bX\d+\b").unwrap();
+    let var_re = cached_regex(r"\bX\d+\b");
     let mut var_map: BTreeMap<String, String> = BTreeMap::new();
     let mut counter = 0usize;
 
@@ -183,12 +183,12 @@ pub fn formula_is_instance_of(general: &str, specific: &str) -> bool {
         Some(equation) => equation,
         None => return false,
     };
-    let matches = [(&sl, &sr), (&sr, &sl)].into_iter().any(|(left, right)| {
+    let matches_as = |left: &Term, right: &Term| {
         let mut substitution = HashMap::new();
         instance_matches(&gl, left, &mut substitution)
             && instance_matches(&gr, right, &mut substitution)
-    });
-    matches
+    };
+    matches_as(&sl, &sr) || matches_as(&sr, &sl)
 }
 
 fn instance_matches(
@@ -261,7 +261,7 @@ fn match_terms_alpha(
 /// Checks whether two formulas match modulo variable renaming (alpha-equivalence),
 /// including quantified variables at the top level.
 pub fn formulas_match_with_permutations(formula: &str, other_formula: &str) -> bool {
-    let quant_re = Regex::new(r"!\s*\[([^\]]*)\]\s*:\s*(.*)").unwrap();
+    let quant_re = cached_regex(r"!\s*\[([^\]]*)\]\s*:\s*(.*)");
 
     let (vars, body) = if let Some(cap) = quant_re.captures(formula) {
         let vars: Vec<String> = cap[1].split(',').map(|v| v.trim().to_string()).collect();
@@ -285,7 +285,7 @@ pub fn formulas_match_with_permutations(formula: &str, other_formula: &str) -> b
             let mut body_perm = body.clone();
             for (i, var) in perm.iter().enumerate() {
                 let canon_var = format!("V{}", i);
-                let var_re = Regex::new(&format!(r"\b{}\b", regex::escape(var))).unwrap();
+                let var_re = cached_regex(&format!(r"\b{}\b", regex::escape(var)));
                 body_perm = var_re
                     .replace_all(&body_perm, canon_var.as_str())
                     .to_string();

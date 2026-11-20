@@ -6,6 +6,7 @@ pub mod logging;
 pub mod minimize;
 pub mod proof_turnaround;
 pub mod prover_wrapper;
+pub mod regex_cache;
 pub mod run_vamp;
 pub mod superpose;
 pub mod utils;

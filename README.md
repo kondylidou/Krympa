@@ -120,6 +120,17 @@ Then run:
 
 Flags go before the subcommand: `./krympa --sequential --term-size minimize <input-file>`
 
+### Final proof refinement
+
+After a `--term-size` run has selected its best proof, one extra pass tries to
+shorten that proof further. Only this pass was contributed by Benjamin
+Przybocki; the term-size selection itself is unchanged. The pass splits out the
+internal lemma of the last Twee subproof, merges two consecutive rewrites by
+the same lemma into one superposition step, and accepts a derived equation that
+is more general than the lemma asked for. Its result is kept only if it has
+fewer steps. On `Equation650_implies_Equation448` it saves three steps
+(`lean/Proof/ts_proof_16.lean`).
+
 ---
 
 ### Utilities
@@ -140,6 +151,15 @@ Example:
 
 ```bash
 python3 ../python/tolean.py ../benchmarks/output/proof_Equation650_implies_Equation448.out
+```
+
+The Lean file is written to `lean/Proof/` and needs only core Lean. Each step
+is an explicit proof term and must be a single rewrite; otherwise it is left as
+`sorry` and the converter exits with status 2. The converter also prints how
+many steps rewrite a subterm and how many only instantiate an earlier equation.
+
+```bash
+cd ../lean && lake env lean Proof/proof_Equation650_implies_Equation448.lean
 ```
 
 ---

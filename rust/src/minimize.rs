@@ -2,11 +2,11 @@ use crate::alpha_match::{formulas_match, normalize_formula_alpha};
 use crate::dag::*;
 use crate::execution::{execution_mode, term_size_aware, ExecutionMode};
 use crate::prover_wrapper::*;
+use crate::regex_cache::cached_regex;
 use crate::run_vamp::run_vampire;
 use crate::superpose::*;
 use crate::utils::*;
 use rayon::prelude::*;
-use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -101,7 +101,7 @@ pub fn try_minimize(
     let max_candidates = 5;
 
     // select root candidates first (serial), then evaluate them in parallel.
-    let skolem_re = Regex::new(r"\bsK\d+\b").unwrap();
+    let skolem_re = cached_regex(r"\bsK\d+\b");
     let mut selected_roots: Vec<(String, String)> = Vec::new();
     while accepted < max_candidates && offset < max_key {
         let key = (max_key - offset).to_string();
@@ -1118,7 +1118,7 @@ fn refine_final_proof(
         return Ok(None);
     };
 
-    let step_re = Regex::new(r"(?m)^%\s*([A-Za-z_]*lemma_\d+):\s*(.*?)\s*\|\s*deps:").unwrap();
+    let step_re = cached_regex(r"(?m)^%\s*([A-Za-z_]*lemma_\d+):\s*(.*?)\s*\|\s*deps:");
     let mut axioms = step_re
         .captures_iter(&proof[..twee_start])
         .map(|capture| (capture[1].to_string(), capture[2].to_string()))
@@ -1126,7 +1126,7 @@ fn refine_final_proof(
     let Some(mut cut_proof) = compress_twee_cut(input_file, cut_text, &axioms)? else {
         return Ok(None);
     };
-    let header = Regex::new(r"(?m)^Lemma\s+(\d+):").unwrap();
+    let header = cached_regex(r"(?m)^Lemma\s+(\d+):");
     cut_proof = header
         .replacen(&cut_proof, 1, format!("Lemma $1 ({}):", cut_name))
         .to_string();
@@ -1134,7 +1134,7 @@ fn refine_final_proof(
     let cut_axiom = (cut_name.clone(), normalize_formula_alpha(cut_formula));
     axioms.push(cut_axiom.clone());
 
-    let goal_re = Regex::new(r"Goal\s+\d+\s+\(([^)]+)\)").unwrap();
+    let goal_re = cached_regex(r"Goal\s+\d+\s+\(([^)]+)\)");
     let Some(goal_name) = goal_re
         .captures(twee)
         .and_then(|capture| capture.get(1))
@@ -1188,7 +1188,7 @@ fn compress_twee_cut(
     axioms: &[(String, String)],
 ) -> Result<Option<String>, String> {
     let lines = proof.lines().collect::<Vec<_>>();
-    let cite = Regex::new(r"by\s+(?:axiom|lemma)\s+\d+(?:\s+\(([^)]+)\))?").unwrap();
+    let cite = cached_regex(r"by\s+(?:axiom|lemma)\s+\d+(?:\s+\(([^)]+)\))?");
     let source = |line: &str| {
         cite.captures(line)
             .and_then(|capture| capture.get(1).or_else(|| capture.get(0)))
@@ -1242,12 +1242,64 @@ fn vampire_proves_in_one_step(
     promote_axiom_to_conjecture(&candidate, "local_shortcut")?;
     let proof = crate::prover_wrapper::run_vampire(&candidate).unwrap_or_default();
     let _ = fs::remove_file(candidate);
-    Ok(proof.contains("SZS status Theorem")
-        && proof
-            .lines()
-            .filter(|line| line.contains("superposition") || line.contains("demodulation"))
-            .count()
-            == 1)
+    Ok(proof.contains("SZS status Theorem") && is_single_rewrite_refutation(&proof))
+}
+
+/// True if a Vampire refutation rewrites exactly once.
+///
+/// A merged step is counted as one proof step, so its justification must have
+/// the shape of every other superposition step: one rewrite (superposition or
+/// demodulation), after which the goal is closed by an instance of an equation
+/// that is already available. Every inference in the refutation must therefore
+/// be either preprocessing, that single rewrite, or such a closing step. Any
+/// other inference rule makes the check fail, so an unknown rule can never be
+/// mistaken for "no work".
+pub fn is_single_rewrite_refutation(proof: &str) -> bool {
+    const REWRITES: [&str; 3] = [
+        "superposition",
+        "forward demodulation",
+        "backward demodulation",
+    ];
+    const NO_REWRITE: [&str; 17] = [
+        "input",
+        "negated conjecture",
+        "ennf transformation",
+        "nnf transformation",
+        "rectify",
+        "flattening",
+        "skolemisation",
+        "choice axiom",
+        "skolem symbol introduction",
+        "cnf transformation",
+        "trivial inequality removal",
+        "subsumption resolution",
+        "forward subsumption resolution",
+        "backward subsumption resolution",
+        "resolution",
+        "unit resulting resolution",
+        "equality resolution",
+    ];
+    let step_re = cached_regex(r"^\d+\.\s.*\[([^\[\]]*)\]\s*$");
+    let mut rewrites = 0;
+    for line in proof.lines() {
+        let Some(caps) = step_re.captures(line.trim()) else {
+            continue;
+        };
+        // "superposition 8,7" -> "superposition"; "input(axiom)" -> "input"
+        let tag = caps[1].trim();
+        let rule = tag
+            .trim_end_matches(|c: char| c.is_ascii_digit() || c == ',' || c == ' ')
+            .split('(')
+            .next()
+            .unwrap_or("")
+            .trim();
+        if REWRITES.contains(&rule) {
+            rewrites += 1;
+        } else if !NO_REWRITE.contains(&rule) {
+            return false;
+        }
+    }
+    rewrites == 1
 }
 
 /// Proves a lemma using Twee and Vampire, selecting the shorter proof.
@@ -1327,8 +1379,10 @@ fn prove_lemma_matching(
     // 6. Run provers
     let twee_proof = run_twee(&tmp_path);
     let vampire_proof_file = format!("{}.vampire_proof", tmp_path);
-    run_vampire(&tmp_path, &vampire_proof_file);
-    let vampire_proof_exists = Path::new(&vampire_proof_file).exists();
+    // Without this check a Vampire run that fails (timeout, give-up, rejected
+    // input) would be read below as a proof with zero steps.
+    let vampire_proved = run_vampire(&tmp_path, &vampire_proof_file);
+    let vampire_proof_exists = vampire_proved && Path::new(&vampire_proof_file).exists();
 
     // 7. Select shorter proof (or better proof when --term-size-aware is on)
     let result: Option<(String, usize, String)> = match (twee_proof, vampire_proof_exists) {
@@ -1572,7 +1626,7 @@ fn fallback_proof(
 ///
 pub fn proof_uses_lemma(lemma_any_variant: &str, segments: &[&str]) -> bool {
     // extract trailing digits
-    let num_re = Regex::new(r"(\d+)\s*$").unwrap();
+    let num_re = cached_regex(r"(\d+)\s*$");
     let Some(cap) = num_re.captures(lemma_any_variant.trim()) else {
         return false;
     };
@@ -1594,31 +1648,28 @@ pub fn proof_uses_lemma(lemma_any_variant: &str, segments: &[&str]) -> bool {
         .join("|");
 
     // 1) Present as an axiom: "Axiom 1 (single_lemma_0025): ..."
-    let axiom_re = Regex::new(&format!(
+    let axiom_re = cached_regex(&format!(
         r"(?m)^\s*Axiom\s+\d+\s*\(\s*(?:{})\s*\)\s*:",
         alts
-    ))
-    .unwrap();
+    ));
 
     // 2) Mentioned in deps (deps-only; does NOT match "% lemma_xxxx:" headers)
     // Handles:
     //   "| deps: lemma_0002, lemma_0003"
     //   "| deps: lemma_0003: <formula>, ..."
-    let deps_re = Regex::new(&format!(
+    let deps_re = cached_regex(&format!(
         r"(?mi)\|\s*deps\s*:\s*[^|\n]*\b(?:{})\b(?:\s*:)?",
         alts
-    ))
-    .unwrap();
+    ));
 
     // 3) Proof-step citations (should be handled by the above)
     // Matches:
     //   "= { by axiom 2 (lemma_0003) }"
     //   "= { by lemma 5 (history_lemma_0061) R->L }"
-    let cite_re = Regex::new(&format!(
+    let cite_re = cached_regex(&format!(
         r"(?mi)\bby\s+(?:axiom|lemma)\s+\d+\s*\(\s*(?:{})\s*\)",
         alts
-    ))
-    .unwrap();
+    ));
 
     segments
         .iter()
@@ -1628,13 +1679,12 @@ pub fn proof_uses_lemma(lemma_any_variant: &str, segments: &[&str]) -> bool {
 /// Keep only those lemmas in `block` that are required to derive
 /// the lemmas referenced in later segments
 pub fn trim_superposition_block(block: &str, later_segments: &[&str]) -> String {
-    let header_re = Regex::new(r"(?m)^\s*%\s*===\s*Superposition Steps\s*===\s*$").unwrap();
+    let header_re = cached_regex(r"(?m)^\s*%\s*===\s*Superposition Steps\s*===\s*$");
 
     let lemma_line_re =
-        Regex::new(r#"(?m)^\s*%\s*([A-Za-z_]*lemma_\d+)\s*:\s*(.*?)\s*(?:\|\s*deps:\s*(.*))?$"#)
-            .unwrap();
+        cached_regex(r#"(?m)^\s*%\s*([A-Za-z_]*lemma_\d+)\s*:\s*(.*?)\s*(?:\|\s*deps:\s*(.*))?$"#);
 
-    let dep_name_re = Regex::new(r"\b[A-Za-z_]*lemma_\d+\b").unwrap();
+    let dep_name_re = cached_regex(r"\b[A-Za-z_]*lemma_\d+\b");
 
     // parse block order + deps
     let mut order: Vec<String> = Vec::new();
@@ -1725,7 +1775,7 @@ pub fn trim_superposition_block(block: &str, later_segments: &[&str]) -> String 
 }
 
 pub fn count_superposition_steps(block: &str) -> usize {
-    let lemma_line_re = Regex::new(r"(?m)^\s*%\s*[A-Za-z_]*lemma_\d+\s*:").unwrap();
+    let lemma_line_re = cached_regex(r"(?m)^\s*%\s*[A-Za-z_]*lemma_\d+\s*:");
     lemma_line_re.find_iter(block).count()
 }
 
@@ -1742,7 +1792,7 @@ enum FreezeBefore {
 fn has_bleed(text: &str) -> Option<u32> {
     // Require a colon after the number to avoid matching inside other tokens.
     // Also require a word boundary before `a_` so we don't match `lemma_a_0002` etc.
-    let re = Regex::new(r"\ba_(\d+)\s*:").unwrap();
+    let re = cached_regex(r"\ba_(\d+)\s*:");
     for cap in re.captures_iter(text) {
         if let Ok(n) = cap[1].parse::<u32>() {
             if n != 1 {

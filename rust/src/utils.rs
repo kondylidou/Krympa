@@ -1,6 +1,6 @@
 use crate::alpha_match::normalize_formula_alpha;
 use crate::prover_wrapper::proof_length;
-use regex::Regex;
+use crate::regex_cache::cached_regex;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -143,8 +143,11 @@ pub fn append_as_axiom(file_path: &str, formula: &str, lemma_name: &str) {
     let quantified_formula = if formula.starts_with("!") {
         formula.to_string()
     } else {
-        // detect variables: uppercase X<number>
-        let var_re = Regex::new(r"\b(X\d+)\b").unwrap();
+        // In TPTP every identifier starting with an uppercase letter is a
+        // variable. Formulas reach this point with Vampire names (X0), Twee
+        // names (X, Y) or normalized names (V0); all of them must be bound,
+        // because Vampire 5 and Twee reject formulas with free variables.
+        let var_re = cached_regex(r"\b([A-Z][A-Za-z0-9_]*)\b");
         let mut vars: BTreeSet<String> = BTreeSet::new();
 
         for cap in var_re.captures_iter(formula) {
@@ -210,11 +213,11 @@ pub fn select_actual_lemma(proofs_dir: &str, lemma_name: &str) -> Option<String>
 
 /// Extract all Twee-generated lemmas from a proof output
 pub fn extract_twee_lemmas(twee_output: &str) -> Vec<(String, String)> {
-    let lemma_re = Regex::new(r"(?s)Lemma\s+(\d+):\s*(.*?)Proof:").unwrap();
+    let lemma_re = cached_regex(r"(?s)Lemma\s+(\d+):\s*(.*?)Proof:");
     let mut result = Vec::new();
 
     // detect variables (all uppercase words)
-    let var_re = Regex::new(r"\b([A-Z][0-9]*)\b").unwrap();
+    let var_re = cached_regex(r"\b([A-Z][0-9]*)\b");
     for cap in lemma_re.captures_iter(twee_output) {
         let index: usize = cap[1].parse().unwrap();
         let body = cap[2].trim();
@@ -257,8 +260,8 @@ pub fn parse_used_lemmas(
     lemmas_dir: &str,
     proofs_dir: &str,
 ) -> Result<Vec<(String, String)>, String> {
-    let axiom_re = Regex::new(r"Axiom\s+\d+\s+\(([^)]+)\)\s*:\s*(.+)").unwrap();
-    let goal_re = Regex::new(r"Goal\s+\d+\s+\(([^)]+)\)\s*:\s*(.+)").unwrap();
+    let axiom_re = cached_regex(r"Axiom\s+\d+\s+\(([^)]+)\)\s*:\s*(.+)");
+    let goal_re = cached_regex(r"Goal\s+\d+\s+\(([^)]+)\)\s*:\s*(.+)");
 
     let mut used = Vec::new();
 
@@ -462,8 +465,7 @@ pub fn promote_axiom_to_conjecture(path: &str, root_lemma: &str) -> Result<(), S
     let content = fs::read_to_string(path).map_err(|e| format!("read error: {}", e))?;
 
     // regex to match top-level fof/cnf blocks
-    let r_fof = Regex::new(r"(?is)^\s*fof\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,(.*?)\)\s*\.\s*$")
-        .map_err(|e| format!("regex error: {}", e))?;
+    let r_fof = cached_regex(r"(?is)^\s*fof\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,(.*?)\)\s*\.\s*$");
 
     let mut out_blocks = Vec::new();
 

@@ -1,7 +1,7 @@
 use crate::alpha_match::{formula_is_instance_of, formulas_match};
 use crate::dag::load_dag;
+use crate::regex_cache::cached_regex;
 use crate::utils::*;
-use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
@@ -425,7 +425,7 @@ pub fn extend_with_superposition_steps(
 
 /// Find the lemma indices already present in dependencies
 fn used_lemma_numbers(axioms: &Vec<(String, String)>) -> BTreeSet<usize> {
-    let re = Regex::new(r"(?:small_step_|big_step_|abstracted_)?lemma_(\d+)").unwrap();
+    let re = cached_regex(r"(?:small_step_|big_step_|abstracted_)?lemma_(\d+)");
     let mut used = BTreeSet::new();
 
     for (name, _) in axioms {
