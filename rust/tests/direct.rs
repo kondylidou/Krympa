@@ -1,4 +1,4 @@
-use krympa::direct::keep_needed;
+use krympa::direct::{keep_needed, shift_lemma_numbers};
 
 const BLOCK: &str = "\
 % === Superposition Steps ===
@@ -20,4 +20,13 @@ fn keeps_only_what_the_later_proof_needs() {
 #[test]
 fn keeps_nothing_when_nothing_is_used() {
     assert_eq!(keep_needed(BLOCK, "Axiom 1 (a1): op(X, X) = X.\n"), "");
+}
+
+#[test]
+fn shifting_renumbers_small_lemma_numbers_only() {
+    let text = "% lemma_0003: X0 = X1 | deps: lemma_0001, lemma_9001, small_step_lemma_0007";
+    assert_eq!(
+        shift_lemma_numbers(text, 5000),
+        "% lemma_5003: X0 = X1 | deps: lemma_5001, lemma_9001, small_step_lemma_0007"
+    );
 }

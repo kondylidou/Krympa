@@ -788,27 +788,31 @@ pub fn try_minimize(
                 extra_dependencies.push((n_history_lemma.to_string(), n_formula.clone()));
 
                 // 6. Compute n_history_proof
-                let Some((n_history_proof, n_history_proof_steps, n_history_proved_by)) =
-                    prove_lemma(
+                // If the start block already derives the history lemma, its proof is
+                // not part of the output. It must then not be computed either: the
+                // equations a Vampire proof introduces would be handed to the next
+                // provers as axioms, and the final proof would cite equations that
+                // are derived nowhere.
+                let (n_history_proof, n_history_proof_steps, n_history_proved_by) = if prove_history
+                {
+                    let Some(proved) = prove_lemma(
                         input_file,
                         &lemmas_dir,
-                        // if use_superposition {
-                        //     Some((superposition_steps, input_formulas)) // TODO maybe this is dupl information and we don't need this
-                        // } else {
-                        //     None
-                        // },
                         if use_superposition {
                             None
                         } else {
                             Some(&dependencies) // if we don't use superposition the dependencies are here
                         },
-                        //vec![(&n_history_lemma, &n_formula)],
                         &mut extra_dependencies, // this now includes the new superposition steps after renaming
                         Some(n_history_lemma),
                     )?
-                else {
-                    // no proof -> skip this candidate
-                    continue;
+                    else {
+                        // no proof -> skip this candidate
+                        continue;
+                    };
+                    proved
+                } else {
+                    (String::new(), 0, "superposition".to_string())
                 };
 
                 extra_dependencies.push((root_lemma.to_string(), root_formula.clone()));
@@ -1356,7 +1360,11 @@ fn prove_lemma_matching(
     let (c_name, c_formula) = if let Some(s) = conjecture {
         let s = s.to_string();
         promote_axiom_to_conjecture(&tmp_path, &s)?;
-        let formula = load_lemma(lemmas_dir, &s).map_err(|_| format!("Cannot load lemma {}", s))?;
+        // Without a lemma directory the statement is the one given in `axioms`.
+        let formula = match axioms.iter().find(|(name, _)| name == &s) {
+            Some((_, formula)) if lemmas_dir.is_empty() => formula.clone(),
+            _ => load_lemma(lemmas_dir, &s).map_err(|_| format!("Cannot load lemma {}", s))?,
+        };
         (s, formula)
     } else {
         let formula = extract_conjecture_from_file(input_file)?;

@@ -44,6 +44,9 @@ pub fn run_vampire(input_file: &str, output_file: &str) -> bool {
     let vampire_bin = Path::new(vampire_bin_name);
 
     let output = Command::new(vampire_bin)
+        .args(crate::prover_wrapper::extra_options(
+            "KRYMPA_VAMPIRE_OPTIONS",
+        ))
         .arg(input_file)
         .output()
         .expect("Failed to run Vampire");

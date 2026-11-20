@@ -40,9 +40,9 @@ Commands executed in the pipeline:
 
 `run_vampire → collect → shorten → minimize`
 
-A shorter alternative is `run_vampire → direct`. It proves no lemmas in advance:
-each equation of the Vampire proof is tried as the single cut point, keeping
-Vampire's derivation up to it and proving the conjecture again from there.
+A shorter alternative is `run_vampire → direct`. It builds the same three
+segments (departure lemma, arrival lemma, conjecture) but proves no lemmas in
+advance. See `DEVELOPERS.md`.
 
 ---
 
@@ -121,6 +121,7 @@ Then run:
 |---|---|---|
 | `--parallel` / `--sequential` | parallel | Execution mode |
 | `--term-size` | off | Prefer proofs with smaller average term size over slightly longer proofs |
+| `KRYMPA_VAMPIRE_OPTIONS`, `KRYMPA_TWEE_OPTIONS` | unset | Environment variables: extra options for every Vampire / Twee call, e.g. `KRYMPA_VAMPIRE_OPTIONS="-sa discount"` |
 
 Flags go before the subcommand: `./krympa --sequential --term-size minimize <input-file>`
 
@@ -144,6 +145,15 @@ fewer steps. On `Equation650_implies_Equation448` it saves three steps
 ```bash
 python3 ../python/summarize.py ../benchmarks/output_logs
 ```
+
+#### Remove avoidable steps
+
+```bash
+python3 ../python/compress.py /path/to/output_proof_file
+```
+
+Writes `<name>_compressed.out`: superposition steps that can be bypassed with a
+single rewrite are removed. No prover is called.
 
 #### Convert proof to Lean
 

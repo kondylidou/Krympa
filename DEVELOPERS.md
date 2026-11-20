@@ -43,6 +43,96 @@ Strictly fewer steps still always wins.
 ./krympa --sequential --term-size minimize <input-file>
 ```
 
+## Direct Minimization (without `collect`)
+
+`collect` proves every lemma of the Vampire proof six times (three problem
+variants, two provers) to learn which lemmas can be reached from which, and
+`minimize` uses that to choose a departure and an arrival lemma. `direct` builds
+the same three segments but needs only the Vampire proof:
+
+```bash
+./krympa run_vampire "$INPUT"
+./krympa direct "$INPUT"
+```
+
+The three segments are the ones of `minimize`:
+
+1. axioms → departure lemma: Vampire's own derivation, taken as it is;
+2. departure lemma → arrival lemma: proved again by Twee and Vampire;
+3. arrival lemma → conjecture: proved again by Twee and Vampire.
+
+How they are found without proving any lemma first:
+
+1. Every equation Vampire derived is tried as departure lemma of a proof with
+   two segments: its derivation, then the conjecture proved from it. Equations
+   derived from the negated conjecture are excluded, so the conjecture cannot
+   be used to prove itself.
+2. The 15 departures that did best are combined with each of the last 5
+   equations of the Vampire proof as arrival lemma.
+3. For the 10 best combinations the last segment is proved once more with every
+   equation of the first two segments available.
+4. In every candidate, lines of an earlier segment that the later ones do not
+   use are dropped. The candidate with the fewest steps is written to
+   `../output/proof_<name>.out` in the format of `minimize`.
+
+`direct` has no problem variants (big-step, small-step, abstracted): those are
+the questions `collect` asks about each lemma, and `direct` asks none.
+`--term-size` applies to its prover choice; the final refinement pass is part of
+`minimize` only.
+
+Steps, all results checked in Lean (default prover options, macOS binaries,
+2026-11-20). "+ compress" is the result after `python/compress.py`, see below.
+
+| Problem | Vampire | `minimize` | + compress | `direct` | + compress |
+|---|---|---|---|---|---|
+| 650 ⇒ 448 | 82 | 26 (29 in another run) | 19 | 22 | 18 |
+| 650 ⇒ 448, from the 62-step Vampire proof | 62 | 22 | 18 | 22 | 18 |
+| same, `--term-size` with final refinement | 62 | 19 | 16 | | |
+| 470 ⇒ 3177 | 19 | 10 | 9 | 8 | 8 |
+| 524 ⇒ 608 | 8 | 6 | 5 | 5 | 5 |
+| 4514 ⇒ 4518 | 8 | 7 | 7 | 6 | 6 |
+| 451 ⇒ 460 | 3 | 4 | 4 | 3 | 3 |
+| 487 ⇒ 463 | 3 | 4 | 4 | 3 | 2 |
+| 635 ⇒ 852 | 2 | 3 | 3 | 2 | 2 |
+| 500 ⇒ 528 | 3 | 3 | 3 | 3 | 3 |
+| 547 ⇒ 691 | 6 | 3 | 3 | 3 | 3 |
+
+On 650 ⇒ 448 `direct` takes 50 to 60 s; `collect`, `shorten` and `minimize`
+together take 145 to 180 s. From the 62-step proof `direct` picks the same
+departure and arrival lemma as `minimize`.
+
+## Removing Avoidable Steps
+
+```bash
+python3 ../python/compress.py ../output/proof_<name>.out
+python3 ../python/tolean.py ../output/proof_<name>_compressed.out
+```
+
+The first segment is copied from the Vampire proof, and Vampire often reaches an
+equation by a detour. `compress.py` removes a superposition line when every step
+that uses it can be derived in one rewrite from the other equations instead, and
+then removes the lines nothing needs any more. It calls no prover: it uses the
+one-rewrite search of `tolean.py`. Twee rewrite chains are left as they are. It
+works on the output of `minimize` and of `direct`.
+
+Example: in the 22-step proof of 650 ⇒ 448, one lemma is derived through three
+Vampire steps although it follows in one rewrite from its neighbour and the
+axiom. Removing that detour, and one more line, gives 18 steps.
+
+## Prover Options
+
+`KRYMPA_VAMPIRE_OPTIONS` and `KRYMPA_TWEE_OPTIONS` add options to every call of
+that prover, in every phase. Unset, the provers run as before.
+
+```bash
+KRYMPA_VAMPIRE_OPTIONS="-sa discount" ./krympa run_vampire "$INPUT"
+KRYMPA_VAMPIRE_OPTIONS="-sa discount" ./krympa direct "$INPUT"
+```
+
+Set the same value for all phases of one run. Vampire's default strategy
+(`lrs`) depends on elapsed time, so the same problem can give different proofs
+on a loaded machine; `-sa discount` does not have this problem.
+
 ## Logging
 
 Controlled by `KRYMPA_LOG`:

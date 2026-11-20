@@ -80,12 +80,29 @@ fn twee_path() -> String {
         .to_string()
 }
 
+/// Extra command-line options for a prover, read from an environment variable
+/// (`KRYMPA_VAMPIRE_OPTIONS`, `KRYMPA_TWEE_OPTIONS`) and split on whitespace.
+/// Unset or empty means the prover runs exactly as before.
+pub fn extra_options(variable: &str) -> Vec<String> {
+    env::var(variable)
+        .map(|value| value.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
 pub fn run_vampire(file: &str) -> Option<String> {
-    run_external_prover(&vampire_path(), &["--input_syntax", "tptp", file])
+    let extra = extra_options("KRYMPA_VAMPIRE_OPTIONS");
+    let mut args = vec!["--input_syntax", "tptp"];
+    args.extend(extra.iter().map(String::as_str));
+    args.push(file);
+    run_external_prover(&vampire_path(), &args)
 }
 
 pub fn run_twee(file: &str) -> Option<String> {
-    run_external_prover(&twee_path(), &["--quiet", file])
+    let extra = extra_options("KRYMPA_TWEE_OPTIONS");
+    let mut args = vec!["--quiet"];
+    args.extend(extra.iter().map(String::as_str));
+    args.push(file);
+    run_external_prover(&twee_path(), &args)
 }
 
 /// Count Vampire proof steps, ignoring input/negated conjecture lines

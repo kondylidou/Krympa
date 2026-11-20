@@ -513,6 +513,7 @@ class Converter:
         self.block_axioms = {}   # (block, number) -> Fact
         self.block_lemmas = {}   # (block, number) -> Fact
         self.uses = {}           # Fact -> facts its proof cites
+        self.item_of = {}        # Fact -> the proof-file item it was built from
         self.labels = {}         # Fact -> name in the Krympa proof
         self.counter = 0
         self.steps = 0
@@ -596,6 +597,7 @@ class Converter:
     def convert_line(self, item):
         name = item["name"]
         fact = self.new_fact(*parse_equation(item["formula"]))
+        self.item_of[fact] = item
         deps, missing = [], []
         for dep_name, formula in item["deps"]:
             if canon(dep_name) == canon(name) or dep_name.startswith("conjecture"):
@@ -656,6 +658,7 @@ class Converter:
         label = item["name"] or f"Lemma {item['number']} (block {item['block']})"
         lhs, rhs = parse_equation(item["formula"])
         fact = self.new_fact(lhs, rhs)
+        self.item_of[fact] = item
         order = term_vars(rhs, term_vars(lhs))
         mapping = {v: fresh_name(i) for i, v in enumerate(order)}
         default = fact.vars[0] if fact.vars else "x"
