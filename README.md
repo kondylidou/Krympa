@@ -18,6 +18,7 @@ the accompanying paper:
 
 * Python 3
 * A Unix environment (Linux or macOS)
+* Lean 4, only to check exported proofs (see `lean/README.md`)
 
 ---
 
@@ -127,8 +128,8 @@ Flags go before the subcommand: `./krympa --sequential --term-size minimize <inp
 
 ### Final proof refinement
 
-After a `--term-size` run has selected its best proof, one extra pass tries to
-shorten that proof further. Only this pass was contributed by Benjamin
+After a `--term-size` run (`minimize` or `direct`) has selected its best proof,
+one extra pass tries to shorten that proof further. Only this pass was contributed by Benjamin
 Przybocki; the term-size selection itself is unchanged. The pass splits out the
 internal lemma of the last Twee subproof, merges two consecutive rewrites by
 the same lemma into one superposition step, and accepts a derived equation that

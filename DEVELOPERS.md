@@ -4,7 +4,8 @@
 
 - `rust/` — main Krympa implementation and binaries
 - `shell/` — helper scripts for running one problem or the full benchmark suite
-- `python/` — input-generation and output-conversion helpers
+- `python/` — input generation, log summary, step removal (`compress.py`) and Lean export (`tolean.py`)
+- `lean/` — Lean project used to check exported proofs
 - `benchmarks/` — Lean benchmark files and generated benchmark inputs
 - `ocaml/` — lemma extractor / parser support
 
@@ -16,7 +17,9 @@ From `rust/`:
 ./build.sh
 ```
 
-Produces `rust/krympa` and `rust/benchmarking_binary`.
+Produces `rust/krympa` and `rust/benchmarking_binary` as optimized (release)
+builds. The build also compiles the OCaml lemma extractor, so `dune` must be
+installed.
 
 ## Execution Modes
 
@@ -41,7 +44,11 @@ Strictly fewer steps still always wins.
 ```bash
 ./krympa --term-size minimize <input-file>
 ./krympa --sequential --term-size minimize <input-file>
+./krympa --term-size direct <input-file>
 ```
+
+With `--term-size`, `minimize` and `direct` also run the final refinement pass
+on their best proof (described in `README.md`).
 
 ## Direct Minimization (without `collect`)
 
@@ -154,6 +161,8 @@ run_vampire  →  collect  →  shorten  →  minimize
 
 Optional analysis step: `group`.
 
+Alternative without `collect` and `shorten`: `run_vampire → direct`, see above.
+
 ### Manual run (parallel, default)
 
 ```bash
@@ -213,11 +222,13 @@ From `rust/`:
 
 ```bash
 cargo fmt
-cargo build
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-CI enforces formatting — always run `cargo fmt` before committing.
+CI runs these three checks and fails on any formatting difference or clippy
+warning. It uses the latest stable Rust, so a newer clippy there can flag code
+that passes locally; `rustup update stable` avoids the surprise.
 
 ## Clean Build Artifacts
 

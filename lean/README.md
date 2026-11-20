@@ -1,13 +1,26 @@
-# proof
+# Lean proofs
 
-## GitHub configuration
+Lean project used to check Krympa proofs. From this directory:
 
-To set up your new GitHub repository, follow these steps:
+```bash
+lake env lean Proof/<file>.lean
+```
 
-* Under your repository name, click **Settings**.
-* In the **Actions** section of the sidebar, click "General".
-* Check the box **Allow GitHub Actions to create and approve pull requests**.
-* Click the **Pages** section of the settings sidebar.
-* In the **Source** dropdown menu, select "GitHub Actions".
+No output and exit status 0 means the proof is accepted.
 
-After following the steps above, you can remove this section from the README file.
+## Files in `Proof/`
+
+| File | Theorem | Notes |
+|---|---|---|
+| `proof.lean` | Equation650 ⇒ Equation448 | Krympa proof |
+| `ts_proof.lean` | Equation650 ⇒ Equation448 | `--term-size` proof, 19 steps |
+| `ts_proof_16.lean` | Equation650 ⇒ Equation448 | `--term-size` proof after the final refinement, 16 steps |
+| `secondproof.lean` | Equation947 ⇒ Equation3897 | Krympa proof |
+
+These four use `nth_rw` and need Mathlib.
+
+## Generated files
+
+`python3 ../python/tolean.py <proof.out>` writes `Proof/<name>.lean` here. A
+generated file needs only core Lean: every step is an explicit proof term, so
+Lean checks it in a few seconds without searching. See the main `README.md`.
