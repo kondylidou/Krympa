@@ -5,8 +5,8 @@
 #
 #   The options are passed on to krympa.
 #
-# After Krympa has finished, the proof is converted to Lean and checked, the
-# avoidable steps are removed, and the shorter proof is checked as well.
+# The proof is checked in Lean, then its avoidable steps are removed and the
+# shorter proof is checked as well.
 
 FLAGS=()
 INPUT=""
@@ -33,36 +33,15 @@ if [ ! -x ./krympa ]; then
   exit 1
 fi
 
-./krympa "${FLAGS[@]}" "$INPUT" || exit 1
-
-# Convert a proof to Lean and check it. Prints one verdict line.
-check() {
-  local proof="$1" base lean_file
-  base="$(basename "$proof" .out)"
-  lean_file="$ROOT/lean/Proof/$base.lean"
-  python3 "$ROOT/python/tolean.py" "$proof" | sed -n '2,$p'
-  if ! command -v lean > /dev/null; then
-    echo "  Lean: not installed, proof not checked"
-    return 1
-  fi
-  if (cd "$ROOT/lean" && lean "$lean_file" > "$lean_file.log" 2>&1) && [ ! -s "$lean_file.log" ]; then
-    rm -f "$lean_file.log"
-    echo "  Lean: accepted ($lean_file)"
-  else
-    echo "  Lean: NOT accepted, see $lean_file.log"
-    return 1
-  fi
-}
-
-STATUS=0
-echo
 echo "== Krympa proof: $PROOF"
-check "$PROOF" || STATUS=1
+./krympa "${FLAGS[@]}" --lean "$INPUT"
+case $? in
+  0) STATUS=0 ;;
+  *) [ -f "$PROOF" ] || exit 1; STATUS=1 ;;
+esac
 
 COMPRESSED="${PROOF%.out}_compressed.out"
 echo
 echo "== After removing avoidable steps: $COMPRESSED"
-if python3 "$ROOT/python/compress.py" "$PROOF" "$COMPRESSED" | sed -n '1p'; then
-  [ -f "$COMPRESSED" ] && { check "$COMPRESSED" || STATUS=1; }
-fi
+./krympa compress "$PROOF" && ./krympa lean "$COMPRESSED" || STATUS=1
 exit $STATUS

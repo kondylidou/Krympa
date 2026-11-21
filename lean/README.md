@@ -21,6 +21,6 @@ These four use `nth_rw` and need Mathlib.
 
 ## Generated files
 
-`python3 ../python/tolean.py <proof.out>` writes `Proof/<name>.lean` here. A
-generated file needs only core Lean: every step is an explicit proof term, so
+`./krympa lean <proof.out>` (from `rust/`) or a run with `--lean` writes
+`Proof/<name>.lean` here and checks it. A generated file needs only core Lean: every step is an explicit proof term, so
 Lean checks it in a few seconds without searching. See the main `README.md`.

@@ -60,21 +60,23 @@ fn request(args: &[&str]) -> Result<krympa::execution::Request, String> {
 
 #[test]
 fn a_problem_file_alone_asks_for_the_whole_run() {
-    use krympa::execution::Request;
+    use krympa::execution::{Request, WholeRun};
     assert_eq!(
         request(&["p.p"]),
         Ok(Request::Whole {
             input: "p.p".into(),
-            direct: false,
-            lean: false
+            options: WholeRun::default()
         })
     );
     assert_eq!(
-        request(&["--lean", "p.p", "--direct"]),
+        request(&["--lean", "p.p", "--direct", "--compress"]),
         Ok(Request::Whole {
             input: "p.p".into(),
-            direct: true,
-            lean: true
+            options: WholeRun {
+                direct: true,
+                compress: true,
+                lean: true
+            }
         })
     );
 }
@@ -92,12 +94,25 @@ fn a_phase_name_asks_for_that_phase_only() {
 }
 
 #[test]
+fn lean_and_compress_work_on_a_proof_file() {
+    use krympa::execution::Request;
+    assert_eq!(
+        request(&["compress", "proof_p.out"]),
+        Ok(Request::Tool {
+            tool: "compress".into(),
+            proof: "proof_p.out".into()
+        })
+    );
+}
+
+#[test]
 fn malformed_requests_are_rejected() {
     assert!(request(&[]).is_err());
     assert!(request(&["collect"]).is_err());
+    assert!(request(&["lean"]).is_err());
     assert!(request(&["prove", "p.p"]).is_err());
     assert!(request(&["--direct", "minimize", "p.p"]).is_err());
-    assert!(request(&["--lean", "minimize", "p.p"]).is_err());
+    assert!(request(&["--lean", "compress", "proof_p.out"]).is_err());
     assert!(request(&["--directt", "p.p"]).is_err());
     assert!(request(&["p.p", "q.p"]).is_err());
 }

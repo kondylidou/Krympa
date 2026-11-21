@@ -105,26 +105,41 @@ pub const PHASES: [&str; 6] = [
     "group",
 ];
 
+/// Commands that work on a proof file Krympa wrote, not on a problem.
+pub const TOOLS: [&str; 2] = ["lean", "compress"];
+
+/// What a whole run does after the search.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct WholeRun {
+    /// `--direct`: prove only the lemmas the search can use
+    pub direct: bool,
+    /// `--compress`: remove avoidable steps from the proof
+    pub compress: bool,
+    /// `--lean`: check the proof in Lean
+    pub lean: bool,
+}
+
 /// What the command line asks for, once the flags above have been stripped.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Request {
-    /// `krympa [--direct] [--lean] <problem>`: every phase, from Vampire's proof
-    /// to the shortened one. With `direct`, only the lemmas the search needs
-    /// are proved; with `lean`, the result is checked in Lean.
-    Whole {
-        input: String,
-        direct: bool,
-        lean: bool,
-    },
+    /// `krympa [--direct] [--compress] [--lean] <problem>`: every phase, from
+    /// Vampire's proof to the shortened one.
+    Whole { input: String, options: WholeRun },
     /// `krympa <phase> <problem>`: one phase, reading what the previous one wrote.
     Phase { phase: String, input: String },
+    /// `krympa <lean|compress> <proof>`: work on a proof file.
+    Tool { tool: String, proof: String },
 }
 
 /// Read the request from the arguments left after the other flags.
 pub fn parse_request(args: &[String]) -> Result<Request, String> {
-    const WHOLE_RUN_FLAGS: [&str; 2] = ["--direct", "--lean"];
+    const WHOLE_RUN_FLAGS: [&str; 3] = ["--direct", "--compress", "--lean"];
     let given = |flag: &str| args.iter().any(|arg| arg == flag);
-    let (direct, lean) = (given("--direct"), given("--lean"));
+    let options = WholeRun {
+        direct: given("--direct"),
+        compress: given("--compress"),
+        lean: given("--lean"),
+    };
     let rest: Vec<&str> = args
         .iter()
         .map(String::as_str)
@@ -133,18 +148,22 @@ pub fn parse_request(args: &[String]) -> Result<Request, String> {
     if let Some(option) = rest.iter().find(|arg| arg.starts_with("--")) {
         return Err(format!("Unknown option '{}'", option));
     }
+    let is_command = |name: &str| PHASES.contains(&name) || TOOLS.contains(&name);
     match rest.as_slice() {
-        [input] if !PHASES.contains(input) => Ok(Request::Whole {
+        [input] if !is_command(input) => Ok(Request::Whole {
             input: input.to_string(),
-            direct,
-            lean,
+            options,
         }),
-        [phase] => Err(format!("'{}' needs a problem file", phase)),
-        [phase, _] if !PHASES.contains(phase) => Err(format!("Unknown command '{}'", phase)),
-        [phase, _] if direct || lean => Err(format!(
-            "--direct and --lean belong to a whole run and cannot be combined with '{}'",
-            phase
+        [command] => Err(format!("'{}' needs a file", command)),
+        [command, _] if !is_command(command) => Err(format!("Unknown command '{}'", command)),
+        [command, _] if options != WholeRun::default() => Err(format!(
+            "--direct, --compress and --lean belong to a whole run and cannot be combined with '{}'",
+            command
         )),
+        [tool, proof] if TOOLS.contains(tool) => Ok(Request::Tool {
+            tool: tool.to_string(),
+            proof: proof.to_string(),
+        }),
         [phase, input] => Ok(Request::Phase {
             phase: phase.to_string(),
             input: input.to_string(),

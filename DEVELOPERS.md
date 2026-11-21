@@ -29,6 +29,7 @@ cargo test
 |---|---|
 | `rust/src/main.rs`, `execution.rs` | Command line: the whole run, the single phases, the flags. |
 | `rust/src/logging.rs` | Message levels: `klog_info!` is what a user sees, `klog_debug!` only with `--debug`. |
+| `rust/src/problem.rs` | Reading the input problem. A `cnf` problem (unit clauses, goal negated) is rewritten to `fof` form in `output/input_problem_<name>.p`; `include` is rejected. |
 | `rust/src/provers.rs` | Every call of Twee and Vampire, where their executables come from, proof length, term size. |
 | `rust/src/proof_turnaround.rs` | Turning Vampire's refutation into a forward proof. |
 | `rust/src/collect.rs` | `collect`, `shorten`, `group`. |
@@ -37,7 +38,10 @@ cargo test
 | `rust/src/prove.rs` | Proving one goal with both provers and choosing between the two proofs. |
 | `rust/src/trim.rs` | Dropping the parts of a segment that later segments do not use. |
 | `rust/src/refine.rs` | The final refinement. |
-| `rust/src/lean.rs` | `--lean`: calls `python/tolean.py`, then Lean. |
+| `rust/src/proof_file.rs` | Reading a proof file written by `minimize`. |
+| `rust/src/rewrite.rs` | Terms over `op` and the search that justifies an equation by one rewrite. |
+| `rust/src/lean.rs` | `--lean` and `krympa lean`: the Lean export, then Lean. |
+| `rust/src/compress.rs` | `--compress` and `krympa compress`: step removal. |
 | `rust/src/superpose.rs` | Reading a turned Vampire proof and writing the steps a goal needs as a block of lines. |
 | `rust/src/dag.rs` | Dependencies between lemmas, read from the Twee proofs, and the graph built from them. |
 | `rust/src/utils.rs`, `regex_cache.rs` | Lemma files, TPTP editing, temporary problem files; compiled regexes are kept for reuse. |
@@ -45,7 +49,7 @@ cargo test
 | `rust/src/bench_run.rs` | The benchmark driver behind `shell/run`. |
 | `rust/tests/` | One test file per topic. |
 | `ocaml/` | Lemma extractor: writes the lemma problems of a Vampire proof in the three variants. |
-| `python/` | `generate_input.py` (benchmark file to TPTP problems), `summarize.py` (benchmark logs), `tolean.py`, `compress.py`. |
+| `python/` | `generate_input.py` (benchmark file to TPTP problems), `summarize.py` (benchmark logs). |
 | `shell/` | `run_checked`, `run_one`, `run`. |
 | `lean/` | Lean project for checking exported proofs. |
 | `bin/` | Vampire and Twee, for Linux and macOS. Optional: see the prover options in `README.md`. |
@@ -107,7 +111,7 @@ The benchmarks are the files `benchmarks/Proofs*.lean`. From `shell/`:
 | Command | Does |
 |---|---|
 | `python3 ../python/generate_input.py ../benchmarks/Proofs11.lean` | Writes the problems of one benchmark file to `benchmarks/input11/`, one `.p` file each. |
-| `./run_checked [--direct] [--term-size] [--refine] <problem.p>` | Runs Krympa, checks the proof in Lean, removes avoidable steps with `compress.py` and checks again. Exit status 0 only if Lean accepted both. |
+| `./run_checked [--direct] [--term-size] [--refine] <problem.p>` | Runs Krympa, checks the proof in Lean, removes avoidable steps and checks again. Exit status 0 only if Lean accepted both. |
 | `./run_one <problem.p> [binary]` | Runs the four phases one after the other, with the given Krympa binary (default `./krympa`). |
 | `./run [timeout] [binary]` | Generates the problems of every benchmark file and runs the four phases on each, with a limit of `timeout` seconds per phase (default 600). Logs go to `benchmarks/output_logs/`. |
 | `python3 ../python/summarize.py ../benchmarks/output_logs` | Summarizes those logs. |
@@ -200,10 +204,10 @@ steps.
 
 ## Lean Export and Step Removal
 
-`python/tolean.py <proof.out>` writes `lean/Proof/<proof>.lean`; `--lean` calls
-it and then runs `lean` in `lean/`. It turns every step into an explicit proof
-term, so Lean checks without searching and the file needs only core Lean. It
-reads terms over one binary operation `op` only.
+`./krympa lean <proof.out>` writes `lean/Proof/<proof>.lean` and runs `lean` on
+it in `lean/`; `--lean` does the same at the end of a run. Every step becomes an
+explicit proof term, so Lean checks without searching and the file needs only
+core Lean. Terms over one binary operation `op` only.
 
 - A step is accepted if it is one rewrite: one instance of one equation,
   applied to one or more occurrences of the same subterm, optionally followed
@@ -214,13 +218,19 @@ reads terms over one binary operation `op` only.
   far and reports it.
 - It prints how many steps rewrite a subterm and how many only instantiate an
   earlier equation, and notes steps that nothing depends on.
-- A step that is not a single rewrite is left as `sorry` and the exit status is
-  2. A file that Lean accepts without warnings therefore certifies the step
+- A step that is not a single rewrite is left as `sorry`, and Lean is not run.
+  A file that Lean accepts without a message therefore certifies the step
   count.
 
-`python/compress.py` uses the same one-rewrite search, and no prover. It removes
-a superposition line when every step that uses it can be derived in one rewrite
-from the other equations instead, then removes the lines nothing needs any
-more. Twee sections are left as they are. Example: in a 22-step proof of
-650 ⇒ 448, one lemma is derived through three Vampire steps although it follows
-in one rewrite from its neighbour and the axiom.
+`./krympa compress <proof.out>` writes `<proof>_compressed.out`; `--compress`
+replaces the proof of a run. It uses the same one-rewrite search, and no
+prover. It removes a superposition line when every step that uses it can be
+derived in one rewrite from the other equations instead, then removes the lines
+nothing needs any more. Twee sections are left as they are. The result is
+translated once more and kept only if every step still checks. Example: in a
+22-step proof of 650 ⇒ 448, one lemma is derived through three Vampire steps
+although it follows in one rewrite from its neighbour and the axiom.
+
+Both were Python scripts (`tolean.py`, `compress.py`) until they were ported;
+on the 1145 proofs of a suite run the Rust version writes the same Lean files
+and the same shortened proofs.

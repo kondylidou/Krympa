@@ -37,8 +37,8 @@ export TWEE=/path/to/twee
 ./krympa /path/to/problem.p
 ```
 
-The problem is a TPTP file with equations as axioms and one equation as
-conjecture, in `fof` form:
+The problem is a TPTP file, in `fof` or `cnf` form, with equations as axioms
+and one equation to prove:
 
 ```
 fof(a1, axiom, ! [X, Y, Z] : X = op(X,op(Y,op(op(Z,X),Y)))).
@@ -51,9 +51,10 @@ Krympa reports its progress, then the number of steps of the shortened proof
 | File | Contents |
 |---|---|
 | `output/proof_<problem>.out` | The shortened proof. |
-| `output/vampire_proof_<problem>.out` | The Vampire proof it started from. |
+| `output/vampire_proof_<problem>.out` | The proof it started from: Vampire's proof by refutation, turned around into a direct proof. |
 
-The exit status is 0 if a shortened proof was written.
+In a script, the command succeeds (exit status 0) only if a shortened proof was
+written.
 
 Krympa has to be started from `rust/`. It keeps its working files in `output/`,
 `lemmas/` and `proofs/` next to `rust/`; the last two are overwritten by every
@@ -66,7 +67,8 @@ run.
 | Option | Effect |
 |---|---|
 | `--direct` | Prove only the lemmas the search can use, instead of every lemma of the Vampire proof. Usually finds the same proof in less time. |
-| `--lean` | Write the shortened proof as a Lean file and have Lean check it; see below. |
+| `--compress` | Remove the steps of the proof that can be bypassed with a single rewrite; see below. |
+| `--lean` | Write the proof as a Lean file and have Lean check it; see below. |
 | `--term-size` | Prefer proofs with smaller terms; see below. |
 | `--refine` | Run a final refinement on the best proof; see below. |
 | `--vampire <exe>`, `--twee <exe>` | The prover executables. Same as the variables `VAMPIRE` and `TWEE`, and take precedence over them. |
@@ -82,19 +84,19 @@ run.
 If you name no executable, Krympa uses the copy in `bin/` and, if there is
 none, looks for `vampire` and `twee` on your `PATH`.
 
-### `--lean`
+### `--compress` and `--lean`
 
-Writes the proof to `lean/Proof/proof_<problem>.lean`, runs Lean on it and
-reports whether Lean accepted it; the exit status is 0 only if it did. Every
-step is translated to an explicit proof term, so an accepted file certifies the
-proof and its number of steps.
+`--compress` removes a step when every step that uses it can be derived in one
+rewrite from the other equations instead. No prover is called, and
+`output/proof_<problem>.out` is then the shorter proof.
 
-This needs Python 3 and Lean 4, and works for problems over one binary
-operation named `op`, as in the example above.
+`--lean` writes the proof to `lean/Proof/proof_<problem>.lean`, runs Lean 4 on
+it and reports whether Lean accepted it; the command succeeds only if it did.
+Every step is translated to an explicit proof term, so an accepted file
+certifies the proof and its number of steps.
 
-For such problems, `python3 ../python/compress.py <proof.out>` removes the
-steps of a proof that can be bypassed with a single rewrite and writes
-`<proof>_compressed.out`.
+Both work for problems over one binary operation named `op`, as in the example
+above.
 
 ### `--term-size`
 
