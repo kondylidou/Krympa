@@ -293,3 +293,96 @@ fn proof_turnaround_dif() {
     println!("\n[TEST] Final proof");
     println!("{}", final_proof);
 }
+
+/// Refutation: the negated goal (10) is rewritten with 9 into 11, and 11 is
+/// closed with 8. Read forwards, the statement of 11 is an instance of 8, and
+/// the goal follows from it by rewriting with 9. Each equation must end up on
+/// the line that uses it.
+#[test]
+fn turnaround_puts_each_equation_on_the_line_that_uses_it() {
+    let proof = "\
+1. ! [X0] : op(X0,X0) = X0 [input(axiom)]
+2. ! [X0,X1] : op(op(X1,X0),X0) = X0 [input(axiom)]
+3. ! [X0,X1] : op(X0,X0) = op(op(X1,X0),X0) [input(conjecture)]
+4. ~! [X0,X1] : op(X0,X0) = op(op(X1,X0),X0) [negated conjecture 3]
+5. ? [X0,X1] : op(X0,X0) != op(op(X1,X0),X0) [ennf transformation 4]
+6. ? [X0,X1] : op(X0,X0) != op(op(X1,X0),X0) => op(sK0,sK0) != op(op(sK1,sK0),sK0) [skolem symbol introduction]
+7. op(sK0,sK0) != op(op(sK1,sK0),sK0) [skolemisation 5,6]
+8. op(X0,X0) = X0 [cnf transformation 1]
+9. op(op(X1,X0),X0) = X0 [cnf transformation 2]
+10. op(sK0,sK0) != op(op(sK1,sK0),sK0) [cnf transformation 7]
+11. op(sK0,sK0) != sK0 [forward demodulation 10,9]
+12. $false [forward subsumption resolution 11,8]
+";
+    let turned = eq_proof_procedure(proof);
+    let line = |number: &str| {
+        turned
+            .lines()
+            .find(|l| l.trim_start().starts_with(number))
+            .unwrap_or_else(|| panic!("no line {} in:\n{}", number, turned))
+            .to_string()
+    };
+    // the intermediate statement is an instance of equation 8 ...
+    assert!(line("11.").contains("op(X0,X0) = X0"), "{}", turned);
+    assert!(
+        line("11.").ends_with("[forward demodulation 10,8]"),
+        "{}",
+        turned
+    );
+    // ... and the goal follows from it with equation 9
+    assert!(
+        line("12.").contains("op(X0,X0) = op(op(X1,X0),X0)"),
+        "{}",
+        turned
+    );
+    assert!(
+        line("12.").ends_with("[forward subsumption resolution 11,9]"),
+        "{}",
+        turned
+    );
+}
+
+/// The negated goal is rewritten with an equation that leaves a variable (X0)
+/// in the clause. Negated, that clause says "there is an X0 with ...", so the
+/// turned statement must not be printed as a plain universal equation, and the
+/// Skolem constants must get names different from X0.
+#[test]
+fn turnaround_keeps_clause_variables_existential() {
+    let proof = "\
+1. ! [X0,X1,X2] : op(X0,X1) = op(X2,X1) [input(axiom)]
+2. ! [X0,X1] : op(X0,X1) = op(X1,X1) [input(conjecture)]
+3. ~! [X0,X1] : op(X0,X1) = op(X1,X1) [negated conjecture 2]
+4. ? [X0,X1] : op(X0,X1) != op(X1,X1) [ennf transformation 3]
+5. ? [X0,X1] : op(X0,X1) != op(X1,X1) => op(sK0,sK1) != op(sK1,sK1) [skolem symbol introduction]
+6. op(sK0,sK1) != op(sK1,sK1) [skolemisation 4,5]
+7. op(X0,X1) = op(X2,X1) [cnf transformation 1]
+8. op(sK0,sK1) != op(sK1,sK1) [cnf transformation 6]
+9. op(X0,sK1) != op(sK1,sK1) [superposition 8,7]
+10. $false [equality resolution 9]
+";
+    let turned = eq_proof_procedure(proof);
+    let line = |number: &str| {
+        turned
+            .lines()
+            .find(|l| l.trim_start().starts_with(number))
+            .unwrap_or_else(|| panic!("no line {} in:\n{}", number, turned))
+            .to_string()
+    };
+    // "for every X1 there is an X0 with op(X0,X1) = op(X1,X1)"
+    assert!(
+        line("9.").contains("! [X1] : (? [X0] : op(X0,X1) = op(X1,X1))"),
+        "{}",
+        turned
+    );
+    // the goal itself stays a universal equation and gets the equation that was used
+    assert!(
+        line("10.").contains("! [X0,X1] : op(X0,X1) = op(X1,X1)"),
+        "{}",
+        turned
+    );
+    assert!(
+        line("10.").ends_with("[equality resolution 9,7]"),
+        "{}",
+        turned
+    );
+}

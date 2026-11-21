@@ -520,6 +520,7 @@ class Converter:
         self.rewrites = 0
         self.failures = []
         self.failed_steps = 0
+        self.existential = []    # steps that state an existential, not checked
         self.notes = []
         self.assumed = []
         self.hypotheses = []
@@ -596,6 +597,12 @@ class Converter:
 
     def convert_line(self, item):
         name = item["name"]
+        if "?" in item["formula"]:
+            # A turned refutation step can be an existential statement. It is
+            # not an equation: later steps are checked without it.
+            self.steps += 1
+            self.existential.append(name)
+            return
         fact = self.new_fact(*parse_equation(item["formula"]))
         self.item_of[fact] = item
         deps, missing = [], []
@@ -765,9 +772,11 @@ def main():
     conv = Converter(axioms, conjecture, items)
     closing = conv.convert()
     unused = conv.unused()
+    plain = conv.steps - conv.rewrites - conv.failed_steps - len(conv.existential)
     summary = (f"{conv.steps} proof steps: {conv.rewrites} rewrite a subterm, "
-               f"{conv.steps - conv.rewrites - conv.failed_steps} only instantiate "
-               f"an earlier equation")
+               f"{plain} only instantiate an earlier equation")
+    if conv.existential:
+        summary += f", {len(conv.existential)} existential (not needed by the Lean proof)"
 
     conj_name = conjecture[0] if conjecture else "no_conjecture"
     hyps = "\n".join(f"    ({hyp} : Equation_{name} G)" for hyp, name, _ in conv.hypotheses)

@@ -5,6 +5,7 @@ Cargo.lock
 
 # === Lean ===
 lean/.lake/
+lean/Proof/proof_*.lean
 
 # === OCaml ===
 **/_build/

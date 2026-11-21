@@ -105,6 +105,21 @@ Then run:
 
 ---
 
+## Run on a Single Problem and Check the Proof in Lean
+
+```bash
+./run_checked ../benchmarks/input11/Equation650_implies_Equation448.p
+./run_checked --direct ../benchmarks/input11/Equation650_implies_Equation448.p
+./run_checked --direct --term-size ../benchmarks/input11/Equation650_implies_Equation448.p
+```
+
+Runs Krympa (the full pipeline, or `direct` with `--direct`), converts the proof
+to Lean and checks it, removes the avoidable steps and checks the shorter proof
+as well. For each proof it prints the step count and whether Lean accepted it.
+The exit status is 0 only if Lean accepted both.
+
+---
+
 ## Running With a Specific Krympa Binary
 
 `run` and `run_one` accept an optional binary argument.

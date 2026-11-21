@@ -80,28 +80,45 @@ internal lemma of some Twee proof. `direct` only knows the Twee proofs it made,
 so it can redirect differently and end up with other departure candidates.
 
 Same Vampire proof for both, default prover options, macOS binaries, 2026-11-21.
-"Checked" means the Lean export accepts the proof.
+Lean accepts all of these proofs.
 
-| Problem | Lemmas | Proved by `direct` | Pipeline steps | `direct` steps | Pipeline time | `direct` time | Same proof | Checked |
-|---|---|---|---|---|---|---|---|---|
-| 650 ⇒ 448 | 81 | 42 | 26 | 26 | 140 s | 121 s | yes | yes |
-| 650 ⇒ 448, 62-step Vampire proof | 62 | 28 | 22 | 20 | 172 s | 150 s | no | yes |
-| 723 ⇒ 872 | 179 | 44 | 9 | 12 | 352 s | 147 s | no | neither |
-| 947 ⇒ 3897 | 126 | 32 | 15 | 15 | 309 s | 176 s | yes | yes |
-| 2055 ⇒ 2656 | 79 | 41 | 15 | 15 | 150 s | 113 s | yes | yes |
-| 1560 ⇒ 960 | 53 | 31 | 15 | 15 | 99 s | 70 s | yes | yes |
-| 2789 ⇒ 895 | 66 | 16 | 15 | 9 | 104 s | 37 s | no | yes |
-| 2860 ⇒ 2660 | 49 | 31 | 6 | 6 | 71 s | 60 s | yes | neither |
-| 3569 ⇒ 3957 | 68 | 30 | 17 | 17 | 34 s | 45 s | no | neither |
-| 3971 ⇒ 3347 | 84 | 27 | 19 | 19 | 24 s | 11 s | no | yes |
+| Problem | Lemmas | Proved by `direct` | Pipeline steps | `direct` steps | Pipeline time | `direct` time | Same proof |
+|---|---|---|---|---|---|---|---|
+| 650 ⇒ 448 | 81 | 42 | 26 | 26 | 187 s | 122 s | yes |
+| 650 ⇒ 448, 62-step Vampire proof | 62 | 28 | 22 | 20 | 172 s | 150 s | no |
+| 723 ⇒ 872 | 179 | 44 | 15 | 15 | 357 s | 149 s | yes |
+| 947 ⇒ 3897 | 126 | 32 | 15 | 15 | 308 s | 177 s | yes |
+| 2055 ⇒ 2656 | 79 | 41 | 15 | 15 | 150 s | 113 s | yes |
+| 1560 ⇒ 960 | 53 | 31 | 15 | 15 | 99 s | 70 s | yes |
+| 2789 ⇒ 895 | 66 | 16 | 15 | 9 | 104 s | 37 s | no |
+| 2860 ⇒ 2660 | 49 | 31 | 17 | 17 | 71 s | 60 s | yes |
+| 3569 ⇒ 3957 | 68 | 30 | 18 | 18 | 35 s | 45 s | yes |
+| 3971 ⇒ 3347 | 84 | 27 | 19 | 19 | 26 s | 11 s | no |
 
 On eight small problems (1 to 19 lemmas) the two give the same step count seven
 times and `direct` is one step shorter once.
 
-The three proofs marked "neither" contain a line that is counted as one step but
-is not one rewrite of its listed premises. It comes from a Vampire sub-proof
-whose redirected end was cut short, and it affects the pipeline and `direct`
-alike.
+## Turning a Vampire Proof Around
+
+Vampire proves by refutation: the end of its proof rewrites the negated goal
+until it is contradictory. `proof_turnaround.rs` turns that end around so that
+it reads as a derivation of the goal. Two things matter there.
+
+- Each turned line must list the equation it is derived with. In the
+  refutation, step i+1 follows from step i and an equation E; read forwards, the
+  statement of step i follows from the statement of step i+1 and E. So E belongs
+  to the line of step i, not of step i+1.
+- A clause of the refutation can have variables of its own. Negated, it is an
+  existential statement ("there is an X with ..."), and it is printed with `?`.
+  Such a line is counted as a step but is not a lemma: no lemma problem is
+  written for it and the Lean export skips it.
+
+Before 2026-11-21 both were wrong: equations sat one line off, and existential
+statements were printed as ordinary equations, with Skolem constants sometimes
+renamed to a variable the clause already had. A proof could then lose a lemma
+it needs, or contain a goal "derived" from nothing, and report too few steps.
+Three of the ten proofs above were affected (723 ⇒ 872 was reported as 9 steps,
+2860 ⇒ 2660 as 6, 3569 ⇒ 3957 as 17) and Lean rejected them.
 
 ## Removing Avoidable Steps
 

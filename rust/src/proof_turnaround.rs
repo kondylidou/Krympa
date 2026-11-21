@@ -562,47 +562,84 @@ fn contrapose_formula(f: &Formula, polarity: bool) -> Formula {
 
 /// Replace Skolem constants (Term::Skolem) with fresh variables (X0, X1, ...).
 /// This is ONLY for actual Term::Skolem occurrences (not bound vars).
-fn skolem_to_variable(f: &Formula) -> Formula {
-    let mut map: HashMap<String, String> = HashMap::new();
-    let mut counter: usize = 0;
+///
+/// The fresh names avoid `taken`, the variables the formula already has: a
+/// clause of the refutation can contain variables of its own, and a Skolem
+/// constant must not be merged with one of them.
+fn skolem_to_variable(f: &Formula, taken: &BTreeSet<String>) -> Formula {
+    struct Fresh<'a> {
+        map: HashMap<String, String>,
+        counter: usize,
+        taken: &'a BTreeSet<String>,
+    }
 
-    fn walk_term(t: &Term, map: &mut HashMap<String, String>, counter: &mut usize) -> Term {
+    fn walk_term(t: &Term, fresh: &mut Fresh) -> Term {
         match t {
             Term::Skolem(s) => {
-                let v = map.entry(s.clone()).or_insert_with(|| {
-                    let name = format!("X{}", *counter);
-                    *counter += 1;
-                    name
-                });
-                Term::Var(v.clone())
+                if !fresh.map.contains_key(s) {
+                    let mut name = format!("X{}", fresh.counter);
+                    while fresh.taken.contains(&name) {
+                        fresh.counter += 1;
+                        name = format!("X{}", fresh.counter);
+                    }
+                    fresh.counter += 1;
+                    fresh.map.insert(s.clone(), name);
+                }
+                Term::Var(fresh.map[s].clone())
             }
             Term::Var(v) => Term::Var(v.clone()),
             Term::Fun(f, args) => Term::Fun(
                 f.clone(),
-                args.iter().map(|a| walk_term(a, map, counter)).collect(),
+                args.iter().map(|a| walk_term(a, fresh)).collect(),
             ),
         }
     }
 
-    fn walk(f: &Formula, map: &mut HashMap<String, String>, counter: &mut usize) -> Formula {
+    fn walk(f: &Formula, fresh: &mut Fresh) -> Formula {
         match f {
-            Formula::Eq(a, b) => {
-                Formula::Eq(walk_term(a, map, counter), walk_term(b, map, counter))
-            }
-            Formula::Neq(a, b) => {
-                Formula::Neq(walk_term(a, map, counter), walk_term(b, map, counter))
-            }
-            Formula::Forall(vars, sub) => {
-                Formula::Forall(vars.clone(), Box::new(walk(sub, map, counter)))
-            }
-            Formula::Exists(vars, sub) => {
-                Formula::Exists(vars.clone(), Box::new(walk(sub, map, counter)))
-            }
+            Formula::Eq(a, b) => Formula::Eq(walk_term(a, fresh), walk_term(b, fresh)),
+            Formula::Neq(a, b) => Formula::Neq(walk_term(a, fresh), walk_term(b, fresh)),
+            Formula::Forall(vars, sub) => Formula::Forall(vars.clone(), Box::new(walk(sub, fresh))),
+            Formula::Exists(vars, sub) => Formula::Exists(vars.clone(), Box::new(walk(sub, fresh))),
             Formula::Const(c) => Formula::Const(c.clone()),
         }
     }
 
-    walk(f, &mut map, &mut counter)
+    let mut fresh = Fresh {
+        map: HashMap::new(),
+        counter: 0,
+        taken,
+    };
+    walk(f, &mut fresh)
+}
+
+/// Variables that occur free in a formula (Skolem constants are not variables).
+fn free_variables(f: &Formula) -> BTreeSet<String> {
+    fn term(t: &Term, out: &mut BTreeSet<String>) {
+        match t {
+            Term::Var(v) => {
+                out.insert(v.clone());
+            }
+            Term::Skolem(_) => {}
+            Term::Fun(_, args) => args.iter().for_each(|a| term(a, out)),
+        }
+    }
+    match f {
+        Formula::Eq(a, b) | Formula::Neq(a, b) => {
+            let mut out = BTreeSet::new();
+            term(a, &mut out);
+            term(b, &mut out);
+            out
+        }
+        Formula::Forall(vars, sub) | Formula::Exists(vars, sub) => {
+            let mut out = free_variables(sub);
+            for v in vars {
+                out.remove(v);
+            }
+            out
+        }
+        Formula::Const(_) => BTreeSet::new(),
+    }
 }
 
 /// Flatten consecutive same-kind quantifiers (∀∀..., ∃∃...).
@@ -793,7 +830,8 @@ fn contrapositive_swap(
             let mut f = contrapose_formula(&step.formula, true);
 
             // 3) Replace Skolem constants with fresh Xk variables
-            f = skolem_to_variable(&f);
+            let clause_vars = free_variables(&step.formula);
+            f = skolem_to_variable(&f, &before_x);
 
             // 4) Flatten quantifiers (purely structural/cosmetic)
             f = flatten_quantifiers(f);
@@ -809,7 +847,15 @@ fn contrapositive_swap(
             let mut new_xs: Vec<String> = after_x.difference(&before_x).cloned().collect();
             new_xs.sort(); // deterministic printing and quantifier order
 
-            // 7) Bind them universally (Skolems -> universally quantified vars)
+            // 7) A clause of the refutation that has variables of its own says
+            //    "for all of them, s != t". Its negation says "for some of them,
+            //    s = t": those variables are existential, inside the universal
+            //    ones that stand for the Skolem constants.
+            if !clause_vars.is_empty() {
+                f = Formula::Exists(clause_vars.into_iter().collect(), Box::new(f));
+            }
+
+            // 8) Bind the new ones universally (Skolems -> universally quantified vars)
             if !new_xs.is_empty() {
                 f = Formula::Forall(new_xs.clone(), Box::new(f));
             }
@@ -853,11 +899,31 @@ pub fn turn_proof_around(
 
     //println!("\n[DEBUG] Turn order {:?}", order);
 
+    // `order` lists the refutation chain from its end back to its start. The
+    // statements are mirrored along the chain, so that the turned proof ends
+    // with the conjecture. In the refutation, step i+1 follows from step i and
+    // some equations E; read forwards, it is the statement of step i that
+    // follows from the statement of step i+1 and E. So a position keeps its
+    // link to the previous position of the chain, but the other premises must
+    // be the ones of the step that came after `old` in the refutation.
+    // Leaving them where they were puts every equation on the wrong line.
+    let in_chain: BTreeSet<usize> = order.iter().copied().collect();
     let mut result = steps.clone();
-    for (old, new) in order.iter().zip(order.iter().rev()) {
+    for (k, (old, new)) in order.iter().zip(order.iter().rev()).enumerate() {
         let mut step = new_steps[old].clone();
         step.rule = steps[new].rule.clone();
-        step.deps = steps[new].deps.clone();
+        step.deps = match k.checked_sub(1).map(|next| order[next]) {
+            Some(consumer) => {
+                let links = steps[new].deps.iter().filter(|(_, d)| in_chain.contains(d));
+                let equations = steps[&consumer]
+                    .deps
+                    .iter()
+                    .filter(|(_, d)| !in_chain.contains(d));
+                links.chain(equations).copied().collect()
+            }
+            // the first position of the chain: nothing came after `old`
+            None => steps[new].deps.clone(),
+        };
         result.insert(*new, step);
     }
 

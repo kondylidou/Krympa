@@ -56,12 +56,26 @@ pub fn extract_lemma_files(proof_file: &str) -> Vec<String> {
                 let filename = path.file_name().unwrap();
                 let new_path = Path::new(&mode_dir).join(filename);
                 fs::rename(&path, &new_path).expect("Failed to move lemma file");
+                if is_existential(&new_path) {
+                    // A turned step of the refutation can be an existential
+                    // statement. It is not an equation, so it is no lemma.
+                    crate::klog_debug!("[DEBUG] Not a lemma: {}", new_path.display());
+                    fs::remove_file(&new_path).expect("Failed to remove lemma file");
+                    continue;
+                }
                 all_lemma_files.push(new_path.to_string_lossy().to_string());
             }
         }
     }
 
     all_lemma_files
+}
+
+/// True if the conjecture of a lemma file (its last formula) has an existential quantifier.
+fn is_existential(lemma_file: &Path) -> bool {
+    fs::read_to_string(lemma_file)
+        .map(|text| text.rsplit("conjecture").next().unwrap_or("").contains('?'))
+        .unwrap_or(false)
 }
 
 /// Report what was proved and save it as `summary_<suffix>.json` for the later phases.
