@@ -12,6 +12,17 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
     crate::klog_debug!("[DEBUG] Input: {}", input_file);
     crate::klog_debug!("[DEBUG] Output: {}", proof_file);
 
+    let all_lemma_files = extract_lemma_files(proof_file);
+
+    // run provers on all lemma files
+    let provers = ["vampire", "twee"];
+    let results = prove_lemmas(&all_lemma_files, &provers, "../proofs");
+    save_summary(&results, &suffix);
+}
+
+/// Write the lemma problems of the Vampire proof in all three variants
+/// (big-step, small-step, abstracted) and return the files. Nothing is proved.
+pub fn extract_lemma_files(proof_file: &str) -> Vec<String> {
     let lemmas_dir = "../lemmas".to_string();
 
     if Path::new(&lemmas_dir).exists() {
@@ -50,10 +61,11 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
         }
     }
 
-    // run provers on all lemma files
-    let provers = ["vampire", "twee"];
-    let results = prove_lemmas(&all_lemma_files, &provers, "../proofs");
+    all_lemma_files
+}
 
+/// Report what was proved and save it as `summary_<suffix>.json` for the later phases.
+pub fn save_summary(results: &HashMap<u32, (String, String, String)>, suffix: &str) {
     crate::klog_info!("[INFO] Phase 1 summary: {} lemmas proved.", results.len());
     let mut lemma_nums: Vec<u32> = results.keys().cloned().collect();
     lemma_nums.sort();
@@ -68,7 +80,7 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
 
     // save summary for Phase 2
     let summary_file = format!("../output/summary_{}.json", suffix);
-    let summary_json = serde_json::to_string_pretty(&results).expect("Failed to serialize results");
+    let summary_json = serde_json::to_string_pretty(results).expect("Failed to serialize results");
     fs::write(&summary_file, summary_json).expect("Failed to save summary.json");
     crate::klog_info!(
         "[INFO] Phase 1 complete. Summary saved to '{}'.",

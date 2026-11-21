@@ -1,32 +1,29 @@
-use krympa::direct::{keep_needed, shift_lemma_numbers};
+use krympa::direct::cited_lemmas;
 
-const BLOCK: &str = "\
-% === Superposition Steps ===
-% lemma_0001: op(X0,X1) = X0 | deps: a_1: ! [X0] : op(X0,X0) = X0
-% lemma_0002: op(X1,X0) = X0 | deps: a_1: ! [X0] : op(X0,X0) = X0
-% lemma_0003: X0 = X1 | deps: lemma_0001: op(X0,X1) = X0, a_1: ! [X0] : op(X0,X0) = X0
+const TWEE_PROOF: &str = "\
+The conjecture is true! Here is a proof.
+
+Axiom 1 (a1): X = op(X, op(Y, op(op(Z, X), Y))).
+Axiom 2 (lemma_0008): op(X, Y) = op(op(X, Y), op(Z, op(X, Z))).
+Axiom 3 (lemma_0020): op(X, op(Y, X)) = X.
+
+Goal 1 (conjecture_0021): op(x0, x1) = x0.
+Proof:
+  op(x0, x1)
+= { by axiom 2 (lemma_0008) }
+  op(op(x0, x1), op(x1, op(x0, x1)))
+= { by axiom 3 (lemma_0020) }
+  x0
 ";
 
 #[test]
-fn keeps_only_what_the_later_proof_needs() {
-    let later = "Axiom 1 (lemma_0003): X = Y.\n";
-    let kept = keep_needed(BLOCK, later);
-    assert!(kept.contains("% lemma_0003:"));
-    assert!(kept.contains("% lemma_0001:"), "dependency of a kept line");
-    assert!(!kept.contains("% lemma_0002:"), "unused line must go");
-    assert!(kept.contains("% === Superposition Steps ==="));
+fn reads_the_lemmas_a_twee_proof_uses() {
+    let used: Vec<u32> = cited_lemmas(TWEE_PROOF).into_iter().collect();
+    assert_eq!(used, [8, 20]);
 }
 
 #[test]
-fn keeps_nothing_when_nothing_is_used() {
-    assert_eq!(keep_needed(BLOCK, "Axiom 1 (a1): op(X, X) = X.\n"), "");
-}
-
-#[test]
-fn shifting_renumbers_small_lemma_numbers_only() {
-    let text = "% lemma_0003: X0 = X1 | deps: lemma_0001, lemma_9001, small_step_lemma_0007";
-    assert_eq!(
-        shift_lemma_numbers(text, 5000),
-        "% lemma_5003: X0 = X1 | deps: lemma_5001, lemma_9001, small_step_lemma_0007"
-    );
+fn a_proof_from_the_axioms_alone_uses_no_lemma() {
+    let proof = "Axiom 1 (a1): X = op(X, X).\n\nGoal 1 (conjecture_0003): x0 = op(x0, x0).\n";
+    assert!(cited_lemmas(proof).is_empty());
 }

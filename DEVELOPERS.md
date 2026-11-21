@@ -50,63 +50,58 @@ Strictly fewer steps still always wins.
 With `--term-size`, `minimize` and `direct` also run the final refinement pass
 on their best proof (described in `README.md`).
 
-## Direct Minimization (without `collect`)
+## Direct: the Pipeline Without Proving Every Lemma
 
-`collect` proves every lemma of the Vampire proof six times (three problem
-variants, two provers) to learn which lemmas can be reached from which, and
-`minimize` uses that to choose a departure and an arrival lemma. `direct` builds
-the same three segments but needs only the Vampire proof:
+`collect` proves every lemma of the Vampire proof in three variants with two
+provers. `minimize` then only looks at the lemmas it can reach from its arrival
+candidates. `direct` proves exactly those lemmas and nothing else:
 
 ```bash
 ./krympa run_vampire "$INPUT"
 ./krympa direct "$INPUT"
 ```
 
-The three segments are the ones of `minimize`:
+1. The lemma problems are written in all three variants, as in `collect`, but
+   not proved.
+2. The arrival candidates of `minimize` are proved: going back from the end of
+   the proof, the first 5 lemmas that have no Skolem constant and a proof.
+3. For each proved lemma, the Twee proof of its kept variant is read, and the
+   lemmas it cites are proved next. This repeats until nothing new turns up.
+4. `shorten` and `minimize` run unchanged on what was proved.
 
-1. axioms → departure lemma: Vampire's own derivation, taken as it is;
-2. departure lemma → arrival lemma: proved again by Twee and Vampire;
-3. arrival lemma → conjecture: proved again by Twee and Vampire.
+A lemma that is proved is treated as in `collect`: big-step, small-step and
+abstracted, Vampire and Twee, shortest proof kept. "Cites" is the dependency
+`minimize` builds its graph from. So the segmentation, the departure and arrival
+candidates, `--term-size` and the final refinement are those of the pipeline;
+the only number involved is the 5 arrival candidates it already had.
 
-How they are found without proving any lemma first:
+One difference remains. `minimize` redirects a lemma that also occurs as an
+internal lemma of some Twee proof. `direct` only knows the Twee proofs it made,
+so it can redirect differently and end up with other departure candidates.
 
-1. Every equation Vampire derived is tried as departure lemma of a proof with
-   two segments: its derivation, then the conjecture proved from it. Equations
-   derived from the negated conjecture are excluded, so the conjecture cannot
-   be used to prove itself.
-2. The 15 departures that did best are combined with each of the last 5
-   equations of the Vampire proof as arrival lemma.
-3. For the 10 best combinations the last segment is proved once more with every
-   equation of the first two segments available.
-4. In every candidate, lines of an earlier segment that the later ones do not
-   use are dropped. The candidate with the fewest steps is written to
-   `../output/proof_<name>.out` in the format of `minimize`.
+Same Vampire proof for both, default prover options, macOS binaries, 2026-11-21.
+"Checked" means the Lean export accepts the proof.
 
-`direct` has no problem variants (big-step, small-step, abstracted): those are
-the questions `collect` asks about each lemma, and `direct` asks none.
-`--term-size` works as in `minimize`: it steers each choice between a Twee and a
-Vampire proof, and the final refinement pass runs on the best proof.
+| Problem | Lemmas | Proved by `direct` | Pipeline steps | `direct` steps | Pipeline time | `direct` time | Same proof | Checked |
+|---|---|---|---|---|---|---|---|---|
+| 650 ⇒ 448 | 81 | 42 | 26 | 26 | 140 s | 121 s | yes | yes |
+| 650 ⇒ 448, 62-step Vampire proof | 62 | 28 | 22 | 20 | 172 s | 150 s | no | yes |
+| 723 ⇒ 872 | 179 | 44 | 9 | 12 | 352 s | 147 s | no | neither |
+| 947 ⇒ 3897 | 126 | 32 | 15 | 15 | 309 s | 176 s | yes | yes |
+| 2055 ⇒ 2656 | 79 | 41 | 15 | 15 | 150 s | 113 s | yes | yes |
+| 1560 ⇒ 960 | 53 | 31 | 15 | 15 | 99 s | 70 s | yes | yes |
+| 2789 ⇒ 895 | 66 | 16 | 15 | 9 | 104 s | 37 s | no | yes |
+| 2860 ⇒ 2660 | 49 | 31 | 6 | 6 | 71 s | 60 s | yes | neither |
+| 3569 ⇒ 3957 | 68 | 30 | 17 | 17 | 34 s | 45 s | no | neither |
+| 3971 ⇒ 3347 | 84 | 27 | 19 | 19 | 24 s | 11 s | no | yes |
 
-Steps, all results checked in Lean (default prover options, macOS binaries,
-2026-11-20). "+ compress" is the result after `python/compress.py`, see below.
+On eight small problems (1 to 19 lemmas) the two give the same step count seven
+times and `direct` is one step shorter once.
 
-| Problem | Vampire | `minimize` | + compress | `direct` | + compress |
-|---|---|---|---|---|---|
-| 650 ⇒ 448 | 82 | 26 (29 in another run) | 19 | 22 | 18 |
-| 650 ⇒ 448, from the 62-step Vampire proof | 62 | 22 | 18 | 22 | 18 |
-| same, `--term-size` with final refinement | 62 | 19 | 16 | 19 | 16 |
-| 470 ⇒ 3177 | 19 | 10 | 9 | 8 | 8 |
-| 524 ⇒ 608 | 8 | 6 | 5 | 5 | 5 |
-| 4514 ⇒ 4518 | 8 | 7 | 7 | 6 | 6 |
-| 451 ⇒ 460 | 3 | 4 | 4 | 3 | 3 |
-| 487 ⇒ 463 | 3 | 4 | 4 | 3 | 2 |
-| 635 ⇒ 852 | 2 | 3 | 3 | 2 | 2 |
-| 500 ⇒ 528 | 3 | 3 | 3 | 3 | 3 |
-| 547 ⇒ 691 | 6 | 3 | 3 | 3 | 3 |
-
-On 650 ⇒ 448 `direct` takes 50 to 60 s; `collect`, `shorten` and `minimize`
-together take 145 to 180 s. From the 62-step proof `direct` picks the same
-departure and arrival lemma as `minimize`.
+The three proofs marked "neither" contain a line that is counted as one step but
+is not one rewrite of its listed premises. It comes from a Vampire sub-proof
+whose redirected end was cut short, and it affects the pipeline and `direct`
+alike.
 
 ## Removing Avoidable Steps
 
@@ -161,7 +156,7 @@ run_vampire  →  collect  →  shorten  →  minimize
 
 Optional analysis step: `group`.
 
-Alternative without `collect` and `shorten`: `run_vampire → direct`, see above.
+Alternative that proves fewer lemmas: `run_vampire → direct`, see above.
 
 ### Manual run (parallel, default)
 

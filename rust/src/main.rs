@@ -77,7 +77,8 @@ fn main() {
                 let input_file = &args[1];
                 let suffix = extract_suffix(input_file);
                 let vampire_file = format!("../output/vampire_proof_{}.out", suffix);
-                match direct::try_direct(input_file, &vampire_file) {
+                let summary_file = format!("../output/summary_{}.json", suffix);
+                match direct::try_direct(input_file, &vampire_file, &summary_file, &suffix) {
                     Ok(msg) => krympa::klog_info!("{}", msg),
                     Err(err) => krympa::klog_error!("Error: {}", err),
                 }

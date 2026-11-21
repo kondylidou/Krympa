@@ -286,12 +286,27 @@ pub fn prove_lemmas(
     provers: &[&str],
     out_dir_path: &str,
 ) -> HashMap<u32, (String, String, String)> {
+    reset_proof_dir(out_dir_path);
+    prove_lemmas_into(lemma_files, provers, out_dir_path)
+}
+
+/// Empty the directory that `prove_lemmas_into` writes proofs to.
+pub fn reset_proof_dir(out_dir_path: &str) {
     let out_dir = Path::new(out_dir_path);
     if out_dir.exists() {
         fs::remove_dir_all(out_dir).unwrap();
     }
     fs::create_dir_all(out_dir).unwrap();
+}
 
+/// Like `prove_lemmas`, but keeps the proofs that are already in `out_dir_path`,
+/// so lemmas can be proved a few at a time.
+pub fn prove_lemmas_into(
+    lemma_files: &[String],
+    provers: &[&str],
+    out_dir_path: &str,
+) -> HashMap<u32, (String, String, String)> {
+    let out_dir = Path::new(out_dir_path);
     let vampire_dir = out_dir.join("vampire_tmp");
     let twee_dir = out_dir.join("twee_tmp");
     fs::create_dir_all(&vampire_dir).unwrap();
@@ -327,40 +342,53 @@ pub fn prove_lemmas(
 
         let files = &groups[&n];
 
-        // collect all successful proofs for this group
-        let mut all_proofs: Vec<(String, String, usize, String)> = Vec::new(); // (prover, proof, len, filename)
-
-        for lemma_file in files {
+        // Collect all successful proofs for this group. The runs of one lemma
+        // (every variant with every prover) are independent, so they go in
+        // parallel too; the order of the results stays variant by variant,
+        // prover by prover, which the tie-break below relies on.
+        let jobs: Vec<(&String, &str)> = files
+            .iter()
+            .flat_map(|file| provers.iter().map(move |prover| (file, *prover)))
+            .collect();
+        let run_job = |job: &(&String, &str)| -> Option<(String, String, usize, String)> {
+            let (lemma_file, prover) = *job;
             let file_stem = Path::new(lemma_file).file_stem().unwrap().to_string_lossy();
             let vampire_file = vampire_dir.join(format!("{}_vampire.proof", file_stem));
             let twee_file = twee_dir.join(format!("{}_twee.proof", file_stem));
 
-            for (prover, proof) in try_provers(lemma_file, provers, &vampire_file, &twee_file) {
-                let szs_status = proof
-                    .lines()
-                    .find(|l| l.contains("RESULT:") || l.contains("SZS status"))
-                    .unwrap_or("")
-                    .to_lowercase(); // normalize to lowercase
+            let (prover, proof) = try_provers(lemma_file, &[prover], &vampire_file, &twee_file)
+                .into_iter()
+                .next()?;
+            let szs_status = proof
+                .lines()
+                .find(|l| l.contains("RESULT:") || l.contains("SZS status"))
+                .unwrap_or("")
+                .to_lowercase(); // normalize to lowercase
 
-                let len = if szs_status.contains("countersatisfiable")
-                    || szs_status.contains("counter-satisfiable")
-                    || szs_status.contains("counter_satisfiable")
-                    || (szs_status.contains("satisfiable") && !szs_status.contains("unsatisfiable"))
-                    || szs_status.contains("unknown")
-                {
-                    1000 // sentinel for non-theorem / countersat / unknown
-                         // TODO we can use them. But for now we just want shortest
-                         // theorem proofs. Later we can see how we prove the
-                         // conjecture from the satisfiable ones.
-                } else {
-                    proof_length(&prover, &proof)
-                };
+            let len = if szs_status.contains("countersatisfiable")
+                || szs_status.contains("counter-satisfiable")
+                || szs_status.contains("counter_satisfiable")
+                || (szs_status.contains("satisfiable") && !szs_status.contains("unsatisfiable"))
+                || szs_status.contains("unknown")
+            {
+                1000 // sentinel for non-theorem / countersat / unknown
+                     // TODO we can use them. But for now we just want shortest
+                     // theorem proofs. Later we can see how we prove the
+                     // conjecture from the satisfiable ones.
+            } else {
+                proof_length(&prover, &proof)
+            };
 
-                //let len = proof_length(&prover, &proof);
-                crate::klog_debug!("[DEBUG] {} proof length: {} lines", prover, len);
-                all_proofs.push((prover, proof, len, file_stem.to_string()));
-            }
-        }
+            crate::klog_debug!("[DEBUG] {} proof length: {} lines", prover, len);
+            Some((prover, proof, len, file_stem.to_string()))
+        };
+        // (prover, proof, len, filename)
+        let all_proofs: Vec<(String, String, usize, String)> =
+            if execution_mode() == ExecutionMode::Sequential {
+                jobs.iter().filter_map(run_job).collect()
+            } else {
+                jobs.par_iter().filter_map(run_job).collect()
+            };
 
         // pick the shortest proof across all modes and provers
         if let Some((best_prover, best_proof, best_len, best_file)) =

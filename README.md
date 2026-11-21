@@ -41,9 +41,9 @@ Commands executed in the pipeline:
 
 `run_vampire → collect → shorten → minimize`
 
-A shorter alternative is `run_vampire → direct`. It builds the same three
-segments (departure lemma, arrival lemma, conjecture) but proves no lemmas in
-advance. See `DEVELOPERS.md`.
+A shorter alternative is `run_vampire → direct`. It is the same pipeline, but
+proves only the lemmas that `minimize` can reach from its arrival candidates.
+See `DEVELOPERS.md`.
 
 ---
 
