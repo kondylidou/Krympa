@@ -180,3 +180,27 @@ fn test_permutations_small_vars_reversed() {
     let target = "(op(op(V0,V1),V2) = op(V0,op(V1,V2)))"; // sides swapped
     assert!(formulas_match_with_permutations(formula, target));
 }
+
+/// Equation 2602 implies equation 1635: steps 65 and 100 of Vampire's proof
+/// are different existential statements and must not get the same name.
+#[test]
+fn different_existential_statements_do_not_match() {
+    let step65 = "! [X1] : (? [X0] : X1 = op(op(X1,X1),op(op(X0,X1),X0)))";
+    let step100 = "! [X1] : (? [X0] : X1 = op(op(X1,X1),op(op(X0,X0),X1)))";
+    assert!(!formulas_match(step65, step100));
+    assert!(!formulas_match(step100, step65));
+    assert!(!formula_is_instance_of(step65, step100));
+}
+
+#[test]
+fn equal_existential_statements_match() {
+    let a = "! [X1] : (? [X0] : X1 = op(op(X1,X1),op(op(X0,X1),X0)))";
+    // renamed and read the other way round
+    let b = "! [X4] : (? [X7] : op(op(X4,X4),op(op(X7,X4),X7)) = X4)";
+    assert!(formulas_match(a, b));
+    // the roles of the variables differ
+    let c = "! [X0] : (? [X1] : X1 = op(op(X1,X1),op(op(X0,X1),X0)))";
+    assert!(!formulas_match(a, c));
+    // an existential statement is not an equation
+    assert!(!formulas_match(a, "X1 = op(op(X1,X1),op(op(X0,X1),X0))"));
+}

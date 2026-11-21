@@ -250,12 +250,61 @@ fn replace_all(term: &Term, paths: &[Path], new: &Term) -> Term {
         .fold(term.clone(), |term, path| replace(&term, path, new))
 }
 
-fn as_pattern(term: &Term, tag: char) -> Term {
+/// The term with its variables as pattern variables, except `keep`, which
+/// stay constants (the witnesses of an existential fact).
+fn as_pattern(term: &Term, tag: char, keep: &[String]) -> Term {
     match term {
-        Term::Var(name) => Term::Pattern(tag, name.clone()),
-        Term::Op(left, right) => op(as_pattern(left, tag), as_pattern(right, tag)),
+        Term::Var(name) if !keep.contains(name) => Term::Pattern(tag, name.clone()),
+        Term::Op(left, right) => op(as_pattern(left, tag, keep), as_pattern(right, tag, keep)),
         other => other.clone(),
     }
+}
+
+/// The variables `names` of `term` as pattern variables to be solved for:
+/// the witnesses of an existential statement that is being proved.
+pub fn open_witnesses(term: &Term, names: &[String]) -> Term {
+    match term {
+        Term::Var(name) if names.contains(name) => Term::Pattern('E', name.clone()),
+        Term::Op(left, right) => op(open_witnesses(left, names), open_witnesses(right, names)),
+        other => other.clone(),
+    }
+}
+
+/// The term with the variables of `values` replaced.
+pub fn substitute(term: &Term, values: &HashMap<String, Term>) -> Term {
+    match term {
+        Term::Var(name) => values.get(name).cloned().unwrap_or_else(|| term.clone()),
+        Term::Op(left, right) => op(substitute(left, values), substitute(right, values)),
+        other => other.clone(),
+    }
+}
+
+/// Parse `! [..] : (? [Y, ..] : lhs = rhs)`: the existential variables (as
+/// `parse_term` names them) and the two sides.
+pub fn parse_existential(text: &str) -> Result<(Vec<String>, Term, Term), String> {
+    let quantifier = cached_regex(r"(?s)^\s*!\s*\[[^\]]*\]\s*:\s*(.*)$");
+    let mut body = match quantifier.captures(text) {
+        Some(found) => found.get(1).unwrap().as_str(),
+        None => text,
+    }
+    .trim();
+    while body.len() >= 2
+        && body.starts_with('(')
+        && body.ends_with(')')
+        && balanced(&body[1..body.len() - 1])
+    {
+        body = body[1..body.len() - 1].trim();
+    }
+    let found = cached_regex(r"(?s)^\?\s*\[([^\]]*)\]\s*:\s*(.*)$")
+        .captures(body)
+        .ok_or_else(|| format!("not an existential statement: {:?}", text))?;
+    let names = found[1]
+        .split(',')
+        .map(|name| name.trim().to_lowercase())
+        .filter(|name| !name.is_empty())
+        .collect();
+    let (lhs, rhs) = parse_equation(&found[2])?;
+    Ok((names, lhs, rhs))
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +378,10 @@ fn resolve(term: &Term, subst: &Subst, default: &str) -> Term {
 #[derive(Clone, Debug)]
 pub struct Fact {
     pub lean_name: String,
+    /// the universally quantified variables
     pub vars: Vec<String>,
+    /// for `∀ vars, ∃ witnesses, lhs = rhs`: the existential variables
+    pub witnesses: Vec<String>,
     pub lhs: Term,
     pub rhs: Term,
 }
@@ -348,13 +400,42 @@ impl Fact {
         Fact {
             lean_name: lean_name.to_string(),
             vars: (0..order.len()).map(fresh_name).collect(),
+            witnesses: Vec::new(),
+            lhs: rename(lhs, &mapping, None),
+            rhs: rename(rhs, &mapping, None),
+        }
+    }
+
+    /// `∀ .., ∃ existential, lhs = rhs`: the universal variables renamed to
+    /// `x`, `y`, ..., the existential ones to names unique to this fact.
+    pub fn existential(lean_name: &str, lhs: &Term, rhs: &Term, existential: &[String]) -> Fact {
+        let mut order = Vec::new();
+        term_vars(lhs, &mut order);
+        term_vars(rhs, &mut order);
+        let universal: Vec<&String> = order.iter().filter(|v| !existential.contains(v)).collect();
+        let witnesses: Vec<String> = (1..=existential.len())
+            .map(|k| format!("{}_w{}", lean_name, k))
+            .collect();
+        let mut mapping: HashMap<String, String> = universal
+            .iter()
+            .enumerate()
+            .map(|(i, name)| ((*name).clone(), fresh_name(i)))
+            .collect();
+        mapping.extend(existential.iter().cloned().zip(witnesses.iter().cloned()));
+        Fact {
+            lean_name: lean_name.to_string(),
+            vars: (0..universal.len()).map(fresh_name).collect(),
+            witnesses,
             lhs: rename(lhs, &mapping, None),
             rhs: rename(rhs, &mapping, None),
         }
     }
 
     fn pattern(&self, tag: char) -> (Term, Term) {
-        (as_pattern(&self.lhs, tag), as_pattern(&self.rhs, tag))
+        (
+            as_pattern(&self.lhs, tag, &self.witnesses),
+            as_pattern(&self.rhs, tag, &self.witnesses),
+        )
     }
 
     pub fn statement(&self) -> String {
@@ -383,6 +464,13 @@ pub type Justification = (String, usize, String);
 pub struct Library {
     pub facts: Vec<Fact>,
     pub used: BTreeSet<FactId>,
+    /// existential facts the proof term uses, with the arguments of the one
+    /// instance it uses; the term refers to that instance as `h_<name>`
+    pub opened: Vec<(FactId, Vec<String>)>,
+    /// set if an existential fact is used with two different instances
+    pub conflict: bool,
+    /// the substitution of the last justification
+    last_subst: Subst,
 }
 
 impl Library {
@@ -401,11 +489,26 @@ impl Library {
         flipped: bool,
     ) -> String {
         self.used.insert(id);
+        self.last_subst = subst.clone();
         let fact = &self.facts[id];
         let mut words = vec![fact.lean_name.clone()];
         for var in &fact.vars {
             let value = resolve(&Term::Pattern(tag, var.clone()), subst, default);
             words.push(show(&value));
+        }
+        if !fact.witnesses.is_empty() {
+            let args = words[1..].to_vec();
+            let name = format!("h_{}", fact.lean_name);
+            match self.opened.iter().find(|(opened, _)| *opened == id) {
+                Some((_, earlier)) if *earlier != args => self.conflict = true,
+                Some(_) => {}
+                None => self.opened.push((id, args)),
+            }
+            return if flipped {
+                format!("({}).symm", name)
+            } else {
+                name
+            };
         }
         let term = words.join(" ");
         if flipped {
@@ -415,6 +518,53 @@ impl Library {
         } else {
             format!("({})", term)
         }
+    }
+
+    /// The value the last justification gives the witness `name` of the
+    /// existential statement it proved.
+    pub fn witness_value(&self, name: &str, default: &str) -> Term {
+        resolve(
+            &Term::Pattern('E', name.to_string()),
+            &self.last_subst,
+            default,
+        )
+    }
+
+    /// What a candidate justification may have to undo.
+    fn snapshot(&self) -> (BTreeSet<FactId>, Vec<(FactId, Vec<String>)>) {
+        (self.used.clone(), self.opened.clone())
+    }
+
+    /// Keep a candidate if the existential facts it uses can be opened: each
+    /// with one instance, whose arguments do not mention a witness (the
+    /// witness only exists after opening). Otherwise undo it.
+    fn keep(&mut self, snapshot: (BTreeSet<FactId>, Vec<(FactId, Vec<String>)>)) -> bool {
+        let witnesses: Vec<&String> = self
+            .opened
+            .iter()
+            .flat_map(|(id, _)| &self.facts[*id].witnesses)
+            .collect();
+        let mentions_witness = |arg: &String| {
+            arg.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .any(|word| witnesses.iter().any(|w| w.as_str() == word))
+        };
+        let valid = !self.conflict
+            && !self
+                .opened
+                .iter()
+                .any(|(_, args)| args.iter().any(mentions_witness));
+        if !valid {
+            (self.used, self.opened) = snapshot;
+            self.conflict = false;
+        }
+        valid
+    }
+
+    /// Forget what the last attempt used.
+    pub fn reset(&mut self) {
+        self.used.clear();
+        self.opened.clear();
+        self.conflict = false;
     }
 
     /// How `goal` is an instance of a fact, if it is: the substitution and
@@ -535,6 +685,56 @@ impl Library {
         None
     }
 
+    /// Like `rewrite_then_instance`, but the rewritten positions are found by
+    /// matching the goal against `main` directly, instead of trying sets of
+    /// occurrences. Needed when the rewritten subterm occurs many times and
+    /// only some of its occurrences are rewritten.
+    fn rewrite_then_instance_anywhere(
+        &mut self,
+        goal: (&Term, &Term),
+        main: FactId,
+        side: FactId,
+        default: &str,
+    ) -> Option<(String, usize)> {
+        let equation = eq(goal.0.clone(), goal.1.clone());
+        let (main_left, main_right) = self.facts[main].pattern('A');
+        let (side_left, side_right) = self.facts[side].pattern('B');
+        for (from, to, side_flipped) in [
+            (&side_left, &side_right, true),
+            (&side_right, &side_left, false),
+        ] {
+            for (first, second, main_flipped) in [
+                (&main_left, &main_right, false),
+                (&main_right, &main_left, true),
+            ] {
+                let main_pattern = eq(first.clone(), second.clone());
+                let mut subst = Subst::new();
+                let mut paths = Vec::new();
+                let rewrite = (from, to);
+                if match_rewritten(
+                    &main_pattern,
+                    &equation,
+                    rewrite,
+                    &mut subst,
+                    &[],
+                    &mut paths,
+                ) && !paths.is_empty()
+                {
+                    let back = self.apply(side, 'B', &subst, default, side_flipped);
+                    let closing = self.apply(main, 'A', &subst, default, main_flipped);
+                    let proof = format!(
+                        "(Eq.mpr (congrArg {} {}) {})",
+                        context(&equation, &paths),
+                        back,
+                        closing
+                    );
+                    return Some((proof, paths.len()));
+                }
+            }
+        }
+        None
+    }
+
     /// Justify `goal` from `facts`: as an instance, by one rewrite, or (with
     /// `allow_pairs`) by one rewrite closed by a second equation. With `pool`,
     /// such a pair may combine a fact from `facts` with any fact from `pool`.
@@ -547,18 +747,24 @@ impl Library {
         pool: Option<&[FactId]>,
     ) -> Option<Justification> {
         for &id in facts {
+            let before = self.snapshot();
             if let Some(proof) = self.instance_of(goal, id, default) {
-                return Some((
-                    proof,
-                    0,
-                    format!("instance of {}", self.facts[id].lean_name),
-                ));
+                if self.keep(before) {
+                    return Some((
+                        proof,
+                        0,
+                        format!("instance of {}", self.facts[id].lean_name),
+                    ));
+                }
             }
         }
         for &id in facts {
+            let before = self.snapshot();
             if let Some((proof, count)) = self.one_rewrite(goal, id, default) {
-                let how = format!("one rewrite with {}{}", self.facts[id].lean_name, at(count));
-                return Some((proof, 1, how));
+                if self.keep(before) {
+                    let how = format!("one rewrite with {}{}", self.facts[id].lean_name, at(count));
+                    return Some((proof, 1, how));
+                }
             }
         }
         if !allow_pairs {
@@ -568,8 +774,23 @@ impl Library {
             None => pairs_of(facts, facts),
             Some(pool) => [pairs_of(facts, pool), pairs_of(pool, facts)].concat(),
         };
-        for (main, side) in pairs {
-            if let Some((proof, count)) = self.rewrite_then_instance(goal, main, side, default) {
+        for &(main, side) in &pairs {
+            let before = self.snapshot();
+            let found = self.rewrite_then_instance(goal, main, side, default);
+            if let Some((proof, count)) = found.filter(|_| self.keep(before)) {
+                let how = format!(
+                    "one rewrite with {}{}, closed by {}",
+                    self.facts[side].lean_name,
+                    at(count),
+                    self.facts[main].lean_name
+                );
+                return Some((proof, 1, how));
+            }
+        }
+        for &(main, side) in &pairs {
+            let before = self.snapshot();
+            let found = self.rewrite_then_instance_anywhere(goal, main, side, default);
+            if let Some((proof, count)) = found.filter(|_| self.keep(before)) {
                 let how = format!(
                     "one rewrite with {}{}, closed by {}",
                     self.facts[side].lean_name,
@@ -580,6 +801,55 @@ impl Library {
             }
         }
         None
+    }
+}
+
+/// Match `pattern` (an instance of `main`) against `term`, where `term` may
+/// differ from it at some positions by one rewrite `from` -> `to`: there
+/// `term` has an instance of `to` and the pattern an instance of `from`, the
+/// same instance everywhere. The positions are collected in `paths`.
+fn match_rewritten(
+    pattern: &Term,
+    term: &Term,
+    rewrite: (&Term, &Term),
+    subst: &mut Subst,
+    path: &[u8],
+    paths: &mut Vec<Path>,
+) -> bool {
+    let (from, to) = rewrite;
+    // the same here
+    let mut plain = subst.clone();
+    if unify(pattern, term, &mut plain) {
+        *subst = plain;
+        return true;
+    }
+    // rewritten here (not the equation as a whole)
+    if !path.is_empty() {
+        let mut here = subst.clone();
+        if unify(to, term, &mut here) && unify(pattern, from, &mut here) {
+            *subst = here;
+            paths.push(path.to_vec());
+            return true;
+        }
+    }
+    // the same operation, with rewrites below
+    let pattern = walk(pattern, subst).clone();
+    match (&pattern, term) {
+        (Term::Op(p1, p2), Term::Op(t1, t2)) | (Term::Eq(p1, p2), Term::Eq(t1, t2)) => {
+            let mut trial = subst.clone();
+            let mut found = Vec::new();
+            let left = [path, &[1]].concat();
+            let right = [path, &[2]].concat();
+            if match_rewritten(p1, t1, rewrite, &mut trial, &left, &mut found)
+                && match_rewritten(p2, t2, rewrite, &mut trial, &right, &mut found)
+            {
+                *subst = trial;
+                paths.extend(found);
+                return true;
+            }
+            false
+        }
+        _ => false,
     }
 }
 

@@ -147,6 +147,16 @@ One line per Vampire inference: name, equation, premises. `lemma_NNNN` is a
 fresh name, `small_step_lemma_NNNN` (or `big_step_`, `abstracted_`) is lemma
 NNNN of the original proof, `a_1` is the axiom, `conjecture` the goal.
 
+The lines of a block are written by `prepend_superposition_steps` in
+dependency order, not in Vampire's numbering: a turned refutation keeps
+Vampire's numbers, so a turned step can use a step with a higher number. Steps
+that state the same equation (up to renaming of variables and orientation)
+share one name and are written once, the first in dependency order, which is
+the one with a derivation. Existential statements are only equal if they are
+the same up to renaming, existential variables to existential ones
+(`formulas_match`). A lemma proof that `collect` stored as Vampire printed it
+is turned around before its steps are copied.
+
 ```
 The conjecture is true! Here is a proof.
 Axiom 1 (lemma_0003): ...
@@ -214,9 +224,10 @@ steps.
 ## Lean Export and Step Removal
 
 `./krympa lean <proof.out>` writes `lean/Proof/<proof>.lean` and runs `lean` on
-it in `lean/`; `--lean` does the same at the end of a run. Every step becomes an
-explicit proof term, so Lean checks without searching and the file needs only
-core Lean. Terms over one binary operation `op` only.
+it in `lean/`; `--lean` does the same at the end of a run. The translation is
+one to one: every step of the proof file becomes one `have` with an explicit
+proof term, nothing is added or merged, so Lean checks without searching and
+the file needs only core Lean. Terms over one binary operation `op` only.
 
 - A step is accepted if it is one rewrite: one instance of one equation,
   applied to one or more occurrences of the same subterm, optionally followed
@@ -224,16 +235,20 @@ core Lean. Terms over one binary operation `op` only.
   of a superposition inference.
 - The converter finds the instance and the occurrences from the premises the
   step lists. If those do not suffice it tries the other equations proved so
-  far and reports it.
+  far and reports it. When the rewritten subterm occurs often and only some
+  occurrences are rewritten, the positions are found by matching the goal
+  against the second equation directly (`match_rewritten`).
 - It prints how many steps rewrite a subterm and how many only instantiate an
   earlier equation, and notes steps that nothing depends on.
 - A step that is not a single rewrite is left as `sorry`, and Lean is not run.
   A file that Lean accepts without a message therefore certifies the step
   count.
-- Existential statements (`?`, see above) are not translated yet. A step
-  derived from one is left as `sorry`, although it is usually one rewrite after
-  choosing the witness. This is the most common reason a proof is not
-  certified.
+- An existential step `∀ u, ∃ w, s = t` (see above) is proved as
+  `⟨term, proof⟩`: the witness term is found by unification, then the instance
+  is checked as one rewrite. A step that uses an existential statement first
+  picks its witness, `match e u with | ⟨w, h⟩ => ..`, and uses `h` as an
+  equation, with one instance only. If an existential step cannot be
+  translated it is left out, and a step that needs it fails.
 
 `./krympa compress <proof.out>` writes `<proof>_compressed.out`; `--compress`
 replaces the proof of a run. It uses the same one-rewrite search, and no

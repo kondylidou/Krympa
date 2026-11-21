@@ -30,6 +30,7 @@ benchmarks/output_logs/
 
 # === Prover Outputs ===
 *.out
+!tests/data/*.out
 *.proof
 
 # === Logs and Temps ===

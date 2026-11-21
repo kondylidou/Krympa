@@ -1,0 +1,36 @@
+% === Input Problem ===
+fof(a1, axiom,
+    ! [X0, X1, X2, X3, X4] :
+        (X0 = op(op(X0,op(X0,X1)),op(X1,X2)))
+).
+
+fof(conjecture0, conjecture,
+    ! [X0, X1, X2, X3, X4] :
+        (X0 = op(op(X0,X1),op(X2,op(X3,X4))))
+).
+
+
+% === Superposition Steps ===
+% lemma_0001: op(X0,op(X0,X1)) = op(op(op(X0,op(X0,X1)),X0),op(op(X1,X2),X3)) | deps: a_1: ! [X0,X1,X2,X3,X4] : X0 = op(op(X0,op(X0,X1)),op(X1,X2))
+% lemma_0002: op(op(X1,op(X1,op(X0,op(X0,X2)))),X0) = X1 | deps: a_1: ! [X0,X1,X2,X3,X4] : X0 = op(op(X0,op(X0,X1)),op(X1,X2))
+% lemma_0003: op(op(X0,X1),op(op(X0,X1),X0)) = op(op(X0,X1),op(op(X0,X2),X3)) | deps: lemma_0001: op(X0,op(X0,X1)) = op(op(op(X0,op(X0,X1)),X0),op(op(X1,X2),X3)), a_1: ! [X0,X1,X2,X3,X4] : X0 = op(op(X0,op(X0,X1)),op(X1,X2))
+% lemma_0004: op(X0,X1) = op(op(op(X0,X1),op(op(X0,X1),X0)),X2) | deps: lemma_0002: op(op(X1,op(X1,op(X0,op(X0,X2)))),X0) = X1, lemma_0003: op(op(X0,X1),op(op(X0,X1),X0)) = op(op(X0,X1),op(op(X0,X2),X3))
+
+% === Superposition Steps ===
+% lemma_0005: op(op(X0,op(X0,op(X0,op(X0,X1)))),X3) = X0 | deps: lemma_0004, a_1: ! [X0,X1,X2,X3,X4] : X0 = op(op(X0,op(X0,X1)),op(X1,X2))
+% lemma_0006: op(X0,op(X0,op(X0,op(X0,X1)))) = op(op(op(X0,op(X0,op(X0,op(X0,X1)))),X0),X2) | deps: lemma_0004, lemma_0002
+% lemma_0007: op(X0,X2) = op(X0,op(X0,op(X0,op(X0,X1)))) | deps: lemma_0006: op(X0,op(X0,op(X0,op(X0,X1)))) = op(op(op(X0,op(X0,op(X0,op(X0,X1)))),X0),X2), lemma_0002
+% lemma_0008: op(X0,X1) = op(X0,X2) | deps: lemma_0007: op(X0,X2) = op(X0,op(X0,op(X0,op(X0,X1))))
+% lemma_0009: op(op(X0,X1),X3) = X0 | deps: lemma_0005: op(op(X0,op(X0,op(X0,op(X0,X1)))),X3) = X0, lemma_0007: op(X0,X2) = op(X0,op(X0,op(X0,op(X0,X1))))
+
+The conjecture is true! Here is a proof.
+
+Axiom 1 (lemma_0009): op(op(X, Y), Z) = X.
+
+Goal 1 (conjecture0): x0_2 = op(op(x0_2, x1), op(x2, op(x3, x4))).
+Proof:
+  x0_2
+= { by axiom 1 (lemma_0009) R->L }
+  op(op(x0_2, x1), op(x2, op(x3, x4)))
+
+RESULT: Theorem (the conjecture is true).

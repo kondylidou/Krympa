@@ -82,3 +82,34 @@ fn a_step_that_is_not_one_rewrite_is_reported() {
     assert!(translation.lean.contains("sorry"));
     assert!(compress(&broken).is_err());
 }
+
+/// Equation 1842 implies equation 1477, reduced: `l3` follows from `l2` or,
+/// in one rewrite, from `l4`, which itself comes from `l2`. Removing `l2`
+/// must not leave `l4` behind without its derivation.
+#[test]
+fn a_removed_line_is_not_needed_by_its_replacement() {
+    let proof = std::fs::read_to_string("tests/data/proof_1842_1477.out").unwrap();
+    let before = translate(&proof, "proof.out").unwrap();
+    assert!(before.certified);
+    let shorter = compress(&proof).unwrap();
+    assert!(shorter.steps_after <= shorter.steps_before);
+    let after = translate(&shorter.text, "shorter.out").unwrap();
+    assert!(after.certified, "{:?}\n{}", after.messages, shorter.text);
+    // every premise a line lists is still in the file
+    for line in shorter.text.lines().filter(|l| l.starts_with("% lemma_")) {
+        let deps = line.split_once("| deps:").unwrap().1;
+        for dep in deps
+            .split(", ")
+            .map(str::trim)
+            .filter(|d| d.starts_with("lemma_"))
+        {
+            let name = dep.split(':').next().unwrap();
+            assert!(
+                shorter.text.contains(&format!("% {}:", name)),
+                "{} is cited but not derived:\n{}",
+                name,
+                shorter.text
+            );
+        }
+    }
+}

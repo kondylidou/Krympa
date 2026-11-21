@@ -1,5 +1,6 @@
 use crate::alpha_match::{formula_is_instance_of, formulas_match};
 use crate::dag::load_dag;
+use crate::proof_turnaround::eq_proof_procedure;
 use crate::regex_cache::cached_regex;
 use crate::utils::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,18 +22,16 @@ pub struct VampStep {
 /// - returns all steps keyed by Vampire number
 /// - returns input clauses (Vampire-number -> formula)
 /// - returns relevant proof steps as a set of Vampire numbers (superposition/demodulation/...)
-pub fn parse_vampire_proof(
-    file_path: &str,
-) -> Result<
-    (
-        AllSteps,        // all steps (vamp -> step)
-        InputFormulas,   // input_formulas (vamp -> formula)
-        BTreeSet<usize>, // relevant vamp indices
-    ),
-    String,
-> {
+pub fn parse_vampire_proof(file_path: &str) -> Result<ParsedProof, String> {
     let content = fs::read_to_string(file_path).map_err(|e| e.to_string())?;
+    parse_vampire_text(&content)
+}
 
+/// All steps, input formulas and relevant step numbers of a Vampire proof.
+pub type ParsedProof = (AllSteps, InputFormulas, BTreeSet<usize>);
+
+/// `parse_vampire_proof` on the text of a proof.
+fn parse_vampire_text(content: &str) -> Result<ParsedProof, String> {
     let mut all_steps: AllSteps = BTreeMap::new();
     let mut input_formulas: InputFormulas = BTreeMap::new();
     let mut relevant: BTreeSet<usize> = BTreeSet::new();
@@ -342,7 +341,30 @@ pub(crate) fn extract_superposition_steps_matching(
     lemma_formula: &str,
     allow_instance: bool,
 ) -> Option<(RelevantSteps, InputFormulas, AllSteps)> {
-    let (all_steps, input_formulas, relevant_set) = match parse_vampire_proof(vampire_file) {
+    let content = match fs::read_to_string(vampire_file) {
+        Ok(content) => content,
+        Err(err) => {
+            crate::klog_warn!(
+                "  [WARN] Cannot read Vampire proof {}: {}",
+                vampire_file,
+                err
+            );
+            return None;
+        }
+    };
+    let find = |(all_steps, _, relevant_set): &ParsedProof| {
+        relevant_set.iter().copied().find(|vnum| {
+            all_steps
+                .get(vnum)
+                .map(|step| {
+                    formulas_match(lemma_formula, &step.formula)
+                        || formulas_match(lemma_formula, &format!("({})", step.formula))
+                        || (allow_instance && formula_is_instance_of(&step.formula, lemma_formula))
+                })
+                .unwrap_or(false)
+        })
+    };
+    let mut parsed = match parse_vampire_text(&content) {
         Ok(x) => x,
         Err(err) => {
             crate::klog_warn!(
@@ -353,18 +375,18 @@ pub(crate) fn extract_superposition_steps_matching(
             return None;
         }
     };
-
-    // find a relevant vamp step proving the lemma
-    let proving_vnum = relevant_set.iter().copied().find(|vnum| {
-        all_steps
-            .get(vnum)
-            .map(|step| {
-                formulas_match(lemma_formula, &step.formula)
-                    || formulas_match(lemma_formula, &format!("({})", step.formula))
-                    || (allow_instance && formula_is_instance_of(&step.formula, lemma_formula))
-            })
-            .unwrap_or(false)
-    });
+    let mut proving_vnum = find(&parsed);
+    // A lemma proof stored by `collect` is Vampire's refutation as printed. It
+    // may never state the lemma itself; turned around, it ends with it.
+    if proving_vnum.is_none() && content.contains("$false") {
+        if let Ok(turned) = parse_vampire_text(&eq_proof_procedure(&content)) {
+            proving_vnum = find(&turned);
+            if proving_vnum.is_some() {
+                parsed = turned;
+            }
+        }
+    }
+    let (all_steps, input_formulas, relevant_set) = parsed;
 
     if proving_vnum.is_none() {
         crate::klog_debug!(
@@ -431,6 +453,40 @@ fn used_lemma_numbers(axioms: &Vec<(String, String)>) -> BTreeSet<usize> {
     used
 }
 
+/// The relevant steps, each after the steps it uses, otherwise by Vampire
+/// number. The numbers alone are not such an order: a turned refutation keeps
+/// Vampire's numbers, so a turned step can use a step with a higher number.
+fn dependency_order(relevant_steps: &RelevantSteps, all_steps: &AllSteps) -> Vec<usize> {
+    fn visit(
+        step: usize,
+        relevant_steps: &RelevantSteps,
+        all_steps: &AllSteps,
+        visited: &mut BTreeSet<usize>,
+        order: &mut Vec<usize>,
+    ) {
+        if !visited.insert(step) {
+            return;
+        }
+        // look through steps that are not relevant themselves, too
+        let deps = all_steps
+            .get(&step)
+            .or_else(|| relevant_steps.get(&step))
+            .map(|s| s.deps.clone())
+            .unwrap_or_default();
+        for dep in deps {
+            visit(dep, relevant_steps, all_steps, visited, order);
+        }
+        if relevant_steps.contains_key(&step) {
+            order.push(step);
+        }
+    }
+    let (mut visited, mut order) = (BTreeSet::new(), Vec::new());
+    for &step in relevant_steps.keys() {
+        visit(step, relevant_steps, all_steps, &mut visited, &mut order);
+    }
+    order
+}
+
 /// Find the existing name of a lemma if available
 fn find_existing_name_for_formula<'a>(
     axioms: &'a [(String, String)],
@@ -482,13 +538,18 @@ pub(crate) fn prepend_superposition_steps_for_target(
     // (including reversed equality direction) collapse to the same name.
     let mut renaming: BTreeMap<usize, String> = BTreeMap::new();
     let mut seen_this_run: Vec<(String, String)> = Vec::new();
+    // Steps are named and written in dependency order: of two steps with the
+    // same equation, the one written is then the one with a derivation, and
+    // the other, a mere restatement, gets its name.
+    let order = dependency_order(relevant_steps, all_steps);
     let target_vnum = target.and_then(|(_, formula)| {
         relevant_steps
             .iter()
             .find(|(_, step)| formula_is_instance_of(&step.formula, formula))
             .map(|(vnum, _)| *vnum)
     });
-    for (vnum, step) in relevant_steps {
+    for vnum in &order {
+        let step = &relevant_steps[vnum];
         if Some(*vnum) == target_vnum {
             renaming.insert(*vnum, target.unwrap().0.to_string());
         } else if let Some(existing) = find_existing_name_for_formula(axioms, &step.formula) {
@@ -509,7 +570,8 @@ pub(crate) fn prepend_superposition_steps_for_target(
     let mut memo: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
     let mut output_names: BTreeSet<String> = BTreeSet::new();
 
-    for (vnum, step) in relevant_steps {
+    for vnum in &order {
+        let step = &relevant_steps[vnum];
         let lemma_name = renaming.get(vnum).unwrap();
 
         // skip if an equivalent step was already output under this name
@@ -612,5 +674,104 @@ mod tests {
         assert!(!proof
             .lines()
             .any(|line| { line.starts_with("% goal:") && line.contains("| deps: goal:") }));
+    }
+
+    /// Equation 775 implies equation 2928: in the turned refutation, step 18
+    /// restates step 43 and has the lower number. Step 43 must be written,
+    /// with its derivation, and step 18 must not cite itself.
+    #[test]
+    fn a_restated_step_does_not_replace_its_derivation() {
+        let step = |formula: &str, deps: Vec<usize>, is_input: bool| VampStep {
+            formula: formula.to_string(),
+            deps,
+            is_input,
+        };
+        let all_steps = BTreeMap::from([
+            (5, step("! [X0,X1] : op(X0,X1) = op(X1,X0)", vec![], true)),
+            (
+                6,
+                step(
+                    "! [X0,X1,X2] : X0 = op(op(X1,op(X2,op(X0,X1))),X2)",
+                    vec![],
+                    true,
+                ),
+            ),
+            (11, step("$true", vec![], false)),
+            (13, step("op(X0,X1) = op(X1,X0)", vec![5], false)),
+            (
+                14,
+                step("op(op(X1,op(X2,op(X0,X1))),X2) = X0", vec![6], false),
+            ),
+            (
+                18,
+                step(
+                    "! [X0,X1,X2] : X0 = op(X1,op(X2,op(X1,op(X0,X2))))",
+                    vec![11, 43],
+                    false,
+                ),
+            ),
+            (
+                43,
+                step("op(X2,op(X1,op(X2,op(X0,X1)))) = X0", vec![13, 14], false),
+            ),
+            (
+                210,
+                step(
+                    "! [X0,X1,X2] : X0 = op(X1,op(op(X1,op(X0,X2)),X2))",
+                    vec![18, 13],
+                    false,
+                ),
+            ),
+        ]);
+        let relevant_steps: RelevantSteps = [18, 43, 210]
+            .iter()
+            .map(|n| (*n, all_steps[n].clone()))
+            .collect();
+        let input_formulas = BTreeMap::from([
+            (5, all_steps[&5].formula.clone()),
+            (6, all_steps[&6].formula.clone()),
+        ]);
+        let axioms = vec![
+            (
+                "lemma_0003".to_string(),
+                "op(X0,X1) = op(X1,X0)".to_string(),
+            ),
+            (
+                "a1".to_string(),
+                "X0 = op(op(X1,op(X2,op(X0,X1))),X2)".to_string(),
+            ),
+        ];
+
+        let (proof, renaming) =
+            prepend_superposition_steps(&axioms, &relevant_steps, &input_formulas, &all_steps);
+
+        assert_eq!(renaming[&18], renaming[&43]);
+        let name = &renaming[&43];
+        let lines: Vec<&str> = proof
+            .lines()
+            .filter(|l| l.starts_with("% lemma_"))
+            .collect();
+        assert_eq!(lines.len(), 2, "{}", proof);
+        // step 43 itself is written, not its restatement
+        assert!(
+            lines[0].starts_with(&format!(
+                "% {}: op(X2,op(X1,op(X2,op(X0,X1)))) = X0 |",
+                name
+            )),
+            "{}",
+            proof
+        );
+        // no line cites itself
+        for line in &lines {
+            let (own, deps) = line[2..].split_once(": ").unwrap();
+            let deps = deps.split_once("| deps:").unwrap().1;
+            assert!(
+                !deps
+                    .split(", ")
+                    .any(|dep| dep.trim().split(':').next() == Some(own)),
+                "{}",
+                proof
+            );
+        }
     }
 }

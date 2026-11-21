@@ -229,7 +229,8 @@ struct Lines {
 
 impl Lines {
     /// The equations `dependent` may be derived from without `line`: the
-    /// axioms, and the citable equations before it that do not need it.
+    /// axioms, and the citable equations before it that need neither
+    /// `dependent` (that would be circular) nor `line` (it is being removed).
     fn available(&self, dependent: FactId, line: FactId, uses: &Uses) -> Vec<FactId> {
         let mut pool = self.axioms.clone();
         for &fact in &self.facts {
@@ -245,7 +246,11 @@ impl Lines {
             } else {
                 self.segment[&fact] < self.segment[&dependent]
             };
-            if before && !ancestors(fact, uses).contains(&dependent) {
+            if !before {
+                continue;
+            }
+            let needs = ancestors(fact, uses);
+            if !needs.contains(&dependent) && !needs.contains(&line) {
                 pool.push(fact);
             }
         }

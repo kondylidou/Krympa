@@ -17,7 +17,8 @@
 use crate::proof_file::{canon, read_proof, Item, ProofFile};
 use crate::regex_cache::cached_regex;
 use crate::rewrite::{
-    parse_equation, parse_term, rename, show, term_vars, Fact, FactId, Library, Term,
+    open_witnesses, parse_equation, parse_existential, parse_term, rename, show, substitute,
+    term_vars, Fact, FactId, Justification, Library, Term,
 };
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
@@ -53,7 +54,8 @@ pub struct Converter {
     rewrites: usize,
     failed_steps: usize,
     pub failures: Vec<String>,
-    /// steps that state an existential; they are not checked
+    /// existential steps that could not be translated; later steps are
+    /// checked without them
     existential: Vec<String>,
     notes: Vec<String>,
     /// names that are used but never proved
@@ -111,7 +113,8 @@ impl Converter {
     fn lookup(&self, name: &str, formula: Option<&str>) -> Option<FactId> {
         let named = [self.by_name.get(name), self.by_name.get(&canon(name))];
         let mut candidates = named.into_iter().flatten().copied();
-        let Some(formula) = formula else {
+        let Some(formula) = formula.filter(|f| !f.contains('?')) else {
+            // no formula, or an existential one: the name decides
             return candidates.next();
         };
         let (lhs, rhs) = parse_equation(formula).ok()?;
@@ -153,11 +156,17 @@ impl Converter {
         } else {
             format!(" ({} : G)", fact.vars.join(" "))
         };
+        let exists = if fact.witnesses.is_empty() {
+            String::new()
+        } else {
+            format!("∃ ({} : G), ", fact.witnesses.join(" "))
+        };
         let have = format!(
-            "  -- {}\n  have {}{} :\n      {} =\n      {} :=\n    {}\n",
+            "  -- {}\n  have {}{} :\n      {}{} =\n      {} :=\n    {}\n",
             comment,
             fact.lean_name,
             binder,
+            exists,
             show(&fact.lhs),
             show(&fact.rhs),
             proof
@@ -194,10 +203,12 @@ impl Converter {
         premises: &[(String, Option<String>)],
     ) -> Result<(), String> {
         if formula.contains('?') {
-            // A turned refutation step can be an existential statement. It is
-            // not an equation: later steps are checked without it.
-            self.steps += 1;
-            self.existential.push(name.to_string());
+            // A turned refutation step can be an existential statement. If it
+            // cannot be translated, later steps are checked without it.
+            if !self.convert_existential(index, name, formula, premises) {
+                self.steps += 1;
+                self.existential.push(name.to_string());
+            }
             return Ok(());
         }
         let (lhs, rhs) = parse_equation(formula)?;
@@ -218,11 +229,12 @@ impl Converter {
         let (lhs, rhs) = (self.fact(fact).lhs.clone(), self.fact(fact).rhs.clone());
         let goal = (&lhs, &rhs);
         let default = self.fact(fact).default_var();
+        self.library.reset();
         let mut found = self.library.justify(goal, &deps, &default, true, None);
         if found.is_none() {
             // The list of premises can be incomplete: allow any earlier
             // equation as well, still within a single rewrite.
-            self.library.used.clear();
+            self.library.reset();
             let earlier = [self.axiom_facts.clone(), self.all_facts.clone()].concat();
             found = self
                 .library
@@ -249,6 +261,11 @@ impl Converter {
                 ));
             }
         }
+        // a step from an existential premise first picks its witness
+        let found = found.and_then(|(proof, rewrites, how)| {
+            self.open_premises(proof)
+                .map(|proof| (proof, rewrites, how))
+        });
         let (proof, how) = match found {
             Some((proof, rewrites, how)) => {
                 self.rewrites += rewrites;
@@ -275,6 +292,154 @@ impl Converter {
         self.emit_have(fact, &proof, &format!("{}: {}", name, how));
         self.register(name, fact);
         Ok(())
+    }
+
+    /// The facts the premises of a line refer to, and the names not found.
+    fn premise_facts(
+        &self,
+        name: &str,
+        premises: &[(String, Option<String>)],
+    ) -> (Vec<FactId>, Vec<String>) {
+        let (mut deps, mut missing) = (Vec::new(), Vec::new());
+        for (dep_name, dep_formula) in premises {
+            if canon(dep_name) == canon(name) || dep_name.starts_with("conjecture") {
+                continue;
+            }
+            match self.lookup(dep_name, dep_formula.as_deref()) {
+                None => missing.push(dep_name.clone()),
+                Some(dep) if !deps.contains(&dep) => deps.push(dep),
+                Some(_) => {}
+            }
+        }
+        (deps, missing)
+    }
+
+    /// Justify `goal` from the premises, else from any earlier equation.
+    fn justify_line(
+        &mut self,
+        goal: (&Term, &Term),
+        deps: &[FactId],
+        default: &str,
+    ) -> Option<Justification> {
+        self.library.reset();
+        if let Some(found) = self.library.justify(goal, deps, default, true, None) {
+            return Some(found);
+        }
+        self.library.reset();
+        let earlier = [self.axiom_facts.clone(), self.all_facts.clone()].concat();
+        self.library
+            .justify(goal, &earlier, default, false, None)
+            .or_else(|| {
+                self.library
+                    .justify(goal, deps, default, true, Some(&earlier))
+            })
+            .or_else(|| self.library.justify(goal, &earlier, default, true, None))
+    }
+
+    /// Wrap a proof term that uses existential facts: for each, pick the
+    /// witness of the instance used, `match e args with | ⟨w, h_e⟩ => ..`.
+    /// None if an instance cannot be written down that way.
+    fn open_premises(&mut self, proof: String) -> Option<String> {
+        let opened = std::mem::take(&mut self.library.opened);
+        if std::mem::take(&mut self.library.conflict) {
+            return None;
+        }
+        let witnesses: Vec<&String> = opened
+            .iter()
+            .flat_map(|(id, _)| &self.library.facts[*id].witnesses)
+            .collect();
+        let mentions_witness = |arg: &String| {
+            arg.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .any(|word| witnesses.iter().any(|w| w.as_str() == word))
+        };
+        if opened
+            .iter()
+            .any(|(_, args)| args.iter().any(mentions_witness))
+        {
+            return None;
+        }
+        let mut proof = proof;
+        for (id, args) in opened.iter().rev() {
+            let fact = &self.library.facts[*id];
+            let call = [vec![fact.lean_name.clone()], args.clone()]
+                .concat()
+                .join(" ");
+            proof = format!(
+                "(match {} with | ⟨{}, h_{}⟩ => {})",
+                call,
+                fact.witnesses.join(", "),
+                fact.lean_name,
+                proof
+            );
+        }
+        Some(proof)
+    }
+
+    /// An existential line `∀ .., ∃ w, s = t`: find witness terms that make the
+    /// instance follow in one rewrite, then prove `⟨terms, proof⟩`. Returns
+    /// false, leaving everything as it was, if that does not work.
+    fn convert_existential(
+        &mut self,
+        index: usize,
+        name: &str,
+        formula: &str,
+        premises: &[(String, Option<String>)],
+    ) -> bool {
+        let Ok((existential, lhs, rhs)) = parse_existential(formula) else {
+            return false;
+        };
+        let lean_name = format!("lemma_{}", self.counter + 1);
+        let fact = Fact::existential(&lean_name, &lhs, &rhs, &existential);
+        if fact.vars.is_empty() {
+            return false; // no variable to fall back on for a free witness
+        }
+        let default = fact.default_var();
+        let (deps, _) = self.premise_facts(name, premises);
+
+        // 1. the witnesses, by unification
+        let open = |t: &Term| open_witnesses(t, &fact.witnesses);
+        let (open_lhs, open_rhs) = (open(&fact.lhs), open(&fact.rhs));
+        if self
+            .justify_line((&open_lhs, &open_rhs), &deps, &default)
+            .is_none()
+        {
+            self.library.reset();
+            return false;
+        }
+        let values: std::collections::HashMap<String, Term> = fact
+            .witnesses
+            .iter()
+            .map(|w| (w.clone(), self.library.witness_value(w, &default)))
+            .collect();
+
+        // 2. the proof of that instance
+        let (lhs, rhs) = (
+            substitute(&fact.lhs, &values),
+            substitute(&fact.rhs, &values),
+        );
+        let Some((proof, rewrites, how)) = self.justify_line((&lhs, &rhs), &deps, &default) else {
+            self.library.reset();
+            return false;
+        };
+        let terms: Vec<String> = fact.witnesses.iter().map(|w| show(&values[w])).collect();
+        let Some(proof) = self.open_premises(format!("⟨{}, {}⟩", terms.join(", "), proof))
+        else {
+            self.library.reset();
+            return false;
+        };
+
+        self.counter += 1;
+        let id = self.library.add(fact);
+        self.item_of.insert(id, index);
+        self.steps += 1;
+        self.rewrites += rewrites;
+        self.emit_have(
+            id,
+            &proof,
+            &format!("{}: {}, witness {}", name, how, terms.join(", ")),
+        );
+        self.register(name, id);
+        true
     }
 
     // ---- one Twee lemma or goal ------------------------------------------------

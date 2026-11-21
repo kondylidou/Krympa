@@ -170,11 +170,100 @@ fn split_args_top_level(s: &str) -> Vec<String> {
 }
 
 pub fn formulas_match(formula: &str, other_formula: &str) -> bool {
+    if formula.contains('?') || other_formula.contains('?') {
+        return existentials_match(formula, other_formula);
+    }
     formulas_match_with_permutations(formula, other_formula)
+}
+
+/// Existential statements `! [..] : (? [..] : l = r)` are the same if they
+/// are equal up to renaming of variables, existential ones to existential
+/// ones, read either way round. The comparison of plain equations does not
+/// know the existential quantifier, so it is not used for them.
+fn existentials_match(formula: &str, other_formula: &str) -> bool {
+    let (Some(a), Some(b), Some(b_flipped)) = (
+        canonical_existential(formula, false),
+        canonical_existential(other_formula, false),
+        canonical_existential(other_formula, true),
+    ) else {
+        return false;
+    };
+    a == b || a == b_flipped
+}
+
+/// `! [X1] : (? [X0] : X1 = op(X0,X1))` -> `U0=op(E0,U0)`: existential
+/// variables renamed E0, E1, ..., all others U0, U1, ..., in order of
+/// appearance; with `flip`, the two sides swapped first.
+fn canonical_existential(formula: &str, flip: bool) -> Option<String> {
+    let universal = cached_regex(r"(?s)^\s*!\s*\[[^\]]*\]\s*:\s*(.*)$");
+    let mut rest = match universal.captures(formula) {
+        Some(found) => found.get(1).unwrap().as_str(),
+        None => formula,
+    }
+    .trim();
+    while rest.starts_with('(') && rest.ends_with(')') && balanced(&rest[1..rest.len() - 1]) {
+        rest = rest[1..rest.len() - 1].trim();
+    }
+    let found = cached_regex(r"(?s)^\?\s*\[([^\]]*)\]\s*:\s*(.*)$").captures(rest)?;
+    let existential: Vec<&str> = found.get(1)?.as_str().split(',').map(str::trim).collect();
+    let mut body = found.get(2)?.as_str().trim();
+    while body.starts_with('(') && body.ends_with(')') && balanced(&body[1..body.len() - 1]) {
+        body = body[1..body.len() - 1].trim();
+    }
+    let mut depth = 0i32;
+    let equals = body.char_indices().find(|&(_, c)| {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+        c == '=' && depth == 0
+    })?;
+    let (lhs, rhs) = (body[..equals.0].trim(), body[equals.0 + 1..].trim());
+    let body = if flip {
+        format!("{}={}", rhs, lhs)
+    } else {
+        format!("{}={}", lhs, rhs)
+    };
+    let mut names: Vec<(String, String)> = Vec::new();
+    let renamed = cached_regex(r"\bX\d+\b").replace_all(&body, |caps: &regex::Captures| {
+        let var = &caps[0];
+        if let Some((_, new)) = names.iter().find(|(old, _)| old == var) {
+            return new.clone();
+        }
+        let kind = if existential.contains(&var) { "E" } else { "U" };
+        let count = names
+            .iter()
+            .filter(|(_, new)| new.starts_with(kind))
+            .count();
+        let new = format!("{}{}", kind, count);
+        names.push((var.to_string(), new.clone()));
+        new
+    });
+    Some(renamed.chars().filter(|c| !c.is_whitespace()).collect())
+}
+
+fn balanced(text: &str) -> bool {
+    let mut depth = 0i32;
+    for c in text.chars() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+        if depth < 0 {
+            return false;
+        }
+    }
+    depth == 0
 }
 
 /// Check whether `specific` is a universally quantified instance of `general`.
 pub fn formula_is_instance_of(general: &str, specific: &str) -> bool {
+    if general.contains('?') || specific.contains('?') {
+        // only the same statement counts for existential ones
+        return existentials_match(general, specific);
+    }
     let (gl, gr) = match parse_equation(&normalize_formula_alpha(general)) {
         Some(equation) => equation,
         None => return false,
