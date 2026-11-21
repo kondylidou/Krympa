@@ -1,4 +1,4 @@
-use crate::prover_wrapper::{proof_length, prove_lemmas};
+use crate::provers::{proof_length, prove_lemmas};
 use crate::utils::*;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};

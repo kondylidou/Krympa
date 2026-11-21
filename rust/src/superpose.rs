@@ -9,14 +9,6 @@ type AllSteps = BTreeMap<usize, VampStep>; // all steps (vamp -> step)
 type InputFormulas = BTreeMap<usize, String>; // input_formulas (vamp -> formula)
 type RelevantSteps = BTreeMap<usize, VampStep>; // only relevant (vamp -> step)
 
-fn is_small_step_lemma(name: &str) -> bool {
-    name.starts_with("small_step_lemma_")
-}
-
-fn is_big_step_lemma(name: &str) -> bool {
-    name.starts_with("big_step_lemma_")
-}
-
 /// A single Vampire step (keyed by Vampire index).
 #[derive(Debug, Clone)]
 pub struct VampStep {

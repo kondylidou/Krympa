@@ -69,4 +69,4 @@ lean/Proof/proof_*.lean
 __pycache__/
 
 /python/scan.py
-/python/rerun.py
+/python/rerun.py/bin/

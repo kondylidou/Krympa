@@ -1,8 +1,8 @@
-use krympa::minimize::count_superposition_steps;
-use krympa::minimize::trim_proof_parts;
-use krympa::minimize::trim_superposition_block;
-use krympa::prover_wrapper::proof_length_twee;
-use krympa::prover_wrapper::proof_length_vampire;
+use krympa::provers::proof_length_twee;
+use krympa::provers::proof_length_vampire;
+use krympa::trim::count_superposition_steps;
+use krympa::trim::trim_proof_parts;
+use krympa::trim::trim_superposition_block;
 
 /// Exact regression: later proof mentions only `lemma_0059` (and
 /// `small_step_lemma_0058`), but the superposition block must keep the whole

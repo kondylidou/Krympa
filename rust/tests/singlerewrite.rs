@@ -1,4 +1,4 @@
-use krympa::minimize::is_single_rewrite_refutation;
+use krympa::refine::is_single_rewrite_refutation;
 
 // Vampire 5 output for: one axiom, goal reachable by one rewrite plus an
 // instance of that axiom (formulas shortened).

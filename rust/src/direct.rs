@@ -13,9 +13,9 @@
 //! variant. `shorten` and `minimize` then run unchanged on the result, so the
 //! segmentation and every choice in it are the ones of the full pipeline.
 
-use crate::core::{extract_lemma_files, save_summary, shorten_proofs};
+use crate::collect::{extract_lemma_files, save_summary, shorten_proofs};
 use crate::minimize::{try_minimize, MAX_ARRIVAL_CANDIDATES};
-use crate::prover_wrapper::{prove_lemmas_into, reset_proof_dir};
+use crate::provers::{prove_lemmas_into, reset_proof_dir};
 use crate::regex_cache::cached_regex;
 use crate::utils::load_lemma;
 use std::collections::{BTreeMap, BTreeSet, HashMap};

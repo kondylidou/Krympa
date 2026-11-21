@@ -1,4 +1,4 @@
-use krympa::prover_wrapper::{avg_term_size_twee, avg_term_size_vampire};
+use krympa::provers::{avg_term_size_twee, avg_term_size_vampire};
 
 // Twee proof with three intermediate terms:
 //   op(X, Y)          → term_size = 1*2+1 = 3

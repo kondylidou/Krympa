@@ -1,4 +1,5 @@
-use crate::prover_wrapper::proof_length;
+use crate::provers::proof_length;
+use crate::utils::extract_suffix;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
@@ -205,12 +206,4 @@ pub fn run(input_folder: &str, krympa_bin: &str, timeout_secs: u64) {
 
     crate::klog_info!("====================================");
     crate::klog_info!("All benchmarking runs completed.");
-}
-
-fn extract_suffix(path: &str) -> String {
-    Path::new(path)
-        .file_stem()
-        .unwrap()
-        .to_string_lossy()
-        .to_string()
 }

@@ -1,15 +1,17 @@
 pub mod alpha_match;
-pub mod core;
+pub mod collect;
 pub mod dag;
 pub mod direct;
 pub mod execution;
 pub mod logging;
 pub mod minimize;
 pub mod proof_turnaround;
-pub mod prover_wrapper;
+pub mod prove;
+pub mod provers;
+pub mod refine;
 pub mod regex_cache;
-pub mod run_vamp;
 pub mod superpose;
+pub mod trim;
 pub mod utils;
 
 // benchmarking available as a library module

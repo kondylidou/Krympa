@@ -1,4 +1,5 @@
-use crate::execution::{execution_mode, ExecutionMode};
+use crate::execution::{execution_mode, twee_executable, vampire_executable, ExecutionMode};
+use crate::proof_turnaround::eq_proof_procedure;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::env;
@@ -6,6 +7,9 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 use wait_timeout::ChildExt;
+
+const PROVER_HINT: &str = "Put the provers in ../bin, or give their executables with \
+     --vampire/--twee or VAMPIRE/TWEE";
 
 fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
     let mut child = match std::process::Command::new(exe_path)
@@ -16,7 +20,12 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
     {
         Ok(c) => c,
         Err(e) => {
-            crate::klog_error!("[ERROR] Failed to start process '{}': {}", exe_path, e);
+            crate::klog_error!(
+                "[ERROR] Failed to start '{}': {}. {}",
+                exe_path,
+                e,
+                PROVER_HINT
+            );
             return None;
         }
     };
@@ -50,38 +59,36 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
     }
 }
 
-fn vampire_path() -> String {
-    let bin = if cfg!(target_os = "macos") {
-        "vampire_mac"
+/// The executable of a prover: the path given with `--vampire` / `--twee`,
+/// else the environment variable, else the copy in `../bin`, else the plain
+/// name, which the system then looks up on `PATH`.
+fn prover_path(chosen: Option<String>, variable: &str, name: &str) -> String {
+    if let Some(path) = chosen.or_else(|| env::var(variable).ok().filter(|v| !v.is_empty())) {
+        return path;
+    }
+    let file = if cfg!(target_os = "macos") {
+        format!("{}_mac", name)
     } else {
-        "vampire"
+        name.to_string()
     };
-    env::current_dir()
-        .unwrap()
-        .join("../bin")
-        .join(bin)
-        .to_str()
-        .unwrap()
-        .to_string()
+    let bundled = env::current_dir().unwrap().join("../bin").join(file);
+    if bundled.exists() {
+        bundled.to_string_lossy().to_string()
+    } else {
+        name.to_string()
+    }
+}
+
+fn vampire_path() -> String {
+    prover_path(vampire_executable(), "VAMPIRE", "vampire")
 }
 
 fn twee_path() -> String {
-    let bin = if cfg!(target_os = "macos") {
-        "twee_mac"
-    } else {
-        "twee"
-    };
-    env::current_dir()
-        .unwrap()
-        .join("../bin")
-        .join(bin)
-        .to_str()
-        .unwrap()
-        .to_string()
+    prover_path(twee_executable(), "TWEE", "twee")
 }
 
 /// Extra command-line options for a prover, read from an environment variable
-/// (`KRYMPA_VAMPIRE_OPTIONS`, `KRYMPA_TWEE_OPTIONS`) and split on whitespace.
+/// (`VAMPIRE_OPTIONS`, `TWEE_OPTIONS`) and split on whitespace.
 /// Unset or empty means the prover runs exactly as before.
 pub fn extra_options(variable: &str) -> Vec<String> {
     env::var(variable)
@@ -89,8 +96,10 @@ pub fn extra_options(variable: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-pub fn run_vampire(file: &str) -> Option<String> {
-    let extra = extra_options("KRYMPA_VAMPIRE_OPTIONS");
+/// Vampire's raw output for a problem; gives up after the time limit of
+/// `run_external_prover`.
+pub fn run_vampire_limited(file: &str) -> Option<String> {
+    let extra = extra_options("VAMPIRE_OPTIONS");
     let mut args = vec!["--input_syntax", "tptp"];
     args.extend(extra.iter().map(String::as_str));
     args.push(file);
@@ -98,7 +107,7 @@ pub fn run_vampire(file: &str) -> Option<String> {
 }
 
 pub fn run_twee(file: &str) -> Option<String> {
-    let extra = extra_options("KRYMPA_TWEE_OPTIONS");
+    let extra = extra_options("TWEE_OPTIONS");
     let mut args = vec!["--quiet"];
     args.extend(extra.iter().map(String::as_str));
     args.push(file);
@@ -461,7 +470,7 @@ fn try_provers(
         crate::klog_debug!("[RUN] Trying prover '{}' on '{}'", prover, lemma_file);
 
         let proof_content = match prover {
-            "vampire" => match run_vampire(lemma_file) {
+            "vampire" => match run_vampire_limited(lemma_file) {
                 Some(c) => c,
                 None => {
                     crate::klog_debug!("[DEBUG] Vampire failed for '{}'", lemma_file);
@@ -490,4 +499,63 @@ fn try_provers(
     }
 
     successes
+}
+
+/// Run Vampire on a given input file and save its proof.
+pub fn run_vampire_command(input: &str, output: &str) {
+    let input_path = Path::new(input);
+    if !input_path.exists() {
+        crate::klog_error!(
+            "[ERROR] Input file does not exist: {}",
+            input_path.display()
+        );
+        return;
+    }
+
+    let output_path = Path::new(output);
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent).expect("Failed to create output directory");
+    }
+
+    crate::klog_info!("[INFO] Phase 0: Running Vampire and redirecting proof.");
+    crate::klog_info!("[INFO] Input: {}", input_path.display());
+    crate::klog_info!("[INFO] Output: {}", output_path.display());
+    if !run_vampire_turned(input_path.to_str().unwrap(), output_path.to_str().unwrap()) {
+        crate::klog_error!(
+            "[ERROR] Vampire did not find a proof for {}",
+            input_path.display()
+        );
+    }
+}
+
+/// Helper: actually runs the Vampire binary.
+///
+/// The (transformed) output is always written to `output_file`, so the file
+/// existing says nothing about success. Returns true only if Vampire reported
+/// a proof; a timeout, a give-up or a rejected input returns false.
+pub fn run_vampire_turned(input_file: &str, output_file: &str) -> bool {
+    let vampire = vampire_path();
+    let output = std::process::Command::new(&vampire)
+        .args(extra_options("VAMPIRE_OPTIONS"))
+        .arg(input_file)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to start '{}': {}. {}", vampire, e, PROVER_HINT));
+
+    // convert Vampire stdout to string
+    let vampire_output =
+        String::from_utf8(output.stdout).expect("Vampire output was not valid UTF-8");
+
+    let proved = vampire_output.contains("Refutation found")
+        || vampire_output.contains("Termination reason: Refutation")
+        || vampire_output.contains("SZS status Theorem")
+        || vampire_output.contains("SZS status Unsatisfiable");
+
+    // turn the proof around + reformat
+    let transformed_output = eq_proof_procedure(&vampire_output);
+
+    // Write transformed proof
+    fs::write(output_file, transformed_output).expect("Failed to write transformed Vampire output");
+
+    crate::klog_debug!("[DEBUG] Vampire proof written to {}", output_file);
+    proved
 }

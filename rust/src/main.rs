@@ -1,17 +1,22 @@
-use krympa::execution::{parse_execution_mode, set_execution_mode, set_term_size_aware};
+use krympa::execution::{
+    parse_execution_mode, parse_prover_executables, set_execution_mode, set_prover_executables,
+    set_term_size_aware,
+};
 use krympa::utils::extract_suffix;
-use krympa::{core, direct, minimize, run_vamp};
+use krympa::{collect, direct, minimize, provers};
 use std::env;
 
 fn main() {
     let raw_args: Vec<String> = env::args().skip(1).collect();
+    let (vampire, twee, raw_args) = parse_prover_executables(&raw_args);
+    set_prover_executables(vampire, twee);
     let (mode, tsa, args) = parse_execution_mode(&raw_args);
     set_execution_mode(mode);
     set_term_size_aware(tsa);
 
     if args.is_empty() {
         krympa::klog_error!(
-            "Usage: krympa [--sequential|--parallel] [--term-size] [collect|shorten|group|minimize|direct|run_vampire] <input_file>"
+            "Usage: krympa [--sequential|--parallel] [--term-size] [--vampire <exe>] [--twee <exe>] [collect|shorten|group|minimize|direct|run_vampire] <input_file>"
         );
         krympa::klog_error!("Usage for benchmarking: benchmarking_binary <input_folder> <timeout_secs> [krympa_binary]");
         return;
@@ -25,7 +30,7 @@ fn main() {
                 // extract suffix from input file
                 let suffix = extract_suffix(input_file);
                 let output_file = format!("../output/vampire_proof_{}.out", suffix);
-                core::collect(input_file, &output_file, suffix);
+                collect::collect(input_file, &output_file, suffix);
             }
         }
         "shorten" => {
@@ -36,7 +41,7 @@ fn main() {
                 // extract suffix from input file
                 let suffix = extract_suffix(input_file);
                 let summary_file = format!("../output/summary_{}.json", suffix);
-                core::shorten_proofs(&summary_file)
+                collect::shorten_proofs(&summary_file)
             }
         }
         "group" => {
@@ -47,7 +52,7 @@ fn main() {
                 // extract suffix from input file
                 let suffix = extract_suffix(input_file);
                 let summary_file = format!("../output/summary_{}.json", suffix);
-                core::structural_groups(&summary_file)
+                collect::structural_groups(&summary_file)
             }
         }
         "minimize" => {
@@ -93,7 +98,7 @@ fn main() {
                 let suffix = extract_suffix(input_file);
                 let output_file = format!("../output/vampire_proof_{}.out", suffix);
 
-                run_vamp::run_vampire_only(input_file, &output_file);
+                provers::run_vampire_command(input_file, &output_file);
             }
         }
         _ => krympa::klog_error!(
