@@ -28,12 +28,18 @@ cd Krympa
 
 ## Run
 
-Tell Krympa where your provers are and give it a problem:
+Tell Krympa where your provers are. Either put them in the Krympa folder as
+`bin/vampire` and `bin/twee`, or name them when you run Krympa:
 
 ```bash
 export VAMPIRE=/path/to/vampire
 export TWEE=/path/to/twee
+```
 
+Krympa takes the first it finds of: `--vampire`/`--twee`, `VAMPIRE`/`TWEE`,
+`bin/`, and `vampire`/`twee` on your `PATH`. Then give it a problem:
+
+```bash
 ./krympa /path/to/problem.p
 ```
 
@@ -80,10 +86,6 @@ overwritten by every run.
 | `VAMPIRE`, `TWEE` | The prover executables. |
 | `VAMPIRE_OPTIONS`, `TWEE_OPTIONS` | Extra options for every call of that prover, e.g. `VAMPIRE_OPTIONS="-sa discount"`. |
 | `KRYMPA_LOG` | How much is printed: `error`, `warn`, `info` (default) or `debug` (same as `--debug`). |
-
-If you name no executable, Krympa looks in `bin/` in the Krympa folder for
-`vampire` and `twee` (on macOS `vampire_mac` and `twee_mac`), and then on your
-`PATH`.
 
 ### `--compress` and `--lean`
 

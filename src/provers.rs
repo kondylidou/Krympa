@@ -8,8 +8,8 @@ use std::path::Path;
 use std::time::Duration;
 use wait_timeout::ChildExt;
 
-const PROVER_HINT: &str = "Put the provers in bin/, or give their executables with \
-     --vampire/--twee or VAMPIRE/TWEE";
+const PROVER_HINT: &str = "Put them in the Krympa folder as bin/vampire and bin/twee, \
+     or give their executables with --vampire/--twee or VAMPIRE/TWEE";
 
 fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
     let mut child = match std::process::Command::new(exe_path)
@@ -60,8 +60,8 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
 }
 
 /// The executable of a prover: the path given with `--vampire` / `--twee`,
-/// else the environment variable, else the copy in `bin/`, else the plain
-/// name, which the system then looks up on `PATH`.
+/// else the environment variable, else `bin/<name>`, else the plain name,
+/// which the system then looks up on `PATH`.
 fn prover_path(chosen: Option<String>, variable: &str, name: &str) -> String {
     if let Some(path) = chosen.or_else(|| env::var(variable).ok().filter(|v| !v.is_empty())) {
         // a bare name is looked up on the PATH; anything else is a file
@@ -71,14 +71,12 @@ fn prover_path(chosen: Option<String>, variable: &str, name: &str) -> String {
             path
         };
     }
-    let file = if cfg!(target_os = "macos") {
-        format!("{}_mac", name)
-    } else {
-        name.to_string()
-    };
-    let bundled = env::current_dir().unwrap().join("bin").join(file);
-    if bundled.exists() {
-        bundled.to_string_lossy().to_string()
+    let bundled = env::current_dir()
+        .unwrap_or_default()
+        .join("bin")
+        .join(name);
+    if bundled.is_file() {
+        bundled.to_string_lossy().into_owned()
     } else {
         name.to_string()
     }
