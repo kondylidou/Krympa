@@ -74,6 +74,7 @@ also be run on its own and reads what the previous one wrote. A step is one
 Twee rewrite or one Vampire inference.
 
 ```bash
+./benchmarking_binary generate benchmarks/Proofs11.lean   # writes benchmarks/input11/
 INPUT=benchmarks/input11/Equation650_implies_Equation448.p
 ./krympa run_vampire "$INPUT"
 ./krympa collect "$INPUT"

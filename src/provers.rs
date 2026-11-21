@@ -84,6 +84,27 @@ fn prover_path(chosen: Option<String>, variable: &str, name: &str) -> String {
     }
 }
 
+/// Check that both provers can be found, before any work starts.
+pub fn check_provers() -> Result<(), String> {
+    for (name, path) in [("Vampire", vampire_path()), ("Twee", twee_path())] {
+        let found = if path.contains('/') {
+            Path::new(&path).is_file()
+        } else {
+            env::var_os("PATH")
+                .is_some_and(|dirs| env::split_paths(&dirs).any(|dir| dir.join(&path).is_file()))
+        };
+        if !found {
+            let looked = if path.contains('/') {
+                format!("{} does not exist", path)
+            } else {
+                format!("no `{}` in bin/ or on your PATH", path)
+            };
+            return Err(format!("{} not found: {}. {}", name, looked, PROVER_HINT));
+        }
+    }
+    Ok(())
+}
+
 fn vampire_path() -> String {
     prover_path(vampire_executable(), "VAMPIRE", "vampire")
 }

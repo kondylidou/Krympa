@@ -24,6 +24,17 @@ fn main() {
         krympa::klog_error!("[ERROR] {}", problem);
         process::exit(1);
     }
+    let needs_provers = match &request {
+        Request::Whole { .. } => true,
+        Request::Phase { phase, .. } => phase != "group",
+        Request::Tool { .. } => false,
+    };
+    if needs_provers {
+        if let Err(problem) = provers::check_provers() {
+            krympa::klog_error!("[ERROR] {}", problem);
+            process::exit(1);
+        }
+    }
     let done = match request {
         Request::Whole { input, options } => match problem::fof_problem(&absolute(&input)) {
             Ok(input) => run_whole(&input, &options),
