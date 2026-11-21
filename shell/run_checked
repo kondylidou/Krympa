@@ -1,28 +1,24 @@
 #!/usr/bin/env bash
 # Run Krympa on one problem and check the resulting proof in Lean.
 #
-# Usage: ./run_checked [--direct] [--term-size] <input-file>
+# Usage: ./run_checked [--direct] [--term-size] [--refine] <input-file>
 #
-#   --direct     prove only the lemmas that minimize can reach
-#                (run_vampire -> direct instead of collect -> shorten -> minimize)
-#   --term-size  prefer proofs with smaller terms; also runs the final refinement
+#   The options are passed on to krympa.
 #
 # After Krympa has finished, the proof is converted to Lean and checked, the
 # avoidable steps are removed, and the shorter proof is checked as well.
 
-MODE=pipeline
-FLAG=""
+FLAGS=()
 INPUT=""
 for arg in "$@"; do
   case "$arg" in
-    --direct) MODE=direct ;;
-    --term-size) FLAG="--term-size" ;;
+    --direct|--term-size|--refine) FLAGS+=("$arg") ;;
     -*) echo "Unknown option: $arg"; exit 1 ;;
     *) INPUT="$arg" ;;
   esac
 done
 if [ -z "$INPUT" ] || [ ! -f "$INPUT" ]; then
-  echo "Usage: $0 [--direct] [--term-size] <input-file>"
+  echo "Usage: $0 [--direct] [--term-size] [--refine] <input-file>"
   exit 1
 fi
 
@@ -37,17 +33,7 @@ if [ ! -x ./krympa ]; then
   exit 1
 fi
 
-rm -f "$PROOF"
-./krympa run_vampire "$INPUT" || exit 1
-if [ "$MODE" = direct ]; then
-  ./krympa $FLAG direct "$INPUT"
-else
-  ./krympa collect "$INPUT" && ./krympa shorten "$INPUT" && ./krympa $FLAG minimize "$INPUT"
-fi
-if [ ! -f "$PROOF" ]; then
-  echo "Krympa produced no proof."
-  exit 1
-fi
+./krympa "${FLAGS[@]}" "$INPUT" || exit 1
 
 # Convert a proof to Lean and check it. Prints one verdict line.
 check() {

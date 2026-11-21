@@ -502,14 +502,14 @@ fn try_provers(
 }
 
 /// Run Vampire on a given input file and save its proof.
-pub fn run_vampire_command(input: &str, output: &str) {
+pub fn run_vampire_command(input: &str, output: &str) -> bool {
     let input_path = Path::new(input);
     if !input_path.exists() {
         crate::klog_error!(
             "[ERROR] Input file does not exist: {}",
             input_path.display()
         );
-        return;
+        return false;
     }
 
     let output_path = Path::new(output);
@@ -518,14 +518,16 @@ pub fn run_vampire_command(input: &str, output: &str) {
     }
 
     crate::klog_info!("[INFO] Phase 0: Running Vampire and redirecting proof.");
-    crate::klog_info!("[INFO] Input: {}", input_path.display());
-    crate::klog_info!("[INFO] Output: {}", output_path.display());
-    if !run_vampire_turned(input_path.to_str().unwrap(), output_path.to_str().unwrap()) {
+    crate::klog_debug!("[DEBUG] Input: {}", input_path.display());
+    crate::klog_debug!("[DEBUG] Output: {}", output_path.display());
+    let proved = run_vampire_turned(input_path.to_str().unwrap(), output_path.to_str().unwrap());
+    if !proved {
         crate::klog_error!(
             "[ERROR] Vampire did not find a proof for {}",
             input_path.display()
         );
     }
+    proved
 }
 
 /// Helper: actually runs the Vampire binary.

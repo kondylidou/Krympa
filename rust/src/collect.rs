@@ -17,6 +17,7 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
     // run provers on all lemma files
     let provers = ["vampire", "twee"];
     let results = prove_lemmas(&all_lemma_files, &provers, "../proofs");
+    crate::klog_info!("[INFO] Phase 1 summary: {} lemmas proved.", results.len());
     save_summary(&results, &suffix);
 }
 
@@ -78,9 +79,8 @@ fn is_existential(lemma_file: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Report what was proved and save it as `summary_<suffix>.json` for the later phases.
+/// Save what was proved as `summary_<suffix>.json` for the later phases.
 pub fn save_summary(results: &HashMap<u32, (String, String, String)>, suffix: &str) {
-    crate::klog_info!("[INFO] Phase 1 summary: {} lemmas proved.", results.len());
     let mut lemma_nums: Vec<u32> = results.keys().cloned().collect();
     lemma_nums.sort();
     crate::klog_debug!(
@@ -96,8 +96,8 @@ pub fn save_summary(results: &HashMap<u32, (String, String, String)>, suffix: &s
     let summary_file = format!("../output/summary_{}.json", suffix);
     let summary_json = serde_json::to_string_pretty(results).expect("Failed to serialize results");
     fs::write(&summary_file, summary_json).expect("Failed to save summary.json");
-    crate::klog_info!(
-        "[INFO] Phase 1 complete. Summary saved to '{}'.",
+    crate::klog_debug!(
+        "[DEBUG] Phase 1 complete. Summary saved to '{}'.",
         summary_file
     );
 }
@@ -142,8 +142,8 @@ pub fn shorten_proofs(summary_file: &str) {
         .map(|(n, _)| *n)
         .collect();
 
-    crate::klog_info!(
-        "[INFO] Small-step files to update: {}",
+    crate::klog_debug!(
+        "[DEBUG] Small-step files to update: {}",
         history_to_update.len()
     );
 
@@ -187,8 +187,8 @@ pub fn shorten_proofs(summary_file: &str) {
 
     // An unchanged file is the exact problem Phase 1 already solved, so proving
     // it again can only reproduce the proof that is already in `proofs_dir`.
-    crate::klog_info!(
-        "[INFO] Small-step files changed by abstraction: {} of {}",
+    crate::klog_debug!(
+        "[DEBUG] Small-step files changed by abstraction: {} of {}",
         changed.len(),
         history_to_update.len()
     );
@@ -206,8 +206,8 @@ pub fn shorten_proofs(summary_file: &str) {
     fs::create_dir_all("../tmp").expect("Failed to create ../tmp directory");
     let updated_results = prove_lemmas(&updated_files, &provers, "../tmp"); // tmp root
 
-    crate::klog_info!(
-        "[INFO] Updated small-step proofs: {}",
+    crate::klog_debug!(
+        "[DEBUG] Updated small-step proofs: {}",
         updated_results.len()
     );
     for (n, (mode, prover, proof)) in &updated_results {
@@ -245,7 +245,7 @@ pub fn shorten_proofs(summary_file: &str) {
 pub fn structural_groups(summary_file: &str) {
     use std::{collections::HashMap, fs, path::Path};
 
-    crate::klog_info!("[INFO] Phase 3: Structural analysis");
+    crate::klog_info!("[INFO] Structural analysis");
 
     let proofs_dir = "../proofs".to_string();
     let output_groups_file = "../output/structural_groups.txt".to_string();

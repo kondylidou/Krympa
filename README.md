@@ -5,138 +5,117 @@ rebuilds it from shorter pieces proved by Vampire and Twee. The method is
 described in the paper:
 [Tao’s Equational Proof Challenge Accepted](https://kondylidou.github.io/assets/pdf/paper3.pdf)
 
-## Requirements
+## Install
 
-* Linux or macOS.
-* Vampire and Twee. Binaries for both systems are in `bin/`; to use your own, see
-  [Provers](#provers).
-* Python 3.
-* Rust and OCaml (`dune`), to build the tool. Build details and internals are in
-  `DEVELOPERS.md`.
-* Lean 4, only if you want the proofs checked.
+Krympa runs on Linux and macOS.
 
-## Usage
+**1. Get the provers.** Krympa calls two provers, which you install yourself:
 
-Build once, then work from `shell/`:
+* [Vampire](https://github.com/vprover/vampire/releases): download an
+  executable from the release page, or build it from source.
+* [Twee](https://codeberg.org/nick8325/twee): download an executable, or
+  install it with `cabal install twee`.
 
-```bash
-cd rust && ./build.sh
-cd ../shell
-```
+Krympa is tested with Vampire 4.8 and 5.0.1 and with Twee 2.4.2 and 2.6.2.
 
-Generate the problems of a benchmark file. `Proofs11.lean` becomes
-`benchmarks/input11/`, one `.p` file per problem:
+**2. Build Krympa.** This needs Rust (`cargo`) and OCaml with `dune`.
 
 ```bash
-python3 ../python/generate_input.py ../benchmarks/Proofs11.lean
+git clone https://github.com/kondylidou/Krympa.git
+cd Krympa/rust
+./build.sh
 ```
 
-Run one problem and check the result in Lean:
+## Run
+
+From `rust/`, tell Krympa where your provers are and give it a problem:
 
 ```bash
-./run_checked ../benchmarks/input11/Equation650_implies_Equation448.p
+export VAMPIRE=/path/to/vampire
+export TWEE=/path/to/twee
+
+./krympa /path/to/problem.p
 ```
 
-Run one problem without Lean:
+The problem is a TPTP file with equations as axioms and one equation as
+conjecture, in `fof` form:
 
-```bash
-./run_one ../benchmarks/input11/Equation650_implies_Equation448.p
+```
+fof(a1, axiom, ! [X, Y, Z] : X = op(X,op(Y,op(op(Z,X),Y)))).
+fof(goal, conjecture, ! [X, Y, Z] : X = op(X,op(Y,op(Z,op(X,Z))))).
 ```
 
-Run every problem of every `benchmarks/Proofs*.lean` (inputs are generated
-automatically, logs go to `benchmarks/output_logs/`):
+Krympa reports its progress, then the number of steps of the shortened proof
+(`Total steps`) and of Vampire's proof (`Initial proof steps`), and writes:
 
-```bash
-./run 600
-python3 ../python/summarize.py ../benchmarks/output_logs
-```
+| File | Contents |
+|---|---|
+| `output/proof_<problem>.out` | The shortened proof. |
+| `output/vampire_proof_<problem>.out` | The Vampire proof it started from. |
 
-The shortened proof is written to `output/proof_<problem>.out`, the Vampire
-proof it started from to `output/vampire_proof_<problem>.out`.
+The exit status is 0 if a shortened proof was written.
+
+Krympa has to be started from `rust/`. It keeps its working files in `output/`,
+`lemmas/` and `proofs/` next to `rust/`; the last two are overwritten by every
+run.
 
 ## Options
 
-### Scripts
+`./krympa [options] <problem.p>`
 
-| Script | Arguments |
+| Option | Effect |
 |---|---|
-| `./run_checked [--direct] [--term-size] <problem.p>` | `--direct` and `--term-size` are explained below. Prints the step count and whether Lean accepted the proof, before and after removing avoidable steps. Exit status 0 only if Lean accepted both. |
-| `./run_one <problem.p> [binary]` | `binary`: which Krympa binary to use (default `./krympa`). |
-| `./run [timeout] [binary]` | `timeout`: seconds per problem (default 600). `binary` as above. |
+| `--direct` | Prove only the lemmas the search can use, instead of every lemma of the Vampire proof. Usually finds the same proof in less time. |
+| `--lean` | Write the shortened proof as a Lean file and have Lean check it; see below. |
+| `--term-size` | Prefer proofs with smaller terms; see below. |
+| `--refine` | Run a final refinement on the best proof; see below. |
+| `--vampire <exe>`, `--twee <exe>` | The prover executables. Same as the variables `VAMPIRE` and `TWEE`, and take precedence over them. |
+| `--sequential` | One prover call at a time instead of several in parallel. |
+| `--debug` | Print a full trace instead of the progress messages. |
 
-Besides `krympa`, `rust/` holds older Linux binaries that use only some of the
-lemma variants: `krympa_bs`, `krympa_sa`, `krympa_ba`, `krympa_bsa` (b =
-big-step, s = small-step, a = abstracted). They lack `--term-size`, `direct`
-and the environment variables.
+| Variable | Effect |
+|---|---|
+| `VAMPIRE`, `TWEE` | The prover executables. |
+| `VAMPIRE_OPTIONS`, `TWEE_OPTIONS` | Extra options for every call of that prover, e.g. `VAMPIRE_OPTIONS="-sa discount"`. |
+| `KRYMPA_LOG` | How much is printed: `error`, `warn`, `info` (default) or `debug` (same as `--debug`). |
 
-### `--direct`
+If you name no executable, Krympa uses the copy in `bin/` and, if there is
+none, looks for `vampire` and `twee` on your `PATH`.
 
-By default Krympa first proves every lemma of the Vampire proof. With
-`--direct` it proves only the lemmas the search can actually use. The result is
-of the same kind, usually the same proof, and it usually takes less time.
+### `--lean`
+
+Writes the proof to `lean/Proof/proof_<problem>.lean`, runs Lean on it and
+reports whether Lean accepted it; the exit status is 0 only if it did. Every
+step is translated to an explicit proof term, so an accepted file certifies the
+proof and its number of steps.
+
+This needs Python 3 and Lean 4, and works for problems over one binary
+operation named `op`, as in the example above.
+
+For such problems, `python3 ../python/compress.py <proof.out>` removes the
+steps of a proof that can be bypassed with a single rewrite and writes
+`<proof>_compressed.out`.
 
 ### `--term-size`
 
 Prefers a proof with smaller terms over a slightly shorter one: when two proofs
 of the same goal are available, the one with the smaller average term size is
-taken if it is at most 1.5 times as long.
+taken if it is at most 1.5 times as long. Term size counts the occurrences of
+`op`, so this option too is meant for problems over one operation `op`.
 
-With this flag Krympa also runs a final refinement on its best proof,
-contributed by Benjamin Przybocki. It splits out the internal lemma of the last
-Twee subproof, merges two consecutive rewrites by the same lemma into one
-superposition step, and accepts a derived equation that is more general than the
-lemma asked for. The refined proof is kept only if it has fewer steps. On
-`Equation650_implies_Equation448` it saves three steps
-(`lean/Proof/ts_proof_16.lean`).
+### `--refine`
 
-### Provers
+Runs a final refinement on the best proof, contributed by Benjamin Przybocki.
+It splits out the internal lemma of the last Twee subproof, merges two
+consecutive rewrites by the same lemma into one superposition step, and accepts
+a derived equation that is more general than the lemma asked for. The refined
+proof is kept only if it has fewer steps. On `Equation650_implies_Equation448`
+it saves three steps (`lean/Proof/ts_proof_16.lean`).
 
-| Variable | Effect |
-|---|---|
-| `VAMPIRE`, `TWEE` | The prover executables to use. |
-| `VAMPIRE_OPTIONS`, `TWEE_OPTIONS` | Extra options for every call of that prover, e.g. `"-sa discount"`. |
+## Benchmarks and Development
 
-```bash
-VAMPIRE=/opt/vampire/vampire ./run_checked --direct <problem.p>
-VAMPIRE_OPTIONS="-sa discount" ./run_checked --direct <problem.p>
-```
-
-Without `VAMPIRE` or `TWEE`, the copy in `bin/` is used; if there
-is none, `vampire` and `twee` are looked up on your `PATH`. So `bin/` is not
-needed when the provers are installed elsewhere.
-
-### Logging
-
-`KRYMPA_LOG=debug` gives a full trace instead of progress messages.
-
-### Running the commands yourself
-
-The scripts call `rust/krympa <flags> <command> <problem.p>`. Run from `rust/`,
-flags before the command:
-
-| Command | Does |
-|---|---|
-| `run_vampire` | Proves the problem with Vampire; its derived equations are the lemmas. |
-| `collect` | Proves every lemma, in three variants, with both provers. |
-| `shorten` | Proves some lemmas again from simpler statements. |
-| `minimize` | Searches for the shortest proof and writes it. |
-| `direct` | Does the work of `collect`, `shorten` and `minimize`, proving only the lemmas needed. |
-| `group` | Optional analysis: groups the lemmas by the axioms their proofs use. |
-
-| Flag | Effect |
-|---|---|
-| `--parallel` (default) / `--sequential` | Prover calls in parallel, or one at a time. |
-| `--term-size` | As above; used by `minimize` and `direct`. |
-| `--vampire <exe>`, `--twee <exe>` | The prover executables; same as `VAMPIRE` and `TWEE`, and take precedence over them. |
-
-## Tools
-
-| Tool | Use |
-|---|---|
-| `python3 ../python/tolean.py <proof.out>` | Writes the proof as `lean/Proof/<proof>.lean`. Check it with `cd ../lean && lean Proof/<proof>.lean`. |
-| `python3 ../python/compress.py <proof.out>` | Removes steps that can be bypassed with a single rewrite; writes `<proof>_compressed.out`. |
-
-`run_checked` runs both for you.
+`DEVELOPERS.md` describes the benchmark problems and the scripts that run
+them, how to run one phase of Krympa at a time, and the internals.
 
 ## Contributing
 

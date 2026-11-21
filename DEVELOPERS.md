@@ -1,7 +1,7 @@
 # Developers Guide
 
-How to run the tool is in `README.md`, the method in the paper. This file is
-for working on the code.
+How to install and use Krympa is in `README.md`, the method in the paper. This
+file is for working on the code and for running the benchmarks.
 
 ## Build and Checks
 
@@ -27,7 +27,8 @@ cargo test
 
 | Path | Contents |
 |---|---|
-| `rust/src/main.rs`, `execution.rs`, `logging.rs` | Command line, the flags, `KRYMPA_LOG`. |
+| `rust/src/main.rs`, `execution.rs` | Command line: the whole run, the single phases, the flags. |
+| `rust/src/logging.rs` | Message levels: `klog_info!` is what a user sees, `klog_debug!` only with `--debug`. |
 | `rust/src/provers.rs` | Every call of Twee and Vampire, where their executables come from, proof length, term size. |
 | `rust/src/proof_turnaround.rs` | Turning Vampire's refutation into a forward proof. |
 | `rust/src/collect.rs` | `collect`, `shorten`, `group`. |
@@ -36,6 +37,7 @@ cargo test
 | `rust/src/prove.rs` | Proving one goal with both provers and choosing between the two proofs. |
 | `rust/src/trim.rs` | Dropping the parts of a segment that later segments do not use. |
 | `rust/src/refine.rs` | The final refinement. |
+| `rust/src/lean.rs` | `--lean`: calls `python/tolean.py`, then Lean. |
 | `rust/src/superpose.rs` | Reading a turned Vampire proof and writing the steps a goal needs as a block of lines. |
 | `rust/src/dag.rs` | Dependencies between lemmas, read from the Twee proofs, and the graph built from them. |
 | `rust/src/utils.rs`, `regex_cache.rs` | Lemma files, TPTP editing, temporary problem files; compiled regexes are kept for reuse. |
@@ -57,10 +59,12 @@ Working directories, all next to `rust/` and ignored by git:
 | `proofs/` | The kept proof of each lemma; every proof found, in `vampire_tmp/` and `twee_tmp/`. |
 | `tmp/` | Proofs made by `shorten`, which are then copied to `proofs/`. |
 
-## The Commands
+## The Phases
 
-Run from `rust/`; each reads what the previous one wrote. A step is one Twee
-rewrite or one Vampire inference.
+`./krympa <problem.p>` runs `run_vampire`, `collect`, `shorten` and `minimize`
+in turn; with `--direct` it runs `run_vampire` and `direct`. Each phase can
+also be run on its own, from `rust/`, and reads what the previous one wrote. A
+step is one Twee rewrite or one Vampire inference.
 
 ```bash
 INPUT=../benchmarks/input11/Equation650_implies_Equation448.p
@@ -70,7 +74,10 @@ INPUT=../benchmarks/input11/Equation650_implies_Equation448.p
 ./krympa minimize "$INPUT"      # or, instead of the last three: ./krympa direct "$INPUT"
 ```
 
-| Command | What it does |
+`--term-size` and `--refine` are read by `minimize` and `direct`; `--direct` and
+`--lean` only go with a whole run. A phase that fails exits with status 1.
+
+| Phase | What it does |
 |---|---|
 | `run_vampire` | Proves the problem with Vampire and turns the refutation into a forward proof. The equations it derives are the lemmas, numbered in order. |
 | `collect` | Proves every lemma in three variants with Vampire and Twee (7 s per call) and keeps the shortest proof. Big-step: from the axioms. Small-step: from the axioms and all earlier lemmas. Abstracted: from the axioms, with one subterm of the lemma replaced by a variable. |
@@ -79,8 +86,9 @@ INPUT=../benchmarks/input11/Equation650_implies_Equation448.p
 | `direct` | Replaces `collect`, `shorten` and `minimize`; see below. |
 | `group` | Optional analysis: groups the lemmas by the axioms their proofs use, in `output/structural_groups.txt`. |
 
-For debugging use `KRYMPA_LOG=debug ./krympa --sequential <command> "$INPUT"`:
-one prover call at a time and a readable trace.
+For debugging use `./krympa --debug --sequential <phase> "$INPUT"`: one prover
+call at a time and a readable trace. A message that only helps debugging should
+be a `klog_debug!`; the default output is meant to stay at a few lines per run.
 
 Things to know:
 
@@ -91,6 +99,25 @@ Things to know:
 - Vampire's default strategy (`lrs`) depends on elapsed time, so the same
   problem can give different proofs on a loaded machine. Setting
   `VAMPIRE_OPTIONS="-sa discount"` for all commands of a run avoids this.
+
+## Scripts and Benchmarks
+
+The benchmarks are the files `benchmarks/Proofs*.lean`. From `shell/`:
+
+| Command | Does |
+|---|---|
+| `python3 ../python/generate_input.py ../benchmarks/Proofs11.lean` | Writes the problems of one benchmark file to `benchmarks/input11/`, one `.p` file each. |
+| `./run_checked [--direct] [--term-size] [--refine] <problem.p>` | Runs Krympa, checks the proof in Lean, removes avoidable steps with `compress.py` and checks again. Exit status 0 only if Lean accepted both. |
+| `./run_one <problem.p> [binary]` | Runs the four phases one after the other, with the given Krympa binary (default `./krympa`). |
+| `./run [timeout] [binary]` | Generates the problems of every benchmark file and runs the four phases on each, with a limit of `timeout` seconds per phase (default 600). Logs go to `benchmarks/output_logs/`. |
+| `python3 ../python/summarize.py ../benchmarks/output_logs` | Summarizes those logs. |
+
+`binary` exists for the older Linux binaries in `rust/` that use only some of
+the lemma variants: `krympa_bs`, `krympa_sa`, `krympa_ba`, `krympa_bsa` (b =
+big-step, s = small-step, a = abstracted). They know the four phases only: no
+whole run, no `direct`, no flags, no environment variables. `run` reads the
+line `[RESULT] Total steps:` from their output and from Krympa's, so that line
+must keep its wording.
 
 ## The Proof File
 
@@ -131,7 +158,7 @@ reach from its arrival candidates. `direct` proves exactly those:
 4. `shorten` and `minimize` run unchanged on what was proved.
 
 A lemma that is proved is treated as in `collect`, so the segmentation, the
-candidates, `--term-size` and the final refinement are those of the pipeline.
+candidates, `--term-size` and `--refine` are those of the pipeline.
 On ten large problems it proved 38% of the lemmas and took 62% of the time.
 
 One difference remains: `minimize` redirects a lemma that also occurs as an
@@ -146,11 +173,12 @@ smaller average term size is chosen if it is at most 1.5 times as long as the
 other; otherwise, and without the flag, the shorter one. A term's size is twice
 its number of `op` symbols plus one.
 
-The final refinement (`refine_final_proof`) then runs once on the best proof. It
-needs a last Twee section with exactly one internal lemma, followed by a block
-of superposition lines; otherwise it does nothing. A merged step is accepted
-only if Vampire's proof of it has exactly one rewriting inference and otherwise
-only rules from a fixed list (`is_single_rewrite_refutation`).
+With `--refine`, the final refinement (`refine_final_proof`) runs once on the
+best proof, with or without `--term-size`. It needs a last Twee section with
+exactly one internal lemma, followed by a block of superposition lines;
+otherwise it does nothing. A merged step is accepted only if Vampire's proof of
+it has exactly one rewriting inference and otherwise only rules from a fixed
+list (`is_single_rewrite_refutation`).
 
 ## Turning a Vampire Proof Around
 
@@ -172,8 +200,10 @@ steps.
 
 ## Lean Export and Step Removal
 
-`python/tolean.py` turns every step into an explicit proof term, so Lean checks
-without searching and the file needs only core Lean.
+`python/tolean.py <proof.out>` writes `lean/Proof/<proof>.lean`; `--lean` calls
+it and then runs `lean` in `lean/`. It turns every step into an explicit proof
+term, so Lean checks without searching and the file needs only core Lean. It
+reads terms over one binary operation `op` only.
 
 - A step is accepted if it is one rewrite: one instance of one equation,
   applied to one or more occurrences of the same subterm, optionally followed

@@ -3,6 +3,7 @@ pub mod collect;
 pub mod dag;
 pub mod direct;
 pub mod execution;
+pub mod lean;
 pub mod logging;
 pub mod minimize;
 pub mod proof_turnaround;

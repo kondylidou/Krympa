@@ -17,8 +17,14 @@ fn parse_level(s: &str) -> Level {
     }
 }
 
+static LEVEL: OnceLock<Level> = OnceLock::new();
+
+/// Fix the level for this run (`--debug`). Without it, `KRYMPA_LOG` decides.
+pub fn set_level(level: Level) {
+    let _ = LEVEL.set(level);
+}
+
 fn current_level() -> Level {
-    static LEVEL: OnceLock<Level> = OnceLock::new();
     *LEVEL.get_or_init(|| {
         let level = std::env::var("KRYMPA_LOG").unwrap_or_else(|_| "info".to_string());
         parse_level(&level)

@@ -14,22 +14,90 @@ fn options_are_split_on_whitespace_and_default_to_none() {
 }
 
 #[test]
-fn prover_executables_are_read_from_the_command_line() {
-    use krympa::execution::parse_prover_executables;
+fn flags_are_stripped_from_the_arguments() {
+    use krympa::execution::{parse_flags, Flags};
     let args: Vec<String> = [
         "--vampire",
         "/opt/vampire",
         "--term-size",
         "--twee",
         "twee",
-        "direct",
+        "--direct",
+        "--debug",
         "p.p",
     ]
     .iter()
     .map(|s| s.to_string())
     .collect();
-    let (vampire, twee, rest) = parse_prover_executables(&args);
-    assert_eq!(vampire.as_deref(), Some("/opt/vampire"));
-    assert_eq!(twee.as_deref(), Some("twee"));
-    assert_eq!(rest, ["--term-size", "direct", "p.p"]);
+    let (flags, rest) = parse_flags(&args);
+    assert_eq!(
+        flags,
+        Flags {
+            term_size: true,
+            debug: true,
+            vampire: Some("/opt/vampire".into()),
+            twee: Some("twee".into()),
+            ..Flags::default()
+        }
+    );
+    // what belongs to a whole run is left for `parse_request`
+    assert_eq!(rest, ["--direct", "p.p"]);
+}
+
+#[test]
+fn refinement_is_asked_for_separately() {
+    use krympa::execution::parse_flags;
+    let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    assert!(!parse_flags(&args(&["--term-size", "p.p"])).0.refine);
+    let (flags, _) = parse_flags(&args(&["--refine", "p.p"]));
+    assert!(flags.refine && !flags.term_size);
+}
+
+fn request(args: &[&str]) -> Result<krympa::execution::Request, String> {
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    krympa::execution::parse_request(&args)
+}
+
+#[test]
+fn a_problem_file_alone_asks_for_the_whole_run() {
+    use krympa::execution::Request;
+    assert_eq!(
+        request(&["p.p"]),
+        Ok(Request::Whole {
+            input: "p.p".into(),
+            direct: false,
+            lean: false
+        })
+    );
+    assert_eq!(
+        request(&["--lean", "p.p", "--direct"]),
+        Ok(Request::Whole {
+            input: "p.p".into(),
+            direct: true,
+            lean: true
+        })
+    );
+}
+
+#[test]
+fn a_phase_name_asks_for_that_phase_only() {
+    use krympa::execution::Request;
+    assert_eq!(
+        request(&["minimize", "p.p"]),
+        Ok(Request::Phase {
+            phase: "minimize".into(),
+            input: "p.p".into()
+        })
+    );
+}
+
+#[test]
+fn malformed_requests_are_rejected() {
+    assert!(request(&[]).is_err());
+    assert!(request(&["collect"]).is_err());
+    assert!(request(&["prove", "p.p"]).is_err());
+    assert!(request(&["--direct", "minimize", "p.p"]).is_err());
+    assert!(request(&["--lean", "minimize", "p.p"]).is_err());
+    assert!(request(&["--directt", "p.p"]).is_err());
+    assert!(request(&["p.p", "q.p"]).is_err());
 }

@@ -14,7 +14,7 @@ No output and exit status 0 means the proof is accepted.
 |---|---|---|
 | `proof.lean` | Equation650 ⇒ Equation448 | Krympa proof |
 | `ts_proof.lean` | Equation650 ⇒ Equation448 | `--term-size` proof, 19 steps |
-| `ts_proof_16.lean` | Equation650 ⇒ Equation448 | `--term-size` proof after the final refinement, 16 steps |
+| `ts_proof_16.lean` | Equation650 ⇒ Equation448 | `--term-size --refine` proof, 16 steps |
 | `secondproof.lean` | Equation947 ⇒ Equation3897 | Krympa proof |
 
 These four use `nth_rw` and need Mathlib.

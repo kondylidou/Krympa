@@ -63,10 +63,12 @@ lean/Proof/proof_*.lean
 *.json
 
 # === zip Files ===
-*.ziprust/frankenstein_rust_debug.tar.gz
+*.zip
+rust/frankenstein_rust_debug.tar.gz
 
 # === Python ===
 __pycache__/
 
 /python/scan.py
-/python/rerun.py/bin/
+/python/rerun.py
+

@@ -1,6 +1,6 @@
 use crate::alpha_match::formulas_match;
 use crate::dag::*;
-use crate::execution::{execution_mode, term_size_aware, ExecutionMode};
+use crate::execution::{execution_mode, refine_requested, ExecutionMode};
 use crate::prove::prove_lemma;
 use crate::provers::*;
 use crate::refine::refine_final_proof;
@@ -41,8 +41,8 @@ impl Drop for ActiveRootGuard<'_> {
     fn drop(&mut self) {
         if let Ok(mut active) = self.active_roots.lock() {
             active.remove(&self.root);
-            crate::klog_info!(
-                "[INFO] Arrival lemma finished: {} | active {}/{}: {}",
+            crate::klog_debug!(
+                "[DEBUG] Arrival lemma finished: {} | active {}/{}: {}",
                 self.root,
                 active.len(),
                 self.total_roots,
@@ -139,8 +139,9 @@ pub fn try_minimize(
     let total_roots = selected_roots.len();
     let active_roots = std::sync::Mutex::new(BTreeSet::<String>::new());
     let mode = execution_mode();
-    crate::klog_info!(
-        "[INFO] Evaluating {} arrival candidates in {} mode: {}",
+    crate::klog_info!("[INFO] Phase 3: Minimization");
+    crate::klog_debug!(
+        "[DEBUG] Evaluating {} arrival candidates in {} mode: {}",
         total_roots,
         mode.as_str(),
         selected_root_names
@@ -152,8 +153,8 @@ pub fn try_minimize(
                 .lock()
                 .map_err(|_| "Failed to lock active_roots".to_string())?;
             active.insert(root_lemma.clone());
-            crate::klog_info!(
-                "[INFO] Arrival lemma started: {} | active {}/{}: {}",
+            crate::klog_debug!(
+                "[DEBUG] Arrival lemma started: {} | active {}/{}: {}",
                 root_lemma,
                 active.len(),
                 total_roots,
@@ -1044,7 +1045,7 @@ pub fn try_minimize(
         .into_inner()
         .map_err(|_| "Failed to unwrap global_best".to_string())?;
 
-    if term_size_aware() {
+    if refine_requested() {
         if let Some((_, steps, _, _, proof, _, _)) = global_best.as_mut() {
             match refine_final_proof(input_file, &lemmas_dir, proof, *steps) {
                 Ok(Some((refined, refined_steps))) => {
@@ -1061,9 +1062,9 @@ pub fn try_minimize(
 
     if let Some((_, steps, root, n_history, annotated_proof, dag_text, lemmas_text)) = &global_best
     {
-        crate::klog_info!("[RESULT] Best combination found:");
-        crate::klog_info!("[RESULT] Arrival lemma: {}", root);
-        crate::klog_info!(
+        crate::klog_debug!("[RESULT] Best combination found:");
+        crate::klog_debug!("[RESULT] Arrival lemma: {}", root);
+        crate::klog_debug!(
             "[RESULT] Departure lemma: {}",
             if n_history.is_empty() {
                 "none"
