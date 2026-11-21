@@ -315,7 +315,7 @@ pub fn promote_axiom_to_conjecture(path: &str, root_lemma: &str) -> Result<(), S
 }
 
 pub fn create_tmp_copy(input_file: &str) -> Result<String, String> {
-    let tmp_dir = Path::new("../lemmas/tmp");
+    let tmp_dir = Path::new("lemmas/tmp");
 
     // ensure temp directory exists
     fs::create_dir_all(tmp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;

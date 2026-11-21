@@ -8,7 +8,7 @@ use std::path::Path;
 use std::time::Duration;
 use wait_timeout::ChildExt;
 
-const PROVER_HINT: &str = "Put the provers in ../bin, or give their executables with \
+const PROVER_HINT: &str = "Put the provers in bin/, or give their executables with \
      --vampire/--twee or VAMPIRE/TWEE";
 
 fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
@@ -60,18 +60,23 @@ fn run_external_prover(exe_path: &str, args: &[&str]) -> Option<String> {
 }
 
 /// The executable of a prover: the path given with `--vampire` / `--twee`,
-/// else the environment variable, else the copy in `../bin`, else the plain
+/// else the environment variable, else the copy in `bin/`, else the plain
 /// name, which the system then looks up on `PATH`.
 fn prover_path(chosen: Option<String>, variable: &str, name: &str) -> String {
     if let Some(path) = chosen.or_else(|| env::var(variable).ok().filter(|v| !v.is_empty())) {
-        return path;
+        // a bare name is looked up on the PATH; anything else is a file
+        return if path.contains('/') {
+            crate::execution::absolute(&path)
+        } else {
+            path
+        };
     }
     let file = if cfg!(target_os = "macos") {
         format!("{}_mac", name)
     } else {
         name.to_string()
     };
-    let bundled = env::current_dir().unwrap().join("../bin").join(file);
+    let bundled = env::current_dir().unwrap().join("bin").join(file);
     if bundled.exists() {
         bundled.to_string_lossy().to_string()
     } else {

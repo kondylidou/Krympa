@@ -61,16 +61,16 @@ pub fn try_minimize(
     vampire_file: &str,
     summary_file: &str,
 ) -> Result<String, String> {
-    let lemmas_dir = "../lemmas".to_string();
-    let proofs_dir = "../proofs".to_string();
-    let twee_proofs_dir = "../proofs/twee_tmp".to_string();
+    let lemmas_dir = "lemmas".to_string();
+    let proofs_dir = "proofs".to_string();
+    let twee_proofs_dir = "proofs/twee_tmp".to_string();
     let input_content = fs::read_to_string(input_file)
         .map_err(|e| format!("Failed to read input file {}: {}", input_file, e))?;
 
     let suffix = extract_suffix(input_file);
-    let dag_with_suffix = format!("../output/dag_{}.txt", suffix);
-    let lemmas_with_suffix = format!("../output/lemmas_{}.p", suffix);
-    let proof_with_suffix = format!("../output/proof_{}.out", suffix);
+    let dag_with_suffix = format!("output/dag_{}.txt", suffix);
+    let lemmas_with_suffix = format!("output/lemmas_{}.p", suffix);
+    let proof_with_suffix = format!("output/proof_{}.out", suffix);
 
     let summary_data: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(summary_file).map_err(|e| e.to_string())?)
@@ -171,10 +171,10 @@ pub fn try_minimize(
         // build the minimal dag
         let (dag, lemmas) = build_dag(root_lemma, &precomputed)?;
         let root_slug = root_lemma.replace('/', "_");
-        let dag_file = format!("../output/tmp_dag_{}.txt", root_slug);
+        let dag_file = format!("output/tmp_dag_{}.txt", root_slug);
         write_dag(&dag_file, &dag).map_err(|e| e.to_string())?;
 
-        let lemmas_out_path = format!("../output/tmp_lemmas_{}.p", root_slug);
+        let lemmas_out_path = format!("output/tmp_lemmas_{}.p", root_slug);
         let mut lemmas_txt = String::new();
         for (lemma_name, formula) in &lemmas {
             lemmas_txt.push_str(&format!(

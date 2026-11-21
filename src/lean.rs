@@ -24,7 +24,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-const LEAN_PROJECT: &str = "../lean";
+const LEAN_PROJECT: &str = "lean";
 
 /// A proof file turned into Lean, step by step.
 pub struct Converter {
@@ -608,7 +608,7 @@ pub fn translate(proof_text: &str, source: &str) -> Result<Translation, String> 
     })
 }
 
-/// Write `proof_file` as `../lean/Proof/<name>.lean` and check it with Lean.
+/// Write `proof_file` as `lean/Proof/<name>.lean` and check it with Lean.
 /// Returns the Lean file if Lean accepted it, and what went wrong otherwise.
 pub fn export_and_check(proof_file: &str) -> Result<String, String> {
     let path = Path::new(proof_file);

@@ -16,7 +16,7 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
 
     // run provers on all lemma files
     let provers = ["vampire", "twee"];
-    let results = prove_lemmas(&all_lemma_files, &provers, "../proofs");
+    let results = prove_lemmas(&all_lemma_files, &provers, "proofs");
     crate::klog_info!("[INFO] Phase 1 summary: {} lemmas proved.", results.len());
     save_summary(&results, &suffix);
 }
@@ -24,7 +24,7 @@ pub fn collect(input_file: &str, proof_file: &str, suffix: String) {
 /// Write the lemma problems of the Vampire proof in all three variants
 /// (big-step, small-step, abstracted) and return the files. Nothing is proved.
 pub fn extract_lemma_files(proof_file: &str) -> Vec<String> {
-    let lemmas_dir = "../lemmas".to_string();
+    let lemmas_dir = "lemmas".to_string();
 
     if Path::new(&lemmas_dir).exists() {
         for entry in fs::read_dir(&lemmas_dir).expect("Failed to read lemmas directory") {
@@ -93,7 +93,7 @@ pub fn save_summary(results: &HashMap<u32, (String, String, String)>, suffix: &s
     );
 
     // save summary for Phase 2
-    let summary_file = format!("../output/summary_{}.json", suffix);
+    let summary_file = format!("output/summary_{}.json", suffix);
     let summary_json = serde_json::to_string_pretty(results).expect("Failed to serialize results");
     fs::write(&summary_file, summary_json).expect("Failed to save summary.json");
     crate::klog_debug!(
@@ -107,11 +107,11 @@ pub fn save_summary(results: &HashMap<u32, (String, String, String)>, suffix: &s
 pub fn shorten_proofs(summary_file: &str) {
     crate::klog_info!("[INFO] Phase 2: Shorten small-step proofs");
 
-    let lemmas_dir = "../lemmas".to_string();
-    let proofs_dir = "../proofs".to_string();
+    let lemmas_dir = "lemmas".to_string();
+    let proofs_dir = "proofs".to_string();
     let tmp_dirs = [
-        ("vampire", "../proofs/vampire_tmp".to_string()),
-        ("twee", "../proofs/twee_tmp".to_string()),
+        ("vampire", "proofs/vampire_tmp".to_string()),
+        ("twee", "proofs/twee_tmp".to_string()),
     ];
 
     let summary_data: HashMap<u32, (String, String, String)> = serde_json::from_str(
@@ -203,8 +203,8 @@ pub fn shorten_proofs(summary_file: &str) {
         .collect();
 
     let provers = ["vampire", "twee"];
-    fs::create_dir_all("../tmp").expect("Failed to create ../tmp directory");
-    let updated_results = prove_lemmas(&updated_files, &provers, "../tmp"); // tmp root
+    fs::create_dir_all("tmp").expect("Failed to create tmp directory");
+    let updated_results = prove_lemmas(&updated_files, &provers, "tmp"); // tmp root
 
     crate::klog_debug!(
         "[DEBUG] Updated small-step proofs: {}",
@@ -240,15 +240,15 @@ pub fn shorten_proofs(summary_file: &str) {
     }
 }
 
-/// Phase 3: Structural analysis of proofs. Groups lemmas by shared axioms
+/// `group`: structural analysis of proofs. Groups lemmas by shared axioms
 /// and saves results in a text file.
 pub fn structural_groups(summary_file: &str) {
     use std::{collections::HashMap, fs, path::Path};
 
     crate::klog_info!("[INFO] Structural analysis");
 
-    let proofs_dir = "../proofs".to_string();
-    let output_groups_file = "../output/structural_groups.txt".to_string();
+    let proofs_dir = "proofs".to_string();
+    let output_groups_file = "output/structural_groups.txt".to_string();
 
     // load summary.json
     let summary_data: HashMap<u32, (String, String, String)> = serde_json::from_str(
@@ -257,7 +257,7 @@ pub fn structural_groups(summary_file: &str) {
     .expect("Failed to parse summary.json");
 
     if summary_data.is_empty() {
-        crate::klog_info!("[INFO] No proofs found in summary.json. Run Phase 1 first.");
+        crate::klog_info!("[INFO] No proofs found in summary.json. Run `collect` first.");
         return;
     }
 

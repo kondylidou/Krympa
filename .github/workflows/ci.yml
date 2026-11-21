@@ -7,9 +7,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: rust
 
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +19,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "rust -> target"
+          workspaces: ". -> target"
 
       - name: Install OCaml + opam + dune
         run: |

@@ -1,4 +1,6 @@
-use krympa::execution::{apply_flags, parse_flags, parse_request, Request, WholeRun};
+use krympa::execution::{
+    absolute, apply_flags, enter_krympa_home, parse_flags, parse_request, Request, WholeRun,
+};
 use krympa::utils::extract_suffix;
 use krympa::{collect, compress, direct, lean, minimize, problem, provers};
 use std::path::Path;
@@ -18,18 +20,23 @@ fn main() {
         krympa::klog_error!("{}\n{}", problem, USAGE);
         process::exit(2);
     });
+    if let Err(problem) = enter_krympa_home() {
+        krympa::klog_error!("[ERROR] {}", problem);
+        process::exit(1);
+    }
     let done = match request {
-        Request::Whole { input, options } => match problem::fof_problem(&input) {
+        Request::Whole { input, options } => match problem::fof_problem(&absolute(&input)) {
             Ok(input) => run_whole(&input, &options),
             Err(error) => reject(&input, &error),
         },
-        Request::Phase { phase, input } => match problem::fof_problem(&input) {
+        Request::Phase { phase, input } => match problem::fof_problem(&absolute(&input)) {
             Ok(input) => run_phase(&phase, &input),
             Err(error) => reject(&input, &error),
         },
         Request::Tool { tool, proof } => match tool.as_str() {
-            "lean" => check_in_lean(&proof),
+            "lean" => check_in_lean(&absolute(&proof)),
             _ => {
+                let proof = absolute(&proof);
                 let path = Path::new(&proof);
                 let stem = path.file_stem().unwrap_or_default().to_string_lossy();
                 let target = path.with_file_name(format!("{}_compressed.out", stem));
@@ -52,7 +59,7 @@ fn reject(input_file: &str, error: &str) -> bool {
 /// options ask for on the proof.
 fn run_whole(input_file: &str, options: &WholeRun) -> bool {
     let suffix = extract_suffix(input_file);
-    let proof_file = format!("../output/proof_{}.out", suffix);
+    let proof_file = format!("output/proof_{}.out", suffix);
     // A proof left by an earlier run must not pass for the result of this one.
     let _ = fs::remove_file(&proof_file);
 
@@ -66,7 +73,7 @@ fn run_whole(input_file: &str, options: &WholeRun) -> bool {
         Some(&"run_vampire") => return false,
         Some(_) => {
             krympa::klog_error!(
-                "No shortened proof. Vampire's proof is in ../output/vampire_proof_{}.out",
+                "No shortened proof. Vampire's proof is in output/vampire_proof_{}.out",
                 suffix
             );
             return false;
@@ -126,8 +133,8 @@ fn check_in_lean(proof_file: &str) -> bool {
 /// One phase; the files it reads and writes are named after the problem file.
 fn run_phase(phase: &str, input_file: &str) -> bool {
     let suffix = extract_suffix(input_file);
-    let vampire_file = format!("../output/vampire_proof_{}.out", suffix);
-    let summary_file = format!("../output/summary_{}.json", suffix);
+    let vampire_file = format!("output/vampire_proof_{}.out", suffix);
+    let summary_file = format!("output/summary_{}.json", suffix);
     let report = |result: Result<String, String>| match result {
         Ok(message) => {
             krympa::klog_debug!("{}", message);

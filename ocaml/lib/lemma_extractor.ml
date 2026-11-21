@@ -89,7 +89,7 @@ let generate_fof_file_big_step idx axioms lemma =
     fof_entry (sprintf "conjecture_%04d" idx) "conjecture" lemma
   in
   let content = String.concat "\n\n" (axiom_fofs @ [formula]) in
-  let output_dir = "../lemmas" in
+  let output_dir = "lemmas" in
   if not (file_exists output_dir && is_directory output_dir) then
     mkdir output_dir 0o755;
   let filename = sprintf "%s/big_step_lemma_%04d.p" output_dir idx in
@@ -121,7 +121,7 @@ let generate_fof_file_small_step idx axioms lemmas =
       (take (idx + 1) lemmas)
   in
   let content = String.concat "\n\n" (axiom_fofs @ lemma_fofs) in
-  let output_dir = "../lemmas" in
+  let output_dir = "lemmas" in
   if not (file_exists output_dir && is_directory output_dir) then
     mkdir output_dir 0o755;
   let filename = sprintf "%s/small_step_lemma_%04d.p" output_dir (idx + 1) in
@@ -189,7 +189,7 @@ let generate_fof_file_abstracted idx axioms lemma =
       "conjecture" lemma
   in
   let content = String.concat "\n\n" (axiom_fofs @ [formula]) in
-  let output_dir = "../lemmas" in
+  let output_dir = "lemmas" in
   if not (file_exists output_dir && is_directory output_dir) then
     mkdir output_dir 0o755;
   let filename = sprintf "%s/abstracted_lemma_%04d.p" output_dir idx in

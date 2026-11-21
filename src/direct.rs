@@ -22,8 +22,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
-const LEMMAS_DIR: &str = "../lemmas";
-const PROOFS_DIR: &str = "../proofs";
+const LEMMAS_DIR: &str = "lemmas";
+const PROOFS_DIR: &str = "proofs";
 
 /// Run the pipeline on the lemmas that `minimize` can reach.
 pub fn try_direct(
@@ -164,7 +164,7 @@ pub fn cited_lemmas(twee_proof: &str) -> BTreeSet<u32> {
         .collect()
 }
 
-/// `../lemmas/small-step/small_step_lemma_0021.p` -> 21
+/// `lemmas/small-step/small_step_lemma_0021.p` -> 21
 fn lemma_number(file: &str) -> Option<u32> {
     let stem = Path::new(file).file_stem()?.to_str()?;
     stem.rsplit('_').next()?.parse().ok()

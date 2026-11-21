@@ -19,7 +19,7 @@ use std::collections::BTreeSet;
 use std::fs;
 
 /// The file the phases should read: the input itself if it is in `fof` form,
-/// otherwise its translation, written to `../output/input_problem_<name>.p`.
+/// otherwise its translation, written to `output/input_problem_<name>.p`.
 pub fn fof_problem(input_file: &str) -> Result<String, String> {
     let text =
         fs::read_to_string(input_file).map_err(|e| format!("Cannot read {}: {}", input_file, e))?;
@@ -28,8 +28,8 @@ pub fn fof_problem(input_file: &str) -> Result<String, String> {
         Some(translated) => {
             // `extract_suffix` drops the prefix `input_problem_`, so the output
             // files are named after the problem either way.
-            let file = format!("../output/input_problem_{}.p", extract_suffix(input_file));
-            fs::create_dir_all("../output").map_err(|e| e.to_string())?;
+            let file = format!("output/input_problem_{}.p", extract_suffix(input_file));
+            fs::create_dir_all("output").map_err(|e| e.to_string())?;
             fs::write(&file, translated).map_err(|e| format!("Cannot write {}: {}", file, e))?;
             crate::klog_info!(
                 "[INFO] Problem in cnf form, rewritten to fof form: {}",

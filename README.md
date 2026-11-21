@@ -22,13 +22,13 @@ Krympa is tested with Vampire 4.8 and 5.0.1 and with Twee 2.4.2 and 2.6.2.
 
 ```bash
 git clone https://github.com/kondylidou/Krympa.git
-cd Krympa/rust
+cd Krympa
 ./build.sh
 ```
 
 ## Run
 
-From `rust/`, tell Krympa where your provers are and give it a problem:
+Tell Krympa where your provers are and give it a problem:
 
 ```bash
 export VAMPIRE=/path/to/vampire
@@ -56,9 +56,9 @@ Krympa reports its progress, then the number of steps of the shortened proof
 In a script, the command succeeds (exit status 0) only if a shortened proof was
 written.
 
-Krympa has to be started from `rust/`. It keeps its working files in `output/`,
-`lemmas/` and `proofs/` next to `rust/`; the last two are overwritten by every
-run.
+Krympa can be started from any folder. It keeps its working files in
+`output/`, `lemmas/` and `proofs/` in the Krympa folder; the last two are
+overwritten by every run.
 
 ## Options
 
@@ -91,12 +91,14 @@ rewrite from the other equations instead. No prover is called, and
 `output/proof_<problem>.out` is then the shorter proof.
 
 `--lean` writes the proof to `lean/Proof/proof_<problem>.lean`, runs Lean 4 on
-it and reports whether Lean accepted it; the command succeeds only if it did.
+it (`lean` must be installed) and reports whether Lean accepted it; the command
+succeeds only if it did.
 Every step is translated to an explicit proof term, so an accepted file
 certifies the proof and its number of steps.
 
 Both work for problems over one binary operation named `op`, as in the example
-above.
+above. A few proofs contain a step the export cannot translate yet; `--lean`
+then names it and does not run Lean, and `--compress` leaves the proof as it is.
 
 ### `--term-size`
 

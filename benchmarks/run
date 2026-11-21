@@ -1,12 +1,15 @@
 #!/bin/bash
+# Run Krympa on every problem of every benchmark file Proofs*.lean in this
+# folder, then print a summary of the step counts.
+#
+# Usage: ./run [timeout_secs] [krympa_binary]
 
-BENCHMARK_DIR="../benchmarks"
-PYTHON_SCRIPT="../python/generate_input.py"
-RUST_DIR="../rust"
-BENCHMARK_BINARY="./benchmarking_binary"
+BENCHMARK_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(dirname "$BENCHMARK_DIR")"
+BENCHMARK_BINARY="$ROOT/benchmarking_binary"
 
 # default krympa binary
-KRYMPA_BINARY_DEFAULT="./krympa"
+KRYMPA_BINARY_DEFAULT="$ROOT/krympa"
 
 # defaults
 TIMEOUT_SECS=600
@@ -32,7 +35,6 @@ fi
 mkdir -p "$BENCHMARK_DIR/output_logs"
 # clean existing logs
 rm -f "$BENCHMARK_DIR/output_logs"/*
-ORIG_DIR=$(pwd)
 
 echo "======================================"
 echo "Krympa benchmark run starting"
@@ -42,14 +44,14 @@ echo "Logs directory        : ${BENCHMARK_DIR}/output_logs"
 echo "======================================"
 echo
 
-run_one() {
+run_benchmark_file() {
     proofs_file="$1"
     base=$(basename "$proofs_file" .lean)
 
     echo "Processing $base ..."
 
-    # Generate input using python script
-    python3 "$PYTHON_SCRIPT" "$proofs_file"
+    # Write the problems of this benchmark file to $BENCHMARK_DIR/input<N>
+    "$BENCHMARK_BINARY" generate "$proofs_file"
 
     input_folder="$BENCHMARK_DIR/input${base//Proofs/}"
     if [ ! -d "$input_folder" ]; then
@@ -60,9 +62,7 @@ run_one() {
     log_file="$BENCHMARK_DIR/output_logs/${base}.log"
     echo "Running benchmarking for $base (timeout=${TIMEOUT_SECS}s)..."
 
-    cd "$RUST_DIR" || exit 1
     "$BENCHMARK_BINARY" "$input_folder" "$TIMEOUT_SECS" "$KRYMPA_BINARY" > "$log_file" 2>&1
-    cd "$ORIG_DIR" || exit 1
 
     echo "Finished benchmarking for $base"
     echo "Log written to $log_file"
@@ -70,8 +70,9 @@ run_one() {
 }
 
 for proofs_file in "$BENCHMARK_DIR"/Proofs*.lean; do
-    run_one "$proofs_file"
+    run_benchmark_file "$proofs_file"
 done
 
 echo "All jobs completed."
 echo "Detailed logs are available in: ${BENCHMARK_DIR}/output_logs"
+"$BENCHMARK_BINARY" summarize "$BENCHMARK_DIR/output_logs"

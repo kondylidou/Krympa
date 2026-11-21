@@ -21,6 +21,7 @@ These four use `nth_rw` and need Mathlib.
 
 ## Generated files
 
-`./krympa lean <proof.out>` (from `rust/`) or a run with `--lean` writes
-`Proof/<name>.lean` here and checks it. A generated file needs only core Lean: every step is an explicit proof term, so
-Lean checks it in a few seconds without searching. See the main `README.md`.
+`./krympa lean <proof.out>` or a run with `--lean` writes
+`Proof/<name>.lean` here and checks it. A generated file needs only core Lean:
+every step is an explicit proof term, so Lean checks it in a few seconds
+without searching. See the main `README.md`.

@@ -221,7 +221,7 @@ pub struct TweeDependency {
 // depending on which is shorter for each lemma. But that is more complex to implement.
 // In this way we would maybe find different proof paths that are shorter overall.
 // (or just different, we cannot know if shorter yet)
-// benchmark for this: ../benchmarks/input9/Equation3957_implies_Equation3971.p
+// benchmark for this: benchmarks/input9/Equation3957_implies_Equation3971.p
 // or prove these children by superposition as already tried
 pub fn precompute_lemmas(
     proofs_dir: &str,

@@ -1,7 +1,7 @@
 use std::{fs, path::Path, process::Command};
 
 fn main() {
-    let ocaml_dir = "../ocaml";
+    let ocaml_dir = "ocaml";
 
     println!("Building OCaml project in {}", ocaml_dir);
 
@@ -17,7 +17,7 @@ fn main() {
 
     // Path to built executable
     let built_path = format!("{}/_build/default/bin/main.exe", ocaml_dir);
-    let dest_dir = "../rust/ocaml_install";
+    let dest_dir = "ocaml_install";
     let dest_path = format!("{}/tptp_parser", dest_dir);
 
     println!("Looking for OCaml executable at: {}", built_path);

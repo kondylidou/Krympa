@@ -6,55 +6,58 @@ file is for working on the code and for running the benchmarks.
 ## Build and Checks
 
 ```bash
-cd rust
-./build.sh                      # optimized rust/krympa and rust/benchmarking_binary
+./build.sh                      # optimized krympa and benchmarking_binary
 cargo fmt
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-- The build also compiles the OCaml extractor into `rust/ocaml_install/tptp_parser`,
+- The build also compiles the OCaml extractor into `ocaml_install/tptp_parser`,
   so `dune` must be installed.
 - The two binaries and `tptp_parser` are tracked by git; a build shows up in
-  `git status`.
+  `git status`. `Cargo.lock` is tracked too, so everyone builds with the same
+  versions of the dependencies.
 - CI runs the three `cargo` checks and fails on any formatting difference or
   clippy warning. It uses the latest stable Rust, so its clippy can flag code
   that passes locally; `rustup update stable` avoids that.
-- Remove build artifacts with `git clean -fdX rust/target ocaml/_build` (they are
+- Remove build artifacts with `git clean -fdX target ocaml/_build` (they are
   ignored files, so `-X` is needed).
 
 ## Where Things Are
 
 | Path | Contents |
 |---|---|
-| `rust/src/main.rs`, `execution.rs` | Command line: the whole run, the single phases, the flags. |
-| `rust/src/logging.rs` | Message levels: `klog_info!` is what a user sees, `klog_debug!` only with `--debug`. |
-| `rust/src/problem.rs` | Reading the input problem. A `cnf` problem (unit clauses, goal negated) is rewritten to `fof` form in `output/input_problem_<name>.p`; `include` is rejected. |
-| `rust/src/provers.rs` | Every call of Twee and Vampire, where their executables come from, proof length, term size. |
-| `rust/src/proof_turnaround.rs` | Turning Vampire's refutation into a forward proof. |
-| `rust/src/collect.rs` | `collect`, `shorten`, `group`. |
-| `rust/src/direct.rs` | `direct`: collecting only the lemmas that are needed. |
-| `rust/src/minimize.rs` | `minimize`: the search over arrival and departure lemmas. |
-| `rust/src/prove.rs` | Proving one goal with both provers and choosing between the two proofs. |
-| `rust/src/trim.rs` | Dropping the parts of a segment that later segments do not use. |
-| `rust/src/refine.rs` | The final refinement. |
-| `rust/src/proof_file.rs` | Reading a proof file written by `minimize`. |
-| `rust/src/rewrite.rs` | Terms over `op` and the search that justifies an equation by one rewrite. |
-| `rust/src/lean.rs` | `--lean` and `krympa lean`: the Lean export, then Lean. |
-| `rust/src/compress.rs` | `--compress` and `krympa compress`: step removal. |
-| `rust/src/superpose.rs` | Reading a turned Vampire proof and writing the steps a goal needs as a block of lines. |
-| `rust/src/dag.rs` | Dependencies between lemmas, read from the Twee proofs, and the graph built from them. |
-| `rust/src/utils.rs`, `regex_cache.rs` | Lemma files, TPTP editing, temporary problem files; compiled regexes are kept for reuse. |
-| `rust/src/alpha_match.rs` | Equality of formulas up to renaming and orientation. |
-| `rust/src/bench_run.rs` | The benchmark driver behind `shell/run`. |
-| `rust/tests/` | One test file per topic. |
+| `src/main.rs`, `execution.rs` | Command line: the whole run, the single phases, the flags; the Krympa folder. |
+| `src/logging.rs` | Message levels: `klog_info!` is what a user sees, `klog_debug!` only with `--debug`. |
+| `src/problem.rs` | Reading the input problem. A `cnf` problem (unit clauses, goal negated) is rewritten to `fof` form in `output/input_problem_<name>.p`; `include` is rejected. |
+| `src/provers.rs` | Every call of Twee and Vampire, where their executables come from, proof length, term size. |
+| `src/proof_turnaround.rs` | Turning Vampire's refutation into a forward proof. |
+| `src/collect.rs` | `collect`, `shorten`, `group`. |
+| `src/direct.rs` | `direct`: collecting only the lemmas that are needed. |
+| `src/minimize.rs` | `minimize`: the search over arrival and departure lemmas. |
+| `src/prove.rs` | Proving one goal with both provers and choosing between the two proofs. |
+| `src/trim.rs` | Dropping the parts of a segment that later segments do not use. |
+| `src/refine.rs` | The final refinement. |
+| `src/proof_file.rs` | Reading a proof file written by `minimize`. |
+| `src/rewrite.rs` | Terms over `op` and the search that justifies an equation by one rewrite. |
+| `src/lean.rs` | `--lean` and `krympa lean`: the Lean export, then Lean. |
+| `src/compress.rs` | `--compress` and `krympa compress`: step removal. |
+| `src/superpose.rs` | Reading a turned Vampire proof and writing the steps a goal needs as a block of lines. |
+| `src/dag.rs` | Dependencies between lemmas, read from the Twee proofs, and the graph built from them. |
+| `src/utils.rs`, `regex_cache.rs` | Lemma files, TPTP editing, temporary problem files; compiled regexes are kept for reuse. |
+| `src/alpha_match.rs` | Equality of formulas up to renaming and orientation. |
+| `src/bench_run.rs`, `src/bin/benchmarking.rs` | The benchmarks: problems from the benchmark files, the driver behind `benchmarks/run`, the summary of its logs. |
+| `tests/` | One test file per topic. |
 | `ocaml/` | Lemma extractor: writes the lemma problems of a Vampire proof in the three variants. |
-| `python/` | `generate_input.py` (benchmark file to TPTP problems), `summarize.py` (benchmark logs). |
-| `shell/` | `run_checked`, `run_one`, `run`. |
+| `benchmarks/` | The benchmark files, their equations, and the scripts `run` and `run_checked`. |
 | `lean/` | Lean project for checking exported proofs. |
 | `bin/` | Vampire and Twee, for Linux and macOS. Optional: see the prover options in `README.md`. |
 
-Working directories, all next to `rust/` and ignored by git:
+At start, Krympa changes into the Krympa folder: the nearest folder above its
+executable that holds `ocaml_install/tptp_parser` (`krympa_home`). All paths in
+the code are relative to it; paths the user gives are resolved against the
+folder Krympa was started from (`absolute`). Working directories there, ignored
+by git:
 
 | Directory | Contents |
 |---|---|
@@ -67,19 +70,22 @@ Working directories, all next to `rust/` and ignored by git:
 
 `./krympa <problem.p>` runs `run_vampire`, `collect`, `shorten` and `minimize`
 in turn; with `--direct` it runs `run_vampire` and `direct`. Each phase can
-also be run on its own, from `rust/`, and reads what the previous one wrote. A
-step is one Twee rewrite or one Vampire inference.
+also be run on its own and reads what the previous one wrote. A step is one
+Twee rewrite or one Vampire inference.
 
 ```bash
-INPUT=../benchmarks/input11/Equation650_implies_Equation448.p
+INPUT=benchmarks/input11/Equation650_implies_Equation448.p
 ./krympa run_vampire "$INPUT"
 ./krympa collect "$INPUT"
 ./krympa shorten "$INPUT"
 ./krympa minimize "$INPUT"      # or, instead of the last three: ./krympa direct "$INPUT"
 ```
 
-`--term-size` and `--refine` are read by `minimize` and `direct`; `--direct` and
-`--lean` only go with a whole run. A phase that fails exits with status 1.
+`--term-size` and `--refine` are read by `minimize` and `direct`; `--direct`,
+`--compress` and `--lean` only go with a whole run. A phase that fails exits
+with a non-zero status. `./krympa lean <proof.out>` and
+`./krympa compress <proof.out>` work on a proof file instead; see
+[Lean Export and Step Removal](#lean-export-and-step-removal).
 
 | Phase | What it does |
 |---|---|
@@ -106,22 +112,25 @@ Things to know:
 
 ## Scripts and Benchmarks
 
-The benchmarks are the files `benchmarks/Proofs*.lean`. From `shell/`:
+The benchmarks are the files `benchmarks/Proofs*.lean`, with the equations in
+`benchmarks/Equations/`. From `benchmarks/`:
 
 | Command | Does |
 |---|---|
-| `python3 ../python/generate_input.py ../benchmarks/Proofs11.lean` | Writes the problems of one benchmark file to `benchmarks/input11/`, one `.p` file each. |
+| `../benchmarking_binary generate Proofs11.lean` | Writes the problems of one benchmark file to `input11/`, one `.p` file each. |
 | `./run_checked [--direct] [--term-size] [--refine] <problem.p>` | Runs Krympa, checks the proof in Lean, removes avoidable steps and checks again. Exit status 0 only if Lean accepted both. |
-| `./run_one <problem.p> [binary]` | Runs the four phases one after the other, with the given Krympa binary (default `./krympa`). |
-| `./run [timeout] [binary]` | Generates the problems of every benchmark file and runs the four phases on each, with a limit of `timeout` seconds per phase (default 600). Logs go to `benchmarks/output_logs/`. |
-| `python3 ../python/summarize.py ../benchmarks/output_logs` | Summarizes those logs. |
+| `./run [timeout] [binary]` | Generates the problems of every benchmark file and runs the four phases on each, with a limit of `timeout` seconds per phase (default 600) and the given Krympa binary (default `../krympa`). Logs go to `output_logs/`; at the end it prints their summary. |
+| `../benchmarking_binary summarize output_logs` | The summary: per benchmark file and overall, the average number of steps of Vampire's and Krympa's proofs, for all problems and for those whose Vampire proof has at least 15 steps. |
 
-`binary` exists for the older Linux binaries in `rust/` that use only some of
-the lemma variants: `krympa_bs`, `krympa_sa`, `krympa_ba`, `krympa_bsa` (b =
-big-step, s = small-step, a = abstracted). They know the four phases only: no
-whole run, no `direct`, no flags, no environment variables. `run` reads the
-line `[RESULT] Total steps:` from their output and from Krympa's, so that line
-must keep its wording.
+`run` reads the line `[RESULT] Total steps:` from Krympa's output, so that line
+must keep its wording. The older Linux binaries that use only some of the lemma
+variants (`krympa_bs`, `krympa_sa`, `krympa_ba`, `krympa_bsa`; b = big-step,
+s = small-step, a = abstracted) are in the git history, up to commit `308f3c2`.
+They expect the earlier layout, with the code in `rust/`.
+
+How the averages are counted: where Krympa found no proof, or a longer one than
+Vampire's, the problem counts with Vampire's proof. A problem where a phase ran
+out of time is left out.
 
 ## The Proof File
 
@@ -196,8 +205,7 @@ it reads as a derivation of the goal. Two rules, each with a test:
   step i.
 - A clause of the refutation can have variables of its own. Negated, it is an
   existential statement and is printed with `?`. Such a line counts as a step
-  but is not a lemma: no lemma problem is written for it, and the Lean export
-  skips it.
+  but is not a lemma: no lemma problem is written for it.
 
 If either is violated, a proof can lose a lemma it needs or report too few
 steps.
@@ -221,6 +229,10 @@ core Lean. Terms over one binary operation `op` only.
 - A step that is not a single rewrite is left as `sorry`, and Lean is not run.
   A file that Lean accepts without a message therefore certifies the step
   count.
+- Existential statements (`?`, see above) are not translated yet. A step
+  derived from one is left as `sorry`, although it is usually one rewrite after
+  choosing the witness. This is the most common reason a proof is not
+  certified.
 
 `./krympa compress <proof.out>` writes `<proof>_compressed.out`; `--compress`
 replaces the proof of a run. It uses the same one-rewrite search, and no
@@ -230,7 +242,3 @@ nothing needs any more. Twee sections are left as they are. The result is
 translated once more and kept only if every step still checks. Example: in a
 22-step proof of 650 ⇒ 448, one lemma is derived through three Vampire steps
 although it follows in one rewrite from its neighbour and the axiom.
-
-Both were Python scripts (`tolean.py`, `compress.py`) until they were ported;
-on the 1145 proofs of a suite run the Rust version writes the same Lean files
-and the same shortened proofs.

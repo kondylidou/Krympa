@@ -1,7 +1,6 @@
 # === Rust ===
 **/target/
 **/*.rs.bk
-Cargo.lock
 
 # === Lean ===
 lean/.lake/
@@ -25,15 +24,12 @@ lean/Proof/proof_*.lean
 /proofs/
 /output/
 /tmp/
-/raw_data/
-/thy/
+benchmarks/input*/
+benchmarks/output_logs/
 
 # === Prover Outputs ===
 *.out
 *.proof
-*.vproof
-*.tweeout
-*.cvc5out
 
 # === Logs and Temps ===
 *.log
@@ -64,8 +60,4 @@ lean/Proof/proof_*.lean
 
 # === zip Files ===
 *.zip
-rust/frankenstein_rust_debug.tar.gz
-
-# === Python ===
-__pycache__/
 

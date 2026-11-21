@@ -27,9 +27,9 @@ INPUT="$(cd "$(dirname "$INPUT")" && pwd)/$(basename "$INPUT")"
 NAME="$(basename "$INPUT" .p)"
 PROOF="$ROOT/output/proof_$NAME.out"
 
-cd "$ROOT/rust" || exit 1
+cd "$ROOT" || exit 1
 if [ ! -x ./krympa ]; then
-  echo "Error: rust/krympa not found. Run ./build.sh in rust/ first."
+  echo "Error: krympa not found. Run ./build.sh first."
   exit 1
 fi
 

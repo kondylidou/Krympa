@@ -1,3 +1,5 @@
+use std::env;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -170,4 +172,58 @@ pub fn parse_request(args: &[String]) -> Result<Request, String> {
         }),
         _ => Err("Expected one problem file".to_string()),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Where Krympa works
+// ---------------------------------------------------------------------------
+
+/// The folder Krympa was started from.
+static LAUNCH_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// The Krympa folder: the nearest folder above the executable that holds the
+/// lemma extractor `ocaml_install/tptp_parser`, or else the current folder.
+/// Krympa works in it: `output/`, `lemmas/`, `proofs/` and `tmp/` are there,
+/// and so are `bin/` and `lean/`.
+pub fn krympa_home() -> PathBuf {
+    let extractor = Path::new("ocaml_install").join("tptp_parser");
+    env::current_exe()
+        .and_then(|exe| exe.canonicalize())
+        .ok()
+        .and_then(|exe| {
+            exe.ancestors()
+                .skip(1)
+                .find(|dir| dir.join(&extractor).exists())
+                .map(Path::to_path_buf)
+        })
+        .unwrap_or_else(|| env::current_dir().unwrap_or_default())
+}
+
+/// Change into the Krympa folder, so that Krympa can be started from anywhere.
+/// Paths given by the user are then resolved with `absolute`.
+pub fn enter_krympa_home() -> Result<PathBuf, String> {
+    let launched = env::current_dir().map_err(|e| format!("No current folder: {}", e))?;
+    let _ = LAUNCH_DIR.set(launched);
+    let home = krympa_home();
+    env::set_current_dir(&home)
+        .map_err(|e| format!("Cannot change into {}: {}", home.display(), e))?;
+    Ok(home)
+}
+
+/// A path the user gave, resolved against the folder Krympa was started from.
+pub fn absolute(path: &str) -> String {
+    let given = Path::new(path);
+    if given.is_absolute() {
+        return path.to_string();
+    }
+    let launched = LAUNCH_DIR
+        .get()
+        .cloned()
+        .unwrap_or_else(|| env::current_dir().unwrap_or_default());
+    let joined = launched.join(given);
+    joined
+        .canonicalize()
+        .unwrap_or(joined)
+        .to_string_lossy()
+        .into_owned()
 }

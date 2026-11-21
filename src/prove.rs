@@ -42,7 +42,7 @@ pub(crate) fn prove_lemma_matching(
     prover_axioms: Option<&[(String, String)]>,
 ) -> Result<Option<(String, usize, String)>, String> {
     let tmp_path = create_tmp_copy(input_file)?;
-    let proofs_dir = "../proofs".to_string();
+    let proofs_dir = "proofs".to_string();
 
     // 1. Append dependency lemmas
     if let Some(deps) = dependencies {
