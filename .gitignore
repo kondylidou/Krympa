@@ -24,6 +24,7 @@ lean/Proof/proof_*.lean
 /proofs/
 /output/
 /tmp/
+/bin/
 benchmarks/input*/
 benchmarks/output_logs/
 

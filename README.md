@@ -81,8 +81,9 @@ overwritten by every run.
 | `VAMPIRE_OPTIONS`, `TWEE_OPTIONS` | Extra options for every call of that prover, e.g. `VAMPIRE_OPTIONS="-sa discount"`. |
 | `KRYMPA_LOG` | How much is printed: `error`, `warn`, `info` (default) or `debug` (same as `--debug`). |
 
-If you name no executable, Krympa uses the copy in `bin/` and, if there is
-none, looks for `vampire` and `twee` on your `PATH`.
+If you name no executable, Krympa looks in `bin/` in the Krympa folder for
+`vampire` and `twee` (on macOS `vampire_mac` and `twee_mac`), and then on your
+`PATH`.
 
 ### `--compress` and `--lean`
 

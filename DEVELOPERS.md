@@ -51,7 +51,7 @@ cargo test
 | `ocaml/` | Lemma extractor: writes the lemma problems of a Vampire proof in the three variants. |
 | `benchmarks/` | The benchmark files, their equations, and the scripts `run` and `run_checked`. |
 | `lean/` | Lean project for checking exported proofs. |
-| `bin/` | Vampire and Twee, for Linux and macOS. Optional: see the prover options in `README.md`. |
+| `bin/` | Your own Vampire and Twee, if you put them there; ignored by git. See the prover options in `README.md`. |
 
 At start, Krympa changes into the Krympa folder: the nearest folder above its
 executable that holds `ocaml_install/tptp_parser` (`krympa_home`). All paths in
