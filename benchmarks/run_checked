@@ -34,7 +34,7 @@ if [ ! -x ./krympa ]; then
 fi
 
 echo "== Krympa proof: $PROOF"
-./krympa "${FLAGS[@]}" --lean "$INPUT"
+./krympa "${FLAGS[@]}" --no-compress --lean "$INPUT"
 case $? in
   0) STATUS=0 ;;
   *) [ -f "$PROOF" ] || exit 1; STATUS=1 ;;

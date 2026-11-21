@@ -41,7 +41,7 @@ cargo test
 | `src/proof_file.rs` | Reading a proof file written by `minimize`. |
 | `src/rewrite.rs` | Terms over `op` and the search that justifies an equation by one rewrite. |
 | `src/lean.rs` | `--lean` and `krympa lean`: the Lean export, then Lean. |
-| `src/compress.rs` | `--compress` and `krympa compress`: step removal. |
+| `src/compress.rs` | Step removal: at the end of a whole run, and `krympa compress`. |
 | `src/superpose.rs` | Reading a turned Vampire proof and writing the steps a goal needs as a block of lines. |
 | `src/dag.rs` | Dependencies between lemmas, read from the Twee proofs, and the graph built from them. |
 | `src/utils.rs`, `regex_cache.rs` | Lemma files, TPTP editing, temporary problem files; compiled regexes are kept for reuse. |
@@ -83,7 +83,8 @@ INPUT=benchmarks/input11/Equation650_implies_Equation448.p
 ```
 
 `--term-size` and `--refine` are read by `minimize` and `direct`; `--direct`,
-`--compress` and `--lean` only go with a whole run. A phase that fails exits
+`--no-compress` and `--lean` only go with a whole run, which removes avoidable
+steps at the end unless told not to. A phase that fails exits
 with a non-zero status. `./krympa lean <proof.out>` and
 `./krympa compress <proof.out>` work on a proof file instead; see
 [Lean Export and Step Removal](#lean-export-and-step-removal).
@@ -250,8 +251,9 @@ the file needs only core Lean. Terms over one binary operation `op` only.
   equation, with one instance only. If an existential step cannot be
   translated it is left out, and a step that needs it fails.
 
-`./krympa compress <proof.out>` writes `<proof>_compressed.out`; `--compress`
-replaces the proof of a run. It uses the same one-rewrite search, and no
+`./krympa compress <proof.out>` writes `<proof>_compressed.out`; a whole run
+replaces its proof this way unless `--no-compress` is given. The benchmark
+driver runs the phases one by one, so its step counts are without it. It uses the same one-rewrite search, and no
 prover. It removes a superposition line when every step that uses it can be
 derived in one rewrite from the other equations instead, then removes the lines
 nothing needs any more. Twee sections are left as they are. The result is

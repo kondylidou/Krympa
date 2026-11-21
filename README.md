@@ -73,7 +73,7 @@ overwritten by every run.
 | Option | Effect |
 |---|---|
 | `--direct` | Prove only the lemmas the search can use, instead of every lemma of the Vampire proof. Usually finds the same proof in less time. |
-| `--compress` | Remove the steps of the proof that can be bypassed with a single rewrite; see below. |
+| `--no-compress` | Keep the steps that could be bypassed; see below. |
 | `--lean` | Write the proof as a Lean file and have Lean check it; see below. |
 | `--term-size` | Prefer proofs with smaller terms; see below. |
 | `--refine` | Run a final refinement on the best proof; see below. |
@@ -87,11 +87,12 @@ overwritten by every run.
 | `VAMPIRE_OPTIONS`, `TWEE_OPTIONS` | Extra options for every call of that prover, e.g. `VAMPIRE_OPTIONS="-sa discount"`. |
 | `KRYMPA_LOG` | How much is printed: `error`, `warn`, `info` (default) or `debug` (same as `--debug`). |
 
-### `--compress` and `--lean`
+### Removing avoidable steps, and `--lean`
 
-`--compress` removes a step when every step that uses it can be derived in one
-rewrite from the other equations instead. No prover is called, and
-`output/proof_<problem>.out` is then the shorter proof.
+At the end, Krympa removes a step when every step that uses it can be derived
+in one rewrite from the other equations instead. No prover is called, and the
+shorter proof is kept only if every step still checks. `--no-compress` turns
+this off, e.g. to reproduce the step counts of the paper.
 
 `--lean` writes the proof to `lean/Proof/proof_<problem>.lean`, runs Lean 4 on
 it (`lean` must be installed) and reports whether Lean accepted it; the command
@@ -100,8 +101,8 @@ Every step is translated to an explicit proof term, so an accepted file
 certifies the proof and its number of steps.
 
 Both work for problems over one binary operation named `op`, as in the example
-above. A few proofs contain a step the export cannot translate yet; `--lean`
-then names it and does not run Lean, and `--compress` leaves the proof as it is.
+above; for other problems the proof is left as it is. If a step cannot be
+translated, `--lean` names it and does not run Lean, and no steps are removed.
 
 ### `--term-size`
 

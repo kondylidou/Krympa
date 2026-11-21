@@ -111,20 +111,30 @@ pub const PHASES: [&str; 6] = [
 pub const TOOLS: [&str; 2] = ["lean", "compress"];
 
 /// What a whole run does after the search.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct WholeRun {
     /// `--direct`: prove only the lemmas the search can use
     pub direct: bool,
-    /// `--compress`: remove avoidable steps from the proof
+    /// remove avoidable steps from the proof; `--no-compress` turns it off
     pub compress: bool,
     /// `--lean`: check the proof in Lean
     pub lean: bool,
 }
 
+impl Default for WholeRun {
+    fn default() -> Self {
+        WholeRun {
+            direct: false,
+            compress: true,
+            lean: false,
+        }
+    }
+}
+
 /// What the command line asks for, once the flags above have been stripped.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Request {
-    /// `krympa [--direct] [--compress] [--lean] <problem>`: every phase, from
+    /// `krympa [--direct] [--no-compress] [--lean] <problem>`: every phase, from
     /// Vampire's proof to the shortened one.
     Whole { input: String, options: WholeRun },
     /// `krympa <phase> <problem>`: one phase, reading what the previous one wrote.
@@ -135,11 +145,11 @@ pub enum Request {
 
 /// Read the request from the arguments left after the other flags.
 pub fn parse_request(args: &[String]) -> Result<Request, String> {
-    const WHOLE_RUN_FLAGS: [&str; 3] = ["--direct", "--compress", "--lean"];
+    const WHOLE_RUN_FLAGS: [&str; 3] = ["--direct", "--no-compress", "--lean"];
     let given = |flag: &str| args.iter().any(|arg| arg == flag);
     let options = WholeRun {
         direct: given("--direct"),
-        compress: given("--compress"),
+        compress: !given("--no-compress"),
         lean: given("--lean"),
     };
     let rest: Vec<&str> = args
@@ -159,7 +169,7 @@ pub fn parse_request(args: &[String]) -> Result<Request, String> {
         [command] => Err(format!("'{}' needs a file", command)),
         [command, _] if !is_command(command) => Err(format!("Unknown command '{}'", command)),
         [command, _] if options != WholeRun::default() => Err(format!(
-            "--direct, --compress and --lean belong to a whole run and cannot be combined with '{}'",
+            "--direct, --no-compress and --lean belong to a whole run and cannot be combined with '{}'",
             command
         )),
         [tool, proof] if TOOLS.contains(tool) => Ok(Request::Tool {

@@ -1,4 +1,5 @@
-//! `--compress`: remove avoidable steps from a proof, without calling a prover.
+//! Step removal: remove avoidable steps from a proof, without calling a prover.
+//! A whole run does it at the end unless `--no-compress` is given.
 //!
 //! A superposition line is avoidable if every step that uses it can be derived
 //! in one rewrite from the other equations instead; the search is the one the

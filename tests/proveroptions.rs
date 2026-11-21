@@ -69,16 +69,30 @@ fn a_problem_file_alone_asks_for_the_whole_run() {
         })
     );
     assert_eq!(
-        request(&["--lean", "p.p", "--direct", "--compress"]),
+        request(&["--lean", "p.p", "--direct", "--no-compress"]),
         Ok(Request::Whole {
             input: "p.p".into(),
             options: WholeRun {
                 direct: true,
-                compress: true,
+                compress: false,
                 lean: true
             }
         })
     );
+}
+
+#[test]
+fn a_whole_run_removes_avoidable_steps_unless_told_not_to() {
+    use krympa::execution::{Request, WholeRun};
+    let Ok(Request::Whole { options, .. }) = request(&["p.p"]) else {
+        panic!("not a whole run");
+    };
+    assert!(options.compress);
+    assert_eq!(options, WholeRun::default());
+    let Ok(Request::Whole { options, .. }) = request(&["--no-compress", "p.p"]) else {
+        panic!("not a whole run");
+    };
+    assert!(!options.compress);
 }
 
 #[test]
@@ -113,6 +127,7 @@ fn malformed_requests_are_rejected() {
     assert!(request(&["prove", "p.p"]).is_err());
     assert!(request(&["--direct", "minimize", "p.p"]).is_err());
     assert!(request(&["--lean", "compress", "proof_p.out"]).is_err());
+    assert!(request(&["--compress", "p.p"]).is_err());
     assert!(request(&["--directt", "p.p"]).is_err());
     assert!(request(&["p.p", "q.p"]).is_err());
 }

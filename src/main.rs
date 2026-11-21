@@ -6,7 +6,7 @@ use krympa::{collect, compress, direct, lean, minimize, problem, provers};
 use std::path::Path;
 use std::{env, fs, process};
 
-const USAGE: &str = "Usage: krympa [--direct] [--compress] [--lean] [--term-size] [--refine] \
+const USAGE: &str = "Usage: krympa [--direct] [--no-compress] [--lean] [--term-size] [--refine] \
      [--debug] [--sequential] [--vampire <exe>] [--twee <exe>] <problem.p>\n\
      One phase only: krympa [flags] <run_vampire|collect|shorten|minimize|direct|group> <problem.p>\n\
      On a proof file: krympa <lean|compress> <proof.out>";
@@ -51,7 +51,7 @@ fn main() {
                 let path = Path::new(&proof);
                 let stem = path.file_stem().unwrap_or_default().to_string_lossy();
                 let target = path.with_file_name(format!("{}_compressed.out", stem));
-                remove_avoidable_steps(&proof, &target.to_string_lossy())
+                remove_avoidable_steps(&proof, &target.to_string_lossy(), true)
             }
         },
     };
@@ -91,15 +91,16 @@ fn run_whole(input_file: &str, options: &WholeRun) -> bool {
         }
     }
     // Removing steps is an improvement, not a requirement: if it is not
-    // possible, the proof stays as it is.
+    // possible (e.g. a problem not over `op`), the proof stays as it is.
     if options.compress {
-        remove_avoidable_steps(&proof_file, &proof_file);
+        remove_avoidable_steps(&proof_file, &proof_file, false);
     }
     !options.lean || check_in_lean(&proof_file)
 }
 
-/// Write `proof_file` without its avoidable steps to `target`.
-fn remove_avoidable_steps(proof_file: &str, target: &str) -> bool {
+/// Write `proof_file` without its avoidable steps to `target`. When it is not
+/// possible, say why only if it was asked for (`report`).
+fn remove_avoidable_steps(proof_file: &str, target: &str, report: bool) -> bool {
     let result = fs::read_to_string(proof_file)
         .map_err(|e| format!("Cannot read {}: {}", proof_file, e))
         .and_then(|text| compress::compress(&text))
@@ -109,6 +110,13 @@ fn remove_avoidable_steps(proof_file: &str, target: &str) -> bool {
             Ok(shorter)
         });
     match result {
+        Ok(shorter) if shorter.steps_after == shorter.steps_before => {
+            krympa::klog_info!("[RESULT] No avoidable steps");
+            if target != proof_file {
+                krympa::klog_info!("[RESULT] Proof output: {}", target);
+            }
+            true
+        }
         Ok(shorter) => {
             krympa::klog_info!(
                 "[RESULT] Avoidable steps removed: {} -> {} steps",
@@ -120,8 +128,12 @@ fn remove_avoidable_steps(proof_file: &str, target: &str) -> bool {
             }
             true
         }
-        Err(problem) => {
+        Err(problem) if report => {
             krympa::klog_warn!("[WARN] Avoidable steps not removed: {}", problem);
+            false
+        }
+        Err(problem) => {
+            krympa::klog_debug!("[DEBUG] Avoidable steps not removed: {}", problem);
             false
         }
     }
