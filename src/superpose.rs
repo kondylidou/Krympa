@@ -487,6 +487,46 @@ fn dependency_order(relevant_steps: &RelevantSteps, all_steps: &AllSteps) -> Vec
     order
 }
 
+/// The name of the premise that `step` merely restates, if it states the
+/// same equation as one of its premises and that premise has a name: a step
+/// of the block, or an input that is one of `axioms`.
+fn restated_premise(
+    step: &VampStep,
+    renaming: &BTreeMap<usize, String>,
+    axioms: &[(String, String)],
+    input_formulas: &InputFormulas,
+    all_steps: &AllSteps,
+) -> Option<String> {
+    let same = |formula: &str| formulas_match(formula, &step.formula);
+    for dep in &step.deps {
+        if let Some(name) = renaming.get(dep) {
+            let formula = all_steps.get(dep).map(|s| s.formula.as_str()).unwrap_or("");
+            if same(formula) {
+                return Some(name.clone());
+            }
+            continue;
+        }
+        // a premise that is not a step of the block: an input, possibly
+        // after a transformation such as cnf
+        let mut visiting = BTreeSet::new();
+        let mut memo = BTreeMap::new();
+        let inputs = expand_to_inputs(*dep, all_steps, &mut memo, &mut visiting);
+        let inputs: Vec<usize> = inputs.into_iter().collect();
+        if let [input] = inputs.as_slice() {
+            let formula = all_steps.get(dep).map(|s| s.formula.as_str()).unwrap_or("");
+            if let (Some(input_formula), true) = (input_formulas.get(input), same(formula)) {
+                if let Some((name, _)) = axioms
+                    .iter()
+                    .find(|(_, f)| formulas_match(f, input_formula))
+                {
+                    return Some(name.clone());
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Find the existing name of a lemma if available
 fn find_existing_name_for_formula<'a>(
     axioms: &'a [(String, String)],
@@ -509,15 +549,28 @@ pub fn prepend_superposition_steps(
     input_formulas: &InputFormulas, // (vamp -> formula) for inputs
     all_steps: &AllSteps,           // full graph (vamp -> step)
 ) -> (String, BTreeMap<usize, String>) {
-    prepend_superposition_steps_for_target(axioms, relevant_steps, input_formulas, all_steps, None)
+    prepend_superposition_steps_for_target(
+        axioms,
+        relevant_steps,
+        input_formulas,
+        all_steps,
+        None,
+        None,
+    )
 }
 
+/// With `goal`, the (name, equation) the block proves: the step that states
+/// the goal is named after it and always written. A step whose statement is
+/// that of one of its own premises only restates it (the turned end of a
+/// refutation starts like that); it is not written, and the steps that use it
+/// cite the premise.
 pub(crate) fn prepend_superposition_steps_for_target(
     axioms: &Vec<(String, String)>,
     relevant_steps: &RelevantSteps,
     input_formulas: &InputFormulas,
     all_steps: &AllSteps,
     target: Option<(&str, &str)>,
+    goal: Option<(&str, &str)>,
 ) -> (String, BTreeMap<usize, String>) {
     // allocate lemma numbers from 1 upward, skipping already-used numbers
     let mut used = used_lemma_numbers(axioms);
@@ -538,6 +591,8 @@ pub(crate) fn prepend_superposition_steps_for_target(
     // (including reversed equality direction) collapse to the same name.
     let mut renaming: BTreeMap<usize, String> = BTreeMap::new();
     let mut seen_this_run: Vec<(String, String)> = Vec::new();
+    // steps that restate a lemma derived earlier in the proof
+    let mut restatements: BTreeSet<usize> = BTreeSet::new();
     // Steps are named and written in dependency order: of two steps with the
     // same equation, the one written is then the one with a derivation, and
     // the other, a mere restatement, gets its name.
@@ -552,6 +607,15 @@ pub(crate) fn prepend_superposition_steps_for_target(
         let step = &relevant_steps[vnum];
         if Some(*vnum) == target_vnum {
             renaming.insert(*vnum, target.unwrap().0.to_string());
+        } else if let Some((name, _)) =
+            goal.filter(|(_, formula)| formulas_match(formula, &step.formula))
+        {
+            renaming.insert(*vnum, name.to_string());
+        } else if let Some(premise) =
+            goal.and_then(|_| restated_premise(step, &renaming, axioms, input_formulas, all_steps))
+        {
+            restatements.insert(*vnum);
+            renaming.insert(*vnum, premise);
         } else if let Some(existing) = find_existing_name_for_formula(axioms, &step.formula) {
             renaming.insert(*vnum, existing.to_string());
         } else if let Some(existing) = find_existing_name_for_formula(&seen_this_run, &step.formula)
@@ -573,6 +637,11 @@ pub(crate) fn prepend_superposition_steps_for_target(
     for vnum in &order {
         let step = &relevant_steps[vnum];
         let lemma_name = renaming.get(vnum).unwrap();
+
+        // the lemma it restates is derived elsewhere in the proof
+        if restatements.contains(vnum) {
+            continue;
+        }
 
         // skip if an equivalent step was already output under this name
         if !output_names.insert(lemma_name.clone()) {
@@ -667,6 +736,7 @@ mod tests {
             &input_formulas,
             &all_steps,
             Some(("goal", "op(X0,op(X1,X0)) = X0")),
+            None,
         );
 
         assert_eq!(renaming.get(&11).map(String::as_str), Some("goal"));
@@ -773,5 +843,184 @@ mod tests {
                 proof
             );
         }
+    }
+
+    /// Equation 3108 implies equation 2496, reduced: the turned end of a
+    /// refutation first restates the earlier lemma `lemma_0001`. That line is
+    /// not written again, and the next step cites `lemma_0001` itself.
+    #[test]
+    fn a_restatement_of_an_earlier_lemma_is_not_written() {
+        let step = |formula: &str, deps: Vec<usize>, is_input: bool| VampStep {
+            formula: formula.to_string(),
+            deps,
+            is_input,
+        };
+        let all_steps = BTreeMap::from([
+            (1, step("! [X0,X1] : op(op(X0,X1),X0) = X0", vec![], true)),
+            (2, step("! [X0,X1] : X0 = op(X1,X0)", vec![], true)),
+            (9, step("$true", vec![], false)),
+            (12, step("op(op(X0,X2),X0) = X0", vec![1], false)),
+            (
+                20,
+                step("! [X0,X1] : X0 = op(op(X0,X1),X0)", vec![9, 12], false),
+            ),
+            (21, step("! [X0,X1] : X0 = op(X1,X0)", vec![20, 12], false)),
+        ]);
+        let relevant_steps: RelevantSteps = [20, 21]
+            .iter()
+            .map(|n| (*n, all_steps[n].clone()))
+            .collect();
+        let input_formulas = BTreeMap::from([
+            (1, all_steps[&1].formula.clone()),
+            (2, all_steps[&2].formula.clone()),
+        ]);
+        let axioms = vec![
+            (
+                "lemma_0001".to_string(),
+                "op(op(X0,X2),X0) = X0".to_string(),
+            ),
+            ("conjecture".to_string(), "X0 = op(X1,X0)".to_string()),
+        ];
+
+        let (proof, renaming) = prepend_superposition_steps_for_target(
+            &axioms,
+            &relevant_steps,
+            &input_formulas,
+            &all_steps,
+            None,
+            Some(("conjecture", "X0 = op(X1,X0)")),
+        );
+
+        assert_eq!(renaming[&20], "lemma_0001");
+        let lines: Vec<&str> = proof
+            .lines()
+            .filter(|l| l.starts_with("% ") && !l.starts_with("% ==="))
+            .collect();
+        assert_eq!(lines.len(), 1, "{}", proof);
+        assert!(lines[0].starts_with("% conjecture:"), "{}", proof);
+        assert!(lines[0].contains("deps: lemma_0001"), "{}", proof);
+
+        // without a goal nothing is left out, as before
+        let (proof, _) = prepend_superposition_steps_for_target(
+            &axioms,
+            &relevant_steps,
+            &input_formulas,
+            &all_steps,
+            None,
+            None,
+        );
+        assert_eq!(
+            proof
+                .lines()
+                .filter(|l| l.starts_with("% lemma_0001:"))
+                .count(),
+            1
+        );
+    }
+
+    /// Equation 102 implies equation 617: the lemma being proved is already
+    /// among the known names, but the step deriving it from the axiom is not
+    /// a restatement and must be written.
+    #[test]
+    fn the_derivation_of_a_known_name_is_written() {
+        let step = |formula: &str, deps: Vec<usize>, is_input: bool| VampStep {
+            formula: formula.to_string(),
+            deps,
+            is_input,
+        };
+        let all_steps = BTreeMap::from([
+            (
+                1,
+                step("! [X0,X1] : X0 = op(X0,op(op(X0,X1),X1))", vec![], true),
+            ),
+            (7, step("op(X0,op(op(X0,X1),X1)) = X0", vec![1], false)),
+            (
+                9,
+                step("op(X0,op(X0,op(op(X0,X1),X1))) = X0", vec![7, 7], false),
+            ),
+        ]);
+        let relevant_steps: RelevantSteps = BTreeMap::from([(9, all_steps[&9].clone())]);
+        let input_formulas = BTreeMap::from([(1, all_steps[&1].formula.clone())]);
+        let axioms = vec![
+            ("a1".to_string(), "X0 = op(X0,op(op(X0,X1),X1))".to_string()),
+            (
+                "lemma_0001".to_string(),
+                "X0 = op(X0,op(X0,op(op(X0,X1),X1)))".to_string(),
+            ),
+        ];
+        let (proof, _) = prepend_superposition_steps_for_target(
+            &axioms,
+            &relevant_steps,
+            &input_formulas,
+            &all_steps,
+            None,
+            Some(("conjecture", "X0 = op(X0,op(X1,X1))")),
+        );
+        assert!(
+            proof.contains("% lemma_0001: op(X0,op(X0,op(op(X0,X1),X1))) = X0 | deps: a1"),
+            "{}",
+            proof
+        );
+    }
+
+    /// Equation 102 implies equation 617: the last step restates the premise
+    /// `lemma_0001` and is at the same time the goal. It is written, under
+    /// the goal's name.
+    #[test]
+    fn a_step_stating_the_goal_is_written_under_its_name() {
+        let step = |formula: &str, deps: Vec<usize>, is_input: bool| VampStep {
+            formula: formula.to_string(),
+            deps,
+            is_input,
+        };
+        let all_steps = BTreeMap::from([
+            (
+                1,
+                step(
+                    "! [X0,X1] : op(X0,op(X0,op(op(X0,X1),X1))) = X0",
+                    vec![],
+                    true,
+                ),
+            ),
+            (10, step("$true", vec![], false)),
+            (
+                11,
+                step("op(X0,op(X0,op(op(X0,X1),X1))) = X0", vec![1], false),
+            ),
+            (
+                13,
+                step(
+                    "! [X0,X1] : X0 = op(X0,op(X0,op(op(X0,X1),X1)))",
+                    vec![10, 11],
+                    false,
+                ),
+            ),
+        ]);
+        let relevant_steps: RelevantSteps = BTreeMap::from([(13, all_steps[&13].clone())]);
+        let input_formulas = BTreeMap::from([(1, all_steps[&1].formula.clone())]);
+        let goal = "! [X0,X1] : X0 = op(X0,op(X0,op(op(X0,X1),X1)))";
+        let axioms = vec![
+            (
+                "lemma_0001".to_string(),
+                "op(X0,op(X0,op(op(X0,X1),X1))) = X0".to_string(),
+            ),
+            ("conjecture".to_string(), goal.to_string()),
+        ];
+        let (proof, renaming) = prepend_superposition_steps_for_target(
+            &axioms,
+            &relevant_steps,
+            &input_formulas,
+            &all_steps,
+            None,
+            Some(("conjecture", goal)),
+        );
+        assert_eq!(renaming[&13], "conjecture");
+        assert!(
+            proof
+                .lines()
+                .any(|l| l.starts_with("% conjecture: ") && l.contains("lemma_0001")),
+            "{}",
+            proof
+        );
     }
 }

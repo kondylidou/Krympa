@@ -153,7 +153,11 @@ dependency order, not in Vampire's numbering: a turned refutation keeps
 Vampire's numbers, so a turned step can use a step with a higher number. Steps
 that state the same equation (up to renaming of variables and orientation)
 share one name and are written once, the first in dependency order, which is
-the one with a derivation. Existential statements are only equal if they are
+the one with a derivation. In a block from a Vampire proof made inside
+`minimize`, the step stating the segment's goal is named after the goal, and a
+step that only restates one of its own premises (the turned end of a
+refutation often starts like that) is not written; the steps that use it cite
+the premise. Existential statements are only equal if they are
 the same up to renaming, existential variables to existential ones
 (`formulas_match`). A lemma proof that `collect` stored as Vampire printed it
 is turned around before its steps are copied.

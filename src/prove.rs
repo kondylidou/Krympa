@@ -4,7 +4,6 @@ use crate::execution::term_size_aware;
 use crate::provers::*;
 use crate::superpose::*;
 use crate::utils::*;
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
@@ -140,10 +139,10 @@ pub(crate) fn prove_lemma_matching(
                         &input_formulas,
                         &all_steps,
                         target,
+                        Some((&c_name, &c_formula)),
                     );
                     extend_with_superposition_steps(axioms, &sp_steps, &renaming);
-                    let deduped_len = renaming.values().collect::<BTreeSet<_>>().len();
-                    Some((vp, deduped_len, "vampire".to_string()))
+                    Some((vp.clone(), written_steps(&vp), "vampire".to_string()))
                 } else {
                     Some((tp, t_len, "twee".to_string()))
                 }
@@ -189,10 +188,10 @@ pub(crate) fn prove_lemma_matching(
                     &input_formulas,
                     &all_steps,
                     target,
+                    Some((&c_name, &c_formula)),
                 );
                 extend_with_superposition_steps(axioms, &sp_steps, &renaming);
-                let deduped_len = renaming.values().collect::<BTreeSet<_>>().len();
-                Some((vp, deduped_len, "vampire".to_string()))
+                Some((vp.clone(), written_steps(&vp), "vampire".to_string()))
             } else {
                 Some((vp_text, v_len, "vampire".to_string()))
             }
@@ -320,4 +319,12 @@ fn fallback_proof(
     };
 
     Ok((proof_text, steps))
+}
+
+/// The number of steps of a block of superposition lines: the lines written.
+fn written_steps(block: &str) -> usize {
+    block
+        .lines()
+        .filter(|line| line.starts_with("% ") && !line.starts_with("% ==="))
+        .count()
 }
