@@ -94,7 +94,7 @@ with a non-zero status. `./krympa lean <proof.out>` and
 | `run_vampire` | Proves the problem with Vampire and turns the refutation into a forward proof. The equations it derives are the lemmas, numbered in order. |
 | `collect` | Proves every lemma in three variants with Vampire and Twee (7 s per call) and keeps the shortest proof. Big-step: from the axioms. Small-step: from the axioms and all earlier lemmas. Abstracted: from the axioms, with one subterm of the lemma replaced by a variable. |
 | `shorten` | Proves small-step lemmas again, using the abstracted statement of an earlier lemma where that variant was kept. |
-| `minimize` | Tries each of the last 5 lemmas as arrival lemma and, for each, the lemmas its proof depends on as departure lemma. The proof then has three segments: axioms to departure lemma, departure to arrival lemma, arrival lemma to conjecture. The first is taken from the Vampire proof, the other two are proved again by both provers. The combination with the fewest steps is written out. |
+| `minimize` | Tries each of the last 5 lemmas as arrival lemma and, for each, the lemmas its proof depends on as departure lemma. The proof then has three segments: axioms to departure lemma, departure to arrival lemma, arrival lemma to conjecture. The first is taken from the Vampire proof, the other two are proved again by both provers. The combination with the fewest steps is written out, unless Vampire's own proof is shorter or no combination works: then Vampire's proof, in the same format (`keep_shorter_than_vampire`; `direct` ends the same way). |
 | `direct` | Replaces `collect`, `shorten` and `minimize`; see below. |
 | `group` | Optional analysis: groups the lemmas by the axioms their proofs use, in `output/structural_groups.txt`. |
 
@@ -130,9 +130,10 @@ variants (`krympa_bs`, `krympa_sa`, `krympa_ba`, `krympa_bsa`; b = big-step,
 s = small-step, a = abstracted) are in the git history, up to commit `308f3c2`.
 They expect the earlier layout, with the code in `rust/`.
 
-How the averages are counted: where Krympa found no proof, or a longer one than
-Vampire's, the problem counts with Vampire's proof. A problem where a phase ran
-out of time is left out.
+How the averages are counted: a problem where a phase ran out of time is left
+out. Krympa's count is never above Vampire's, since `minimize` keeps Vampire's
+proof when it finds nothing shorter; written in Krympa's format, that proof can
+have fewer steps than Vampire's own count when Vampire restates a step.
 
 ## The Proof File
 

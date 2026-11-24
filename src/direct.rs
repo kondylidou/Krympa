@@ -31,7 +31,7 @@ pub fn try_direct(
     vampire_file: &str,
     summary_file: &str,
     suffix: &str,
-) -> Result<String, String> {
+) -> Result<usize, String> {
     let started = std::time::Instant::now();
     crate::klog_info!("[INFO] Phase 1: Collection of the lemmas the search can use");
     let mut lemmas = Lemmas::extract(vampire_file);

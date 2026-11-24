@@ -59,8 +59,9 @@ Krympa reports its progress, then the number of steps of the shortened proof
 | `output/proof_<problem>.out` | The shortened proof. |
 | `output/vampire_proof_<problem>.out` | The proof it started from: Vampire's proof by refutation, turned around into a direct proof. |
 
-In a script, the command succeeds (exit status 0) only if a shortened proof was
-written.
+If Krympa finds nothing shorter than Vampire's proof, the result is Vampire's
+proof itself, so it is never longer. In a script, the command succeeds (exit
+status 0) only if a proof was written.
 
 Krympa can be started from any folder. It keeps its working files in
 `output/`, `lemmas/` and `proofs/` in the Krympa folder; the last two are

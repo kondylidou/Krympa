@@ -55,12 +55,13 @@ impl Drop for ActiveRootGuard<'_> {
 /// How many of the last lemmas of the Vampire proof are tried as arrival lemma.
 pub const MAX_ARRIVAL_CANDIDATES: usize = 5;
 
-/// Tries several candidate root lemmas and picks the best
+/// Tries several candidate root lemmas and picks the best; writes the proof
+/// and returns its number of steps.
 pub fn try_minimize(
     input_file: &str,
     vampire_file: &str,
     summary_file: &str,
-) -> Result<String, String> {
+) -> Result<usize, String> {
     let lemmas_dir = "lemmas".to_string();
     let proofs_dir = "proofs".to_string();
     let twee_proofs_dir = "proofs/twee_tmp".to_string();
@@ -1072,20 +1073,91 @@ pub fn try_minimize(
                 n_history
             }
         );
-        crate::klog_info!("[RESULT] Total steps: {}", steps);
-        let vampire_steps = match fs::read_to_string(vampire_file) {
-            Ok(content) => proof_length("vampire", &content),
-            Err(_) => 0,
-        };
-        crate::klog_info!("[RESULT] Initial proof steps: {}", vampire_steps);
-        crate::klog_info!("[RESULT] Minimized proof output: {}", proof_with_suffix);
-
         fs::write(dag_with_suffix.clone(), dag_text).map_err(|e| e.to_string())?;
         fs::write(lemmas_with_suffix.clone(), lemmas_text).map_err(|e| e.to_string())?;
         fs::write(proof_with_suffix.clone(), annotated_proof).map_err(|e| e.to_string())?;
+        Ok(*steps)
     } else {
-        return Err("No valid root/history candidate combination found.".into());
+        Err("No valid root/history candidate combination found.".into())
     }
+}
 
+/// The result of a search: Krympa's proof, unless it found none or Vampire's
+/// own proof is shorter; then Vampire's proof, written in the same format so
+/// that step removal and the Lean export work on it too. Reports the result.
+pub fn keep_shorter_than_vampire(
+    input_file: &str,
+    vampire_file: &str,
+    krympa: Result<usize, String>,
+) -> Result<String, String> {
+    let proof_file = format!("output/proof_{}.out", extract_suffix(input_file));
+    let initial = fs::read_to_string(vampire_file)
+        .map(|content| proof_length("vampire", &content))
+        .unwrap_or(0);
+    let vampire = vampire_proof_as_result(input_file, vampire_file);
+    let write = |text: &str| fs::write(&proof_file, text).map_err(|e| e.to_string());
+    let steps = match (krympa, vampire) {
+        (Ok(steps), Ok((_, vampire_steps))) if steps <= vampire_steps => steps,
+        (Ok(steps), Ok((text, vampire_steps))) => {
+            write(&text)?;
+            crate::klog_info!(
+                "[INFO] Krympa's proof has {} steps, Vampire's {}: kept Vampire's proof",
+                steps,
+                vampire_steps
+            );
+            vampire_steps
+        }
+        (Err(why), Ok((text, vampire_steps))) => {
+            crate::klog_debug!("[DEBUG] No proof from the search: {}", why);
+            write(&text)?;
+            crate::klog_info!("[INFO] The search found no proof: kept Vampire's proof");
+            vampire_steps
+        }
+        (Ok(steps), Err(why)) => {
+            crate::klog_debug!(
+                "[DEBUG] Vampire's proof cannot be written as a result: {}",
+                why
+            );
+            steps
+        }
+        (Err(why), Err(_)) => return Err(why),
+    };
+    crate::klog_info!("[RESULT] Total steps: {}", steps);
+    crate::klog_info!("[RESULT] Initial proof steps: {}", initial);
+    crate::klog_info!("[RESULT] Minimized proof output: {}", proof_file);
     Ok("Minimization complete".into())
+}
+
+/// Vampire's own (turned) proof as a Krympa proof file: the input problem,
+/// then the steps that lead to the conjecture as one block of lines; with
+/// its number of steps.
+fn vampire_proof_as_result(
+    input_file: &str,
+    vampire_file: &str,
+) -> Result<(String, usize), String> {
+    let input = fs::read_to_string(input_file)
+        .map_err(|e| format!("Failed to read input file {}: {}", input_file, e))?;
+    let conjecture = extract_conjecture_from_file(input_file)?;
+    let (steps, inputs, all_steps) = extract_superposition_steps(vampire_file, &conjecture)
+        .ok_or("Vampire's proof does not state the conjecture")?;
+    let axioms = vec![("conjecture".to_string(), conjecture.clone())];
+    let (block, _) = prepend_superposition_steps_for_target(
+        &axioms,
+        &steps,
+        &inputs,
+        &all_steps,
+        None,
+        Some(("conjecture", &conjecture)),
+    );
+    let count = block
+        .lines()
+        .filter(|line| line.starts_with("% ") && !line.starts_with("% ==="))
+        .count();
+    if count == 0 {
+        return Err("Vampire's proof has no steps to write".into());
+    }
+    Ok((
+        format!("% === Input Problem ===\n{}\n\n{}", input, block),
+        count,
+    ))
 }

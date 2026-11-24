@@ -182,16 +182,15 @@ fn run_phase(phase: &str, input_file: &str) -> bool {
             collect::structural_groups(&summary_file);
             true
         }
-        "minimize" => report(minimize::try_minimize(
+        "minimize" => report(minimize::keep_shorter_than_vampire(
             input_file,
             &vampire_file,
-            &summary_file,
+            minimize::try_minimize(input_file, &vampire_file, &summary_file),
         )),
-        "direct" => report(direct::try_direct(
+        "direct" => report(minimize::keep_shorter_than_vampire(
             input_file,
             &vampire_file,
-            &summary_file,
-            &suffix,
+            direct::try_direct(input_file, &vampire_file, &summary_file, &suffix),
         )),
         _ => unreachable!("parse_request only lets the known phases through"),
     }
