@@ -113,3 +113,23 @@ fn a_removed_line_is_not_needed_by_its_replacement() {
         }
     }
 }
+
+/// Equation 650 implies equation 448, as Vampire 5.0.1 on macOS starts it: a
+/// Twee section proves the lemma `conjecture_0038`, and three superposition
+/// lines list it as their premise. A lemma named `conjecture_…` is a premise
+/// like any other, so no line may be reported as needing an unlisted one.
+#[test]
+fn a_lemma_named_conjecture_is_a_listed_premise() {
+    let proof = std::fs::read_to_string("tests/data/proof_650_448.out").unwrap();
+    let translation = translate(&proof, "proof.out").unwrap();
+    assert!(translation.certified, "{:?}", translation.messages);
+    assert_eq!(translation.steps, 27);
+    assert!(
+        !translation
+            .messages
+            .iter()
+            .any(|m| m.contains("also needs")),
+        "{:?}",
+        translation.messages
+    );
+}

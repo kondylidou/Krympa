@@ -160,11 +160,7 @@ fn balanced(text: &str) -> bool {
 /// Add the variables of `term` to `seen`, in order of first appearance.
 pub fn term_vars(term: &Term, seen: &mut Vec<String>) {
     match term {
-        Term::Var(name) => {
-            if !seen.contains(name) {
-                seen.push(name.clone());
-            }
-        }
+        Term::Var(name) if !seen.contains(name) => seen.push(name.clone()),
         Term::Op(left, right) => {
             term_vars(left, seen);
             term_vars(right, seen);

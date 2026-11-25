@@ -214,17 +214,7 @@ impl Converter {
         let (lhs, rhs) = parse_equation(formula)?;
         let fact = self.new_fact(&lhs, &rhs);
         self.item_of.insert(fact, index);
-        let (mut deps, mut missing) = (Vec::new(), Vec::new());
-        for (dep_name, dep_formula) in premises {
-            if canon(dep_name) == canon(name) || dep_name.starts_with("conjecture") {
-                continue; // the statement itself, not a premise
-            }
-            match self.lookup(dep_name, dep_formula.as_deref()) {
-                None => missing.push(dep_name.clone()), // e.g. a lemma that is only proved later
-                Some(dep) if !deps.contains(&dep) => deps.push(dep),
-                Some(_) => {}
-            }
-        }
+        let (deps, missing) = self.premise_facts(name, premises);
         self.steps += 1;
         let (lhs, rhs) = (self.fact(fact).lhs.clone(), self.fact(fact).rhs.clone());
         let goal = (&lhs, &rhs);
@@ -302,11 +292,22 @@ impl Converter {
     ) -> (Vec<FactId>, Vec<String>) {
         let (mut deps, mut missing) = (Vec::new(), Vec::new());
         for (dep_name, dep_formula) in premises {
-            if canon(dep_name) == canon(name) || dep_name.starts_with("conjecture") {
-                continue;
+            if canon(dep_name) == canon(name) {
+                continue; // the statement itself, not a premise
             }
-            match self.lookup(dep_name, dep_formula.as_deref()) {
-                None => missing.push(dep_name.clone()),
+            let found = if dep_name.starts_with("conjecture") {
+                // The problem's conjecture is what is being proved, not a
+                // premise; a lemma of that name proved earlier in the file
+                // (such as conjecture_0038 from a Twee section) is one.
+                match self.by_name.get(dep_name.as_str()) {
+                    Some(&dep) => Some(dep),
+                    None => continue,
+                }
+            } else {
+                self.lookup(dep_name, dep_formula.as_deref())
+            };
+            match found {
+                None => missing.push(dep_name.clone()), // e.g. a lemma that is only proved later
                 Some(dep) if !deps.contains(&dep) => deps.push(dep),
                 Some(_) => {}
             }
