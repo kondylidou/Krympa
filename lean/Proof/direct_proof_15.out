@@ -1,0 +1,38 @@
+% === Input Problem ===
+fof(a1, axiom,
+    ! [X0, X1, X2] :
+        (X0 = op(X0,op(X1,op(op(X2,X0),X1))))
+).
+
+fof(conjecture0, conjecture,
+    ! [X0, X1, X2] :
+        (X0 = op(X0,op(X1,op(X2,op(X0,X2)))))
+).
+
+% === Superposition Steps ===
+% lemma_0001: op(X1,op(op(X2,X0),X1)) = op(op(X1,op(op(X2,X0),X1)),op(X3,op(X0,X3))) | deps: a1
+% lemma_0002: op(X3,op(X0,X3)) = op(op(X3,op(X0,X3)),op(X4,op(op(X1,op(op(X2,X0),X1)),X4))) | deps: lemma_0001, a1
+% lemma_0003: op(X4,op(X2,X4)) = op(op(X4,op(X2,X4)),op(op(X3,op(X2,X3)),op(X0,op(op(X1,X2),X0)))) | deps: lemma_0001, lemma_0002
+% lemma_0004: op(X2,op(op(X0,op(X1,X0)),X2)) = op(op(X2,op(op(X0,op(X1,X0)),X2)),op(X6,op(op(X3,op(op(X4,op(op(X5,X1),X4)),X3)),X6))) | deps: lemma_0001, lemma_0002
+% lemma_0006: op(X4,op(op(op(X1,op(op(X2,X3),X1)),op(X3,op(X1,op(op(X2,X3),X1)))),X4)) = op(op(X4,op(op(op(X1,op(op(X2,X3),X1)),op(X3,op(X1,op(op(X2,X3),X1)))),X4)),op(X0,op(op(op(X1,op(op(X2,X3),X1)),op(X3,op(X1,op(op(X2,X3),X1)))),X0))) | deps: lemma_0003, lemma_0004
+% lemma_0007: op(X4,op(op(op(X1,op(op(X2,X3),X1)),X3),X4)) = op(op(X4,op(op(op(X1,op(op(X2,X3),X1)),X3),X4)),op(X0,op(op(op(X1,op(op(X2,X3),X1)),X3),X0))) | deps: lemma_0006, a1
+% lemma_0009: op(X4,op(X3,X4)) = op(op(X4,op(X3,X4)),op(op(X0,op(op(op(X1,op(op(X2,X3),X1)),X3),X0)),op(X6,op(op(op(X1,op(op(X2,X3),X1)),X3),X6)))) | deps: lemma_0002, lemma_0007
+% lemma_0010: op(X4,op(X3,X4)) = op(op(X4,op(X3,X4)),op(X0,op(op(op(X1,op(op(X2,X3),X1)),X3),X0))) | deps: lemma_0007, lemma_0009
+% small_step_lemma_0048: op(X2,op(X1,X2)) = op(op(X2,op(X1,X2)),op(X0,op(X1,X0))) | deps: lemma_0003, lemma_0010
+% lemma_0012: op(X1,X0) = op(op(X1,X0),op(op(X2,op(X1,X2)),op(X0,op(X1,X0)))) | deps: small_step_lemma_0048, a1
+% lemma_0013: op(X1,X0) = op(op(X1,X0),op(X2,op(X1,X2))) | deps: small_step_lemma_0048, lemma_0012
+% lemma_0014: op(X0,op(X1,op(X0,X1))) = X0 | deps: lemma_0013, a1
+% lemma_0015: op(X1,op(X0,X1)) = X1 | deps: lemma_0013, lemma_0014
+% lemma_0018: op(X2,X6) = X2 | deps: lemma_0015, a1
+
+The conjecture is true! Here is a proof.
+
+Axiom 1 (lemma_0018): op(X, Y) = X.
+
+Goal 1 (conjecture0): x0 = op(x0, op(x1, op(x2, op(x0, x2)))).
+Proof:
+  x0
+= { by axiom 1 (lemma_0018) R->L }
+  op(x0, op(x1, op(x2, op(x0, x2))))
+
+RESULT: Theorem (the conjecture is true).
