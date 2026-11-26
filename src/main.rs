@@ -6,8 +6,8 @@ use krympa::{collect, compress, direct, lean, minimize, problem, provers};
 use std::path::Path;
 use std::{env, fs, process};
 
-const USAGE: &str = "Usage: krympa [--direct] [--no-compress] [--lean] [--term-size] [--refine] \
-     [--debug] [--sequential] [--vampire <exe>] [--twee <exe>] <problem.p>\n\
+const USAGE: &str = "Usage: krympa [--direct] [--no-compress] [--lean] [--vampire-proof <file>] \
+     [--term-size] [--refine] [--debug] [--sequential] [--vampire <exe>] [--twee <exe>] <problem.p>\n\
      One phase only: krympa [flags] <run_vampire|collect|shorten|minimize|direct|group> <problem.p>\n\
      On a proof file: krympa <lean|compress> <proof.out>";
 
@@ -74,21 +74,27 @@ fn run_whole(input_file: &str, options: &WholeRun) -> bool {
     // A proof left by an earlier run must not pass for the result of this one.
     let _ = fs::remove_file(&proof_file);
 
-    let phases: &[&str] = if options.direct {
-        &["run_vampire", "direct"]
-    } else {
-        &["run_vampire", "collect", "shorten", "minimize"]
+    let started = match &options.vampire_proof {
+        Some(saved) => provers::use_saved_vampire_proof(
+            &absolute(saved),
+            &format!("output/vampire_proof_{}.out", suffix),
+        ),
+        None => run_phase("run_vampire", input_file),
     };
-    match phases.iter().find(|phase| !run_phase(phase, input_file)) {
-        None => {}
-        Some(&"run_vampire") => return false,
-        Some(_) => {
-            krympa::klog_error!(
-                "No shortened proof. Vampire's proof is in output/vampire_proof_{}.out",
-                suffix
-            );
-            return false;
-        }
+    if !started {
+        return false;
+    }
+    let search: &[&str] = if options.direct {
+        &["direct"]
+    } else {
+        &["collect", "shorten", "minimize"]
+    };
+    if search.iter().any(|phase| !run_phase(phase, input_file)) {
+        krympa::klog_error!(
+            "No shortened proof. Vampire's proof is in output/vampire_proof_{}.out",
+            suffix
+        );
+        return false;
     }
     // Removing steps is an improvement, not a requirement: if it is not
     // possible (e.g. a problem not over `op`), the proof stays as it is.

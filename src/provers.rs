@@ -554,6 +554,36 @@ pub fn run_vampire_command(input: &str, output: &str) -> bool {
     proved
 }
 
+/// `--vampire-proof`: instead of running Vampire, write a saved Vampire proof
+/// (an `output/vampire_proof_<problem>.out` of an earlier run) to `output`,
+/// where the phases read Vampire's proof. Vampire's proof depends on its
+/// version and platform, so this is how a run is repeated from the same start.
+pub fn use_saved_vampire_proof(saved: &str, output: &str) -> bool {
+    let copied = fs::read_to_string(saved)
+        .map_err(|e| format!("Cannot read {}: {}", saved, e))
+        .and_then(|text| {
+            if text.trim().is_empty() {
+                return Err(format!("{} is empty", saved));
+            }
+            if let Some(parent) = Path::new(output).parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("Cannot create {}: {}", parent.display(), e))?;
+            }
+            // read whole, then written: safe when `saved` is `output` itself
+            fs::write(output, text).map_err(|e| format!("Cannot write {}: {}", output, e))
+        });
+    match copied {
+        Ok(()) => {
+            crate::klog_info!("[INFO] Phase 0: Vampire's proof from {}", saved);
+            true
+        }
+        Err(problem) => {
+            crate::klog_error!("[ERROR] {}", problem);
+            false
+        }
+    }
+}
+
 /// Helper: actually runs the Vampire binary.
 ///
 /// The (transformed) output is always written to `output_file`, so the file

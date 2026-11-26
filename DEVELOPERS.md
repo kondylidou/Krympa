@@ -83,8 +83,10 @@ INPUT=benchmarks/input11/Equation650_implies_Equation448.p
 ```
 
 `--term-size` and `--refine` are read by `minimize` and `direct`; `--direct`,
-`--no-compress` and `--lean` only go with a whole run, which removes avoidable
-steps at the end unless told not to. A phase that fails exits
+`--no-compress`, `--lean` and `--vampire-proof` only go with a whole run, which
+removes avoidable steps at the end unless told not to. With `--vampire-proof
+<file>`, the whole run writes that file to `output/vampire_proof_<name>.out`
+instead of running `run_vampire`. A phase that fails exits
 with a non-zero status. `./krympa lean <proof.out>` and
 `./krympa compress <proof.out>` work on a proof file instead; see
 [Lean Export and Step Removal](#lean-export-and-step-removal).

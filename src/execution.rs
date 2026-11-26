@@ -119,6 +119,9 @@ pub struct WholeRun {
     pub compress: bool,
     /// `--lean`: check the proof in Lean
     pub lean: bool,
+    /// `--vampire-proof <file>`: start from this saved Vampire proof instead
+    /// of running Vampire
+    pub vampire_proof: Option<String>,
 }
 
 impl Default for WholeRun {
@@ -127,6 +130,7 @@ impl Default for WholeRun {
             direct: false,
             compress: true,
             lean: false,
+            vampire_proof: None,
         }
     }
 }
@@ -134,8 +138,8 @@ impl Default for WholeRun {
 /// What the command line asks for, once the flags above have been stripped.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Request {
-    /// `krympa [--direct] [--no-compress] [--lean] <problem>`: every phase, from
-    /// Vampire's proof to the shortened one.
+    /// `krympa [--direct] [--no-compress] [--lean] [--vampire-proof <file>] <problem>`:
+    /// every phase, from Vampire's proof to the shortened one.
     Whole { input: String, options: WholeRun },
     /// `krympa <phase> <problem>`: one phase, reading what the previous one wrote.
     Phase { phase: String, input: String },
@@ -145,18 +149,23 @@ pub enum Request {
 
 /// Read the request from the arguments left after the other flags.
 pub fn parse_request(args: &[String]) -> Result<Request, String> {
-    const WHOLE_RUN_FLAGS: [&str; 3] = ["--direct", "--no-compress", "--lean"];
-    let given = |flag: &str| args.iter().any(|arg| arg == flag);
-    let options = WholeRun {
-        direct: given("--direct"),
-        compress: !given("--no-compress"),
-        lean: given("--lean"),
-    };
-    let rest: Vec<&str> = args
-        .iter()
-        .map(String::as_str)
-        .filter(|arg| !WHOLE_RUN_FLAGS.contains(arg))
-        .collect();
+    let mut options = WholeRun::default();
+    let mut rest: Vec<&str> = Vec::new();
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--direct" => options.direct = true,
+            "--no-compress" => options.compress = false,
+            "--lean" => options.lean = true,
+            "--vampire-proof" => {
+                let file = args
+                    .next()
+                    .ok_or_else(|| "--vampire-proof needs a file".to_string())?;
+                options.vampire_proof = Some(file.clone());
+            }
+            other => rest.push(other),
+        }
+    }
     if let Some(option) = rest.iter().find(|arg| arg.starts_with("--")) {
         return Err(format!("Unknown option '{}'", option));
     }
@@ -169,7 +178,7 @@ pub fn parse_request(args: &[String]) -> Result<Request, String> {
         [command] => Err(format!("'{}' needs a file", command)),
         [command, _] if !is_command(command) => Err(format!("Unknown command '{}'", command)),
         [command, _] if options != WholeRun::default() => Err(format!(
-            "--direct, --no-compress and --lean belong to a whole run and cannot be combined with '{}'",
+            "--direct, --no-compress, --lean and --vampire-proof belong to a whole run and cannot be combined with '{}'",
             command
         )),
         [tool, proof] if TOOLS.contains(tool) => Ok(Request::Tool {

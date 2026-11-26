@@ -76,6 +76,7 @@ overwritten by every run.
 | `--direct` | Prove only the lemmas the search can use, instead of every lemma of the Vampire proof. Usually finds the same proof in less time. |
 | `--no-compress` | Keep the steps that could be bypassed; see below. |
 | `--lean` | Write the proof as a Lean file and have Lean check it; see below. |
+| `--vampire-proof <file>` | Start from a saved Vampire proof (an `output/vampire_proof_<problem>.out` of an earlier run) instead of running Vampire. Vampire's proof depends on its version and platform, so this repeats a run from the same start. |
 | `--term-size` | Prefer proofs with smaller terms; see below. |
 | `--refine` | Run a final refinement on the best proof; see below. |
 | `--vampire <exe>`, `--twee <exe>` | The prover executables. Same as the variables `VAMPIRE` and `TWEE`, and take precedence over them. |

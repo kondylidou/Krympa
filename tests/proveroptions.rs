@@ -75,7 +75,8 @@ fn a_problem_file_alone_asks_for_the_whole_run() {
             options: WholeRun {
                 direct: true,
                 compress: false,
-                lean: true
+                lean: true,
+                vampire_proof: None
             }
         })
     );
@@ -93,6 +94,58 @@ fn a_whole_run_removes_avoidable_steps_unless_told_not_to() {
         panic!("not a whole run");
     };
     assert!(!options.compress);
+}
+
+#[test]
+fn a_whole_run_can_start_from_a_saved_vampire_proof() {
+    use krympa::execution::{Request, WholeRun};
+    assert_eq!(
+        request(&["--direct", "--vampire-proof", "saved.out", "p.p"]),
+        Ok(Request::Whole {
+            input: "p.p".into(),
+            options: WholeRun {
+                direct: true,
+                vampire_proof: Some("saved.out".into()),
+                ..WholeRun::default()
+            }
+        })
+    );
+    // the file is the next argument, even one that looks like a whole-run flag
+    let Ok(Request::Whole { options, .. }) = request(&["--vampire-proof", "--lean", "p.p"]) else {
+        panic!("not a whole run");
+    };
+    assert_eq!(options.vampire_proof.as_deref(), Some("--lean"));
+    assert!(!options.lean);
+    assert!(request(&["p.p", "--vampire-proof"]).is_err());
+    assert!(request(&["--vampire-proof", "saved.out", "direct", "p.p"]).is_err());
+}
+
+#[test]
+fn a_saved_vampire_proof_is_put_where_the_phases_read_it() {
+    use krympa::provers::use_saved_vampire_proof;
+    use std::fs;
+    let dir = std::env::temp_dir().join(format!("krympa_saved_proof_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let saved = dir.join("vampire_proof_62.out");
+    let text = "1. op(X0,X1) = X0 [input]\n";
+    fs::write(&saved, text).unwrap();
+    let output = dir.join("output").join("vampire_proof_p.out");
+    let (saved, output) = (saved.to_str().unwrap(), output.to_str().unwrap());
+
+    assert!(use_saved_vampire_proof(saved, output));
+    assert_eq!(fs::read_to_string(output).unwrap(), text);
+    // the proof already in place is kept, not emptied
+    assert!(use_saved_vampire_proof(output, output));
+    assert_eq!(fs::read_to_string(output).unwrap(), text);
+
+    let (empty, missing) = (dir.join("empty.out"), dir.join("missing.out"));
+    fs::write(&empty, "\n").unwrap();
+    assert!(!use_saved_vampire_proof(empty.to_str().unwrap(), output));
+    assert!(!use_saved_vampire_proof(missing.to_str().unwrap(), output));
+    // a failed start leaves the proof that was there
+    assert_eq!(fs::read_to_string(output).unwrap(), text);
+    let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]
